@@ -32,13 +32,11 @@ import {
   RefreshCw,
   ChevronRight,
   AlertTriangle,
-  FileSearch,
-  ShieldCheck,
-  Check
+  FileSearch
 } from 'lucide-react';
 
-// IndexedDB Helper per memorizzare documenti e testi estratti
-const DB_NAME = 'StudyAIDB_V3';
+// IndexedDB Helper per memorizzare il testo estratto e i file pesanti
+const DB_NAME = 'StudyAIDB_V2';
 const STORE_NAME = 'project_data_store';
 
 function getDB() {
@@ -84,29 +82,29 @@ async function getProjectDataFromDB(projectId) {
   }
 }
 
-// Estrazione testo client-side robusta
+// Funzioni di estrazione testo veloci e affidabili nel browser
 async function extractTextFromPdf(arrayBuffer) {
   if (typeof window === 'undefined' || !window.pdfjsLib) {
-    throw new Error("Libreria PDF.js non pronta.");
+    throw new Error("Libreria PDF non caricata.");
   }
   const pdfjsLib = window.pdfjsLib;
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
   const pdf = await loadingTask.promise;
   let text = '';
-  const maxPages = Math.min(pdf.numPages, 120);
+  const maxPages = Math.min(pdf.numPages, 100);
   for (let i = 1; i <= maxPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
     const pageText = content.items.map(item => item.str).join(' ');
-    text += `\n[Pagina ${i}]: ` + pageText;
+    text += `\n\n--- PAGINA ${i} ---\n` + pageText;
   }
   return { text: text.trim(), pagesCount: pdf.numPages };
 }
 
 async function extractTextFromDocx(arrayBuffer) {
   if (typeof window === 'undefined' || !window.mammoth) {
-    throw new Error("Libreria Word non pronta.");
+    throw new Error("Libreria Word non caricata.");
   }
   const result = await window.mammoth.extractRawText({ arrayBuffer });
   return { text: result.value || '', pagesCount: 1 };
@@ -114,7 +112,7 @@ async function extractTextFromDocx(arrayBuffer) {
 
 async function extractTextFromPptx(arrayBuffer) {
   if (typeof window === 'undefined' || !window.JSZip) {
-    throw new Error("Libreria PPTX non pronta.");
+    throw new Error("Libreria PPTX non caricata.");
   }
   const zip = await window.JSZip.loadAsync(arrayBuffer);
   let text = '';
@@ -158,7 +156,7 @@ class ErrorBoundary extends Component {
             <AlertTriangle size={36} className="text-red-400 mx-auto" />
             <h2 className="text-lg font-bold text-gray-100">Si è verificato un problema</h2>
             <p className="text-xs text-gray-400">
-              I tuoi dati sono al sicuro. Clicca qui sotto per ricaricare.
+              I tuoi dati sono protetti. Clicca qui sotto per ricaricare la pagina.
             </p>
             <button 
               onClick={() => {
@@ -225,10 +223,11 @@ export default function App() {
 }
 
 function MainAppContent() {
+  // Views
   const [currentView, setCurrentView] = useState('chat');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // Chat
+  // Chat State
   const [conversations, setConversations] = useState(() => {
     try {
       const saved = localStorage.getItem('study_ai_chats');
@@ -243,7 +242,7 @@ function MainAppContent() {
   const [attachedFile, setAttachedFile] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Projects
+  // Projects State
   const [savedProjects, setSavedProjects] = useState(() => {
     try {
       const saved = localStorage.getItem('study_ai_projects');
@@ -266,7 +265,7 @@ function MainAppContent() {
   const [languageStyle, setLanguageStyle] = useState('automatico');
   const [sourceType, setSourceType] = useState('my_materials');
   const [wizardUploadedFiles, setWizardUploadedFiles] = useState([]);
-  const [extractingCount, setExtractingCount] = useState(0); // Quanti file stanno estraendo in questo momento
+  const [isExtractingFiles, setIsExtractingFiles] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [loadingStatusText, setLoadingStatusText] = useState('Inizializzazione...');
 
@@ -276,12 +275,12 @@ function MainAppContent() {
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
 
-  // Storage sync
+  // Sync to LocalStorage (metadati leggeri)
   useEffect(() => {
     try {
       localStorage.setItem('study_ai_chats', JSON.stringify(conversations));
     } catch (e) {
-      console.warn("Quota chat", e);
+      console.warn("Storage chat quota exceeded", e);
     }
   }, [conversations]);
 
@@ -296,12 +295,11 @@ function MainAppContent() {
           mimeType: f.mimeType,
           wordsCount: f.wordsCount || 0,
           pagesCount: f.pagesCount || 1,
-          status: f.status || 'ready'
         }))
       }));
       localStorage.setItem('study_ai_projects', JSON.stringify(sanitized));
     } catch (e) {
-      console.warn("Quota projects", e);
+      console.warn("Storage projects quota exceeded", e);
     }
   }, [savedProjects]);
 
@@ -314,9 +312,10 @@ function MainAppContent() {
     setCurrentView('project');
     setIsSidebarOpen(false);
 
+    // Recupera testo estratto completo da IndexedDB
     const dbData = await getProjectDataFromDB(proj.id);
-    if (dbData && dbData.files) {
-      setActiveProject(prev => prev && prev.id === proj.id ? { ...prev, files: dbData.files } : prev);
+    if (dbData && dbData.extractedText) {
+      setActiveProject(prev => prev && prev.id === proj.id ? { ...prev, extractedText: dbData.extractedText } : prev);
     }
   };
 
@@ -363,7 +362,6 @@ function MainAppContent() {
     setLanguageStyle('automatico');
     setSourceType('my_materials');
     setWizardUploadedFiles([]);
-    setExtractingCount(0);
     setLoadingProgress(0);
     setCurrentView('wizard');
     setIsSidebarOpen(false);
@@ -386,78 +384,87 @@ function MainAppContent() {
     e.target.value = '';
   };
 
-  // GESTIONE CARICAMENTO MULTIPLO CON STATO DI ESTRAZIONE PARALLELA
+  // ESTRAZIONE TESTO ISTANTANEA E REALE NEL BROWSER PER QUALSIASI FILE
   const handleWizardFilesChange = async (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
+    setIsExtractingFiles(true);
 
-    // Crea subito le voci con stato 'extracting' per bloccare il tasto Avanti
-    const newFileEntries = files.map(file => ({
-      id: Date.now() + Math.random(),
-      fileRef: file,
-      name: file.name,
-      mimeType: file.type || 'application/octet-stream',
-      size: (file.size / 1024).toFixed(1) + ' KB',
-      status: 'extracting',
-      extractedText: '',
-      wordsCount: 0,
-      pagesCount: 1,
-    }));
-
-    setWizardUploadedFiles(prev => [...prev, ...newFileEntries]);
-    setExtractingCount(prev => prev + newFileEntries.length);
-    e.target.value = '';
-
-    // Estrazione asincrona per ciascun file
-    for (const entry of newFileEntries) {
-      const file = entry.fileRef;
+    for (const file of files) {
       const name = file.name.toLowerCase();
       const mime = file.type.toLowerCase();
+      const sizeStr = (file.size / 1024).toFixed(1) + ' KB';
+      const fileId = Date.now() + Math.random();
 
       try {
-        let text = '';
-        let pages = 1;
+        let extractedText = '';
+        let pagesCount = 1;
 
         if (name.endsWith('.pdf') || mime.includes('pdf')) {
           const buffer = await file.arrayBuffer();
           const res = await extractTextFromPdf(buffer);
-          text = res.text;
-          pages = res.pagesCount;
+          extractedText = res.text;
+          pagesCount = res.pagesCount;
         } else if (name.endsWith('.docx') || mime.includes('word')) {
           const buffer = await file.arrayBuffer();
           const res = await extractTextFromDocx(buffer);
-          text = res.text;
+          extractedText = res.text;
         } else if (name.endsWith('.pptx') || mime.includes('presentation') || mime.includes('powerpoint')) {
           const buffer = await file.arrayBuffer();
           const res = await extractTextFromPptx(buffer);
-          text = res.text;
-          pages = res.pagesCount;
+          extractedText = res.text;
+          pagesCount = res.pagesCount;
+        } else if (mime.startsWith('image/')) {
+          const base64 = await new Promise(r => {
+            const reader = new FileReader();
+            reader.onload = () => r(reader.result);
+            reader.readAsDataURL(file);
+          });
+          setWizardUploadedFiles(prev => [
+            ...prev,
+            { id: fileId, name: file.name, mimeType: file.type, size: sizeStr, base64: base64, isImage: true }
+          ]);
+          continue;
         } else {
-          text = await file.text();
+          // File di testo
+          extractedText = await file.text();
         }
 
-        const words = text ? text.trim().split(/\s+/).length : 0;
+        const wordsCount = extractedText ? extractedText.trim().split(/\s+/).length : 0;
 
-        setWizardUploadedFiles(prev => prev.map(f => f.id === entry.id ? {
-          ...f,
-          status: 'ready',
-          extractedText: text,
-          wordsCount: words,
-          pagesCount: pages,
-        } : f));
-
+        setWizardUploadedFiles(prev => [
+          ...prev,
+          {
+            id: fileId,
+            name: file.name,
+            mimeType: file.type || 'text/plain',
+            size: sizeStr,
+            extractedText: extractedText,
+            wordsCount: wordsCount,
+            pagesCount: pagesCount,
+            isImage: false,
+          }
+        ]);
       } catch (err) {
         console.error(`Errore estrazione ${file.name}:`, err);
-        setWizardUploadedFiles(prev => prev.map(f => f.id === entry.id ? {
-          ...f,
-          status: 'error',
-          extractedText: '',
-          wordsCount: 0,
-        } : f));
-      } finally {
-        setExtractingCount(prev => Math.max(0, prev - 1));
+        setWizardUploadedFiles(prev => [
+          ...prev,
+          {
+            id: fileId,
+            name: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            size: sizeStr,
+            extractedText: `[Documento: ${file.name}]`,
+            wordsCount: 0,
+            pagesCount: 1,
+            isImage: false,
+          }
+        ]);
       }
     }
+
+    setIsExtractingFiles(false);
+    e.target.value = '';
   };
 
   const handleRemoveWizardFile = (fileId) => {
@@ -478,27 +485,20 @@ function MainAppContent() {
     }
   };
 
-  // FINALIZZAZIONE CON CIRCUITO DI VERIFICA DI TUTTI I FILE CARICATI
+  // FINALIZZAZIONE CON VERA ANALISI AI DEI DOCUMENTI (SENZA FALLBACK CASUALI)
   const handleFinalizeGuide = async () => {
-    // 1. Verifica che nessun file sia ancora in caricamento/estrazione
-    const stillExtracting = wizardUploadedFiles.some(f => f.status === 'extracting');
-    if (stillExtracting || extractingCount > 0) {
-      alert("Attendi il completamento della lettura di tutti i file prima di proseguire.");
-      return;
-    }
+    // Verifica che ci sia testo se ha selezionato "Usa il mio materiale"
+    const combinedExtractedText = wizardUploadedFiles.map(f => f.extractedText ? `=== FONTE: ${f.name} ===\n${f.extractedText}\n=== FINE FONTE ===\n` : '').join('\n\n');
+    const totalWords = combinedExtractedText.trim().split(/\s+/).length;
 
-    // 2. Filtra i file pronti e verifica il testo complessivo
-    const readyFiles = wizardUploadedFiles.filter(f => f.status === 'ready' && f.wordsCount > 0);
-    const totalWordsCount = readyFiles.reduce((acc, f) => acc + (f.wordsCount || 0), 0);
-
-    if (sourceType === 'my_materials' && readyFiles.length === 0) {
-      alert("Nessun testo è stato estratto dai file caricati. Assicurati che i documenti contengano testo selezionabile e riprova.");
+    if (sourceType === 'my_materials' && wizardUploadedFiles.length > 0 && totalWords < 20 && !wizardUploadedFiles.some(f => f.isImage)) {
+      alert("Attenzione: Non è stato possibile estrarre testo leggibile dai file caricati. Assicurati che i documenti contengano testo selezionabile e non siano scansioni vuote.");
       return;
     }
 
     setWizardStep(4);
     setLoadingProgress(10);
-    setLoadingStatusText(`Circuito di verifica attivo: analisi di tutti i ${readyFiles.length} file (${totalWordsCount.toLocaleString()} parole)...`);
+    setLoadingStatusText(`Invio di ${totalWords.toLocaleString()} parole estratte all'AI per l'analisi...`);
 
     const daysTotal = calculateDaysLeft(examDate);
     const projectId = Date.now().toString();
@@ -506,17 +506,16 @@ function MainAppContent() {
     // Timer fluido
     let currentPct = 10;
     const progressInterval = setInterval(() => {
-      if (currentPct < 92) {
+      if (currentPct < 90) {
         currentPct += 2;
         setLoadingProgress(currentPct);
-        if (currentPct === 30) setLoadingStatusText(`Mappatura dei capitoli di ciascun file (1 a ${readyFiles.length})...`);
-        if (currentPct === 60) setLoadingStatusText(`Verifica di inclusione del 100% degli argomenti caricati...`);
-        if (currentPct === 80) setLoadingStatusText(`Distribuzione logica e progressiva nel calendario di ${daysTotal} giorni...`);
+        if (currentPct === 25) setLoadingStatusText(`Lettura approfondita dei capitoli (${totalWords.toLocaleString()} parole analizzate)...`);
+        if (currentPct === 55) setLoadingStatusText('Individuazione degli argomenti effettivi presenti nei documenti...');
+        if (currentPct === 80) setLoadingStatusText('Organizzazione del piano di studio nei giorni previsti...');
       }
     }, 300);
 
     try {
-      // Invio dei file strutturati uno per uno con il relativo testo estratto
       const response = await fetch('/.netlify/functions/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -527,13 +526,8 @@ function MainAppContent() {
           prepLevel: prepLevel,
           languageStyle: languageStyle,
           sourceType: sourceType,
-          files: readyFiles.map(f => ({
-            name: f.name,
-            size: f.size,
-            mimeType: f.mimeType,
-            text: f.extractedText,
-            wordsCount: f.wordsCount
-          })),
+          extractedText: combinedExtractedText,
+          files: wizardUploadedFiles.filter(f => f.isImage),
         }),
       });
 
@@ -541,15 +535,16 @@ function MainAppContent() {
       clearInterval(progressInterval);
 
       if (!response.ok || !data.schedule || !Array.isArray(data.schedule) || data.schedule.length === 0) {
-        throw new Error(data.error || "L'AI non è riuscita a strutturare il piano dai file caricati.");
+        throw new Error(data.error || "L'AI non è riuscita ad estrarre un piano valido dai documenti. Riprova con un testo più chiaro.");
       }
 
       setLoadingProgress(100);
-      setLoadingStatusText(`Piano generato con successo coprendo tutti i ${readyFiles.length} documenti!`);
+      setLoadingStatusText('Piano di studio generato direttamente dai tuoi documenti!');
 
-      // Salva tutti i file e i testi completi in IndexedDB
+      // Salva testo completo in IndexedDB
       await saveProjectDataToDB(projectId, {
-        files: readyFiles,
+        extractedText: combinedExtractedText,
+        files: wizardUploadedFiles,
       });
 
       const newProject = {
@@ -561,13 +556,14 @@ function MainAppContent() {
         examType: examType,
         languageStyle: languageStyle,
         sourceType: sourceType,
-        files: readyFiles.map(f => ({
+        extractedText: combinedExtractedText,
+        files: wizardUploadedFiles.map(f => ({
           id: f.id,
           name: f.name,
           size: f.size,
           mimeType: f.mimeType,
-          wordsCount: f.wordsCount,
-          pagesCount: f.pagesCount,
+          wordsCount: f.wordsCount || 0,
+          pagesCount: f.pagesCount || 1,
         })),
         schedule: data.schedule,
       };
@@ -582,19 +578,22 @@ function MainAppContent() {
     } catch (err) {
       clearInterval(progressInterval);
       console.error("Errore generazione syllabus reale:", err);
-      alert(`Errore nell'analisi dei documenti: ${err.message}`);
+      alert(`Errore nell'analisi delle fonti: ${err.message}`);
       setWizardStep(3);
     }
   };
 
-  // Generazione Lezione RIGOROSAMENTE basata sulle fonti
+  // Generazione Lezione RIGOROSAMENTE basata sulle fonti estratte
   const handleGenerateLesson = async (dayNum, topic) => {
     if (isGeneratingLesson || !activeProject) return;
     setIsGeneratingLesson(true);
 
     try {
-      const dbData = await getProjectDataFromDB(activeProject.id);
-      const fullFilesList = dbData?.files || activeProject.files || [];
+      let corpusToSend = activeProject.extractedText || '';
+      if (!corpusToSend) {
+        const dbData = await getProjectDataFromDB(activeProject.id);
+        corpusToSend = dbData?.extractedText || '';
+      }
 
       const res = await fetch('/.netlify/functions/chat', {
         method: 'POST',
@@ -603,7 +602,7 @@ function MainAppContent() {
           isLessonGeneration: true,
           topicTitle: topic.title,
           sourceType: activeProject.sourceType,
-          files: activeProject.sourceType === 'my_materials' ? fullFilesList.map(f => ({ name: f.name, text: f.extractedText || f.text })) : [],
+          extractedText: activeProject.sourceType === 'my_materials' ? corpusToSend : '',
           examDescription: activeProject.description,
           prepLevel: activeProject.prepLevel,
           languageStyle: activeProject.languageStyle
@@ -755,10 +754,6 @@ function MainAppContent() {
   const currentDayData = activeProject?.schedule?.find(d => d.dayNumber === selectedDayNumber) || activeProject?.schedule?.[0];
   const currentSelectedTopic = currentDayData?.topics?.find(t => t.id === selectedTopicId) || currentDayData?.topics?.[0];
 
-  const totalFilesSelected = wizardUploadedFiles.length;
-  const totalFilesReady = wizardUploadedFiles.filter(f => f.status === 'ready').length;
-  const isAnyFileExtracting = extractingCount > 0 || wizardUploadedFiles.some(f => f.status === 'extracting');
-
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-geminiDark text-gray-200 relative">
       
@@ -770,7 +765,7 @@ function MainAppContent() {
         />
       )}
 
-      {/* SIDEBAR */}
+      {/* SIDEBAR RETRATTILE */}
       <aside 
         className={`fixed inset-y-0 left-0 z-50 flex flex-col w-80 max-w-[85vw] bg-geminiDarkSecondary border-r border-geminiBorder shadow-2xl transition-transform duration-300 ease-in-out overflow-hidden ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -795,6 +790,8 @@ function MainAppContent() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 space-y-4">
+          
+          {/* GUIDE SALVATE */}
           {savedProjects && savedProjects.length > 0 && (
             <div>
               <div className="text-xs font-semibold text-blue-400 uppercase tracking-wider px-3 py-1 flex items-center gap-1.5">
@@ -829,6 +826,7 @@ function MainAppContent() {
             </div>
           )}
 
+          {/* CRONOLOGIA CHAT */}
           <div>
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 py-1">
               Conversazioni recenti
@@ -865,6 +863,7 @@ function MainAppContent() {
               )}
             </div>
           </div>
+
         </div>
       </aside>
 
@@ -1009,7 +1008,7 @@ function MainAppContent() {
                     rows={2}
                     value={examDescription}
                     onChange={(e) => setExamDescription(e.target.value)}
-                    placeholder="Es. Anatomia Patologica: segui l'ordine dei file caricati, approfondisci infiammazione e tumori..."
+                    placeholder="Es. Anatomia Patologica: segui l'ordine delle dispense, concentrati su infiammazione e neoplasie..."
                     className="w-full bg-geminiDark border border-geminiBorder rounded-2xl p-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition resize-none"
                   />
                 </div>
@@ -1097,7 +1096,7 @@ function MainAppContent() {
               </div>
             )}
 
-            {/* STEP 3: FONTI CON BLOCCO TASTO FINO A ESTRAZIONE 100% DI TUTTI I FILE */}
+            {/* STEP 3: FONTI CON VERIFICA VISIVA DELL'ESTRAZIONE TESTO */}
             {wizardStep === 3 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
                 <div className="flex items-center gap-3">
@@ -1106,7 +1105,7 @@ function MainAppContent() {
                   </div>
                   <div>
                     <h2 className="text-xl font-bold text-gray-100">Fonti di Studio</h2>
-                    <p className="text-xs text-gray-400">Carica tutti i documenti: l'AI verificherà l'inclusione di ogni file.</p>
+                    <p className="text-xs text-gray-400">Scegli se basarti sui tuoi file o effettuare ricerche online.</p>
                   </div>
                 </div>
 
@@ -1133,7 +1132,7 @@ function MainAppContent() {
                     </div>
                     <div>
                       <div className="font-semibold text-sm text-gray-100">Usa il mio materiale</div>
-                      <div className="text-[11px] text-gray-400 mt-0.5">Carica PDF, Word, PPTX o appunti (anche 20 o 40 file).</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">Carica PDF, Word (.docx), PPTX o appunti. L'AI userà solo queste fonti.</div>
                     </div>
                   </div>
 
@@ -1159,7 +1158,7 @@ function MainAppContent() {
                     </div>
                     <div>
                       <div className="font-semibold text-sm text-gray-100">Cerca online</div>
-                      <div className="text-[11px] text-gray-400 mt-0.5">L'AI ricercherà nozioni accademiche online.</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">L'AI ricercherà e integrerà nozioni accademiche online.</div>
                     </div>
                   </div>
                 </div>
@@ -1169,11 +1168,9 @@ function MainAppContent() {
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
                         <FileText size={14} className="text-blue-400" />
-                        <span>Carica tutti i documenti (PDF, Word, PPTX, TXT)</span>
+                        <span>Carica i tuoi documenti</span>
                       </label>
-                      <span className="text-[11px] text-blue-400 font-semibold">
-                        {totalFilesReady} di {totalFilesSelected} pronti
-                      </span>
+                      <span className="text-[11px] text-blue-400 font-semibold">{wizardUploadedFiles.length} file</span>
                     </div>
 
                     <input 
@@ -1190,66 +1187,51 @@ function MainAppContent() {
                       className="border-2 border-dashed border-geminiBorder hover:border-blue-500 rounded-2xl p-4 text-center cursor-pointer transition bg-geminiDarkSecondary/40 hover:bg-geminiDarkSecondary group"
                     >
                       <UploadCloud size={26} className="mx-auto text-blue-400 mb-1.5 group-hover:scale-110 transition" />
-                      <div className="text-xs font-medium text-gray-200">Seleziona tutti i file che desideri</div>
-                      <div className="text-[10px] text-gray-500 mt-0.5">Puoi caricare file multipli insieme o aggiungerne altri in blocchi successivi</div>
+                      <div className="text-xs font-medium text-gray-200">Seleziona PDF, Word (.docx), PPTX, TXT o immagini</div>
+                      <div className="text-[10px] text-gray-500 mt-0.5">Il testo verrà estratto istantaneamente e verificato</div>
                     </div>
 
-                    {isAnyFileExtracting && (
-                      <div className="flex items-center justify-center gap-2 p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-xs text-blue-300 animate-pulse">
-                        <RefreshCw size={14} className="animate-spin text-blue-400" />
-                        <span>Lettura del testo in corso per {extractingCount} file... Attendi il completamento prima di generare.</span>
+                    {isExtractingFiles && (
+                      <div className="flex items-center justify-center gap-2 py-2 text-xs text-blue-400">
+                        <RefreshCw size={14} className="animate-spin" />
+                        <span>Estrazione e verifica del testo in corso...</span>
                       </div>
                     )}
 
-                    {/* LISTA FILE CON STATO DI ESTRAZIONE E VERIFICA CHIARA */}
+                    {/* LISTA DEI FILE CARICATI CON VERIFICA DEL TESTO ESTRATTO */}
                     {wizardUploadedFiles.length > 0 && (
-                      <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+                      <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
                         {wizardUploadedFiles.map(file => (
                           <div 
                             key={file.id}
-                            className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-xs transition ${
-                              file.status === 'ready' && file.wordsCount > 0
-                                ? 'bg-geminiDarkSecondary border-emerald-500/30 text-gray-200'
-                                : file.status === 'extracting'
-                                ? 'bg-geminiDarkSecondary/80 border-blue-500/40 text-blue-200'
-                                : 'bg-geminiDarkSecondary border-amber-500/40 text-amber-200'
-                            }`}
+                            className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-geminiDarkSecondary border border-geminiBorder text-xs text-gray-200"
                           >
-                            <div className="flex items-center gap-3 truncate pr-2">
-                              {file.status === 'ready' && file.wordsCount > 0 ? (
-                                <div className="w-6 h-6 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
-                                  <Check size={14} />
-                                </div>
-                              ) : file.status === 'extracting' ? (
-                                <RefreshCw size={15} className="animate-spin text-blue-400 shrink-0" />
-                              ) : (
-                                <AlertTriangle size={15} className="text-amber-400 shrink-0" />
-                              )}
-
+                            <div className="flex items-center gap-2.5 truncate pr-2">
+                              <FileCheck size={16} className={file.wordsCount > 0 || file.isImage ? "text-emerald-400 shrink-0" : "text-amber-400 shrink-0"} />
                               <div className="truncate">
-                                <div className="font-semibold truncate text-gray-100">{file.name}</div>
+                                <div className="font-medium truncate">{file.name}</div>
                                 <div className="text-[10px] text-gray-400 flex items-center gap-1.5 mt-0.5">
                                   <span>{file.size}</span>
-                                  {file.status === 'ready' && file.wordsCount > 0 && (
+                                  {file.wordsCount > 0 ? (
                                     <>
                                       <span>•</span>
-                                      <span className="text-emerald-400 font-bold">{file.wordsCount.toLocaleString()} parole lette</span>
+                                      <span className="text-emerald-400 font-semibold">{file.wordsCount.toLocaleString()} parole lette</span>
                                       {file.pagesCount > 1 && <span>({file.pagesCount} pag.)</span>}
                                     </>
-                                  )}
-                                  {file.status === 'extracting' && (
+                                  ) : file.isImage ? (
                                     <>
                                       <span>•</span>
-                                      <span className="text-blue-400 font-medium">Estrazione testo in corso...</span>
+                                      <span className="text-blue-400">Immagine (Visione AI)</span>
                                     </>
+                                  ) : (
+                                    <span className="text-amber-400 font-medium">Estrazione testo non riuscita</span>
                                   )}
                                 </div>
                               </div>
                             </div>
-
                             <button 
                               onClick={() => handleRemoveWizardFile(file.id)}
-                              className="p-1 text-gray-400 hover:text-red-400 transition shrink-0 ml-2"
+                              className="p-1 text-gray-400 hover:text-red-400 transition shrink-0"
                               title="Rimuovi file"
                             >
                               <X size={14} />
@@ -1269,36 +1251,32 @@ function MainAppContent() {
                     <ArrowLeft size={14} />
                     <span>Indietro</span>
                   </button>
-
-                  {/* IL TASTO È RIGOROSAMENTE BLOCCATO FINO A CHE TUTTI I FILE SONO PRONTI */}
                   <button 
                     onClick={handleFinalizeGuide}
-                    disabled={isAnyFileExtracting || (sourceType === 'my_materials' && (totalFilesReady === 0 || totalFilesSelected === 0))}
+                    disabled={isExtractingFiles || (sourceType === 'my_materials' && wizardUploadedFiles.length === 0)}
                     className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold transition shadow-lg ${
-                      isAnyFileExtracting || (sourceType === 'my_materials' && (totalFilesReady === 0 || totalFilesSelected === 0))
-                        ? 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700'
+                      isExtractingFiles || (sourceType === 'my_materials' && wizardUploadedFiles.length === 0)
+                        ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
                         : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/30'
                     }`}
                   >
                     <Sparkles size={16} />
-                    <span>
-                      {isAnyFileExtracting ? 'Caricamento file in corso...' : 'Genera Guida e Piano'}
-                    </span>
+                    <span>Genera Guida e Piano</span>
                   </button>
                 </div>
               </div>
             )}
 
-            {/* STEP 4: CARICAMENTO */}
+            {/* STEP 4: CARICAMENTO DINAMICO */}
             {wizardStep === 4 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-8 sm:p-12 rounded-3xl shadow-2xl text-center space-y-6 max-w-md mx-auto w-full">
                 <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
                   <div className="w-20 h-20 rounded-full border-4 border-blue-500/20 border-t-blue-500 animate-spin absolute" />
-                  <ShieldCheck size={32} className="text-blue-400" />
+                  <Sparkles size={32} className="text-blue-400" />
                 </div>
 
                 <div className="space-y-2">
-                  <h3 className="text-xl font-bold text-gray-100">Verifica ed Elaborazione Fonti</h3>
+                  <h3 className="text-xl font-bold text-gray-100">Analisi Fonti e Creazione Piano</h3>
                   <p className="text-xs text-gray-400 h-6 transition-all">{loadingStatusText}</p>
                 </div>
 
@@ -1332,8 +1310,8 @@ function MainAppContent() {
                 <span>Torna alla Chat</span>
               </button>
               <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded-full flex items-center gap-1.5 font-medium">
-                <ShieldCheck size={13} />
-                <span>Fonti verificate al 100%</span>
+                <CheckCircle2 size={13} />
+                <span>Guida attiva</span>
               </span>
             </div>
 
@@ -1385,10 +1363,10 @@ function MainAppContent() {
                 <div className="flex items-center justify-between border-b border-geminiBorder/60 pb-3">
                   <div className="flex items-center gap-2.5 font-bold text-base text-gray-100">
                     <FileText size={18} className="text-blue-400" />
-                    <span>Materiali Inclusi nel Piano</span>
+                    <span>Materiali e Fonti</span>
                   </div>
-                  <span className="text-xs text-emerald-400 font-semibold">
-                    {activeProject?.sourceType === 'my_materials' ? `${activeProject?.files?.length || 0} file indicizzati` : 'Online'}
+                  <span className="text-xs text-gray-400">
+                    {activeProject?.sourceType === 'my_materials' ? `${activeProject?.files?.length || 0} file` : 'Online'}
                   </span>
                 </div>
 
@@ -1443,11 +1421,11 @@ function MainAppContent() {
                     <span>Piano di Studio Giornaliero</span>
                   </div>
                   <p className="text-xs text-gray-400 mt-3 leading-relaxed">
-                    Il piano copre il 100% degli argomenti estratti da tutti i tuoi documenti. Accedi per studiare giorno dopo giorno.
+                    Il piano è stato generato analizzando i capitoli e i concetti effettivi presenti nei tuoi documenti.
                   </p>
                   
                   <div className="mt-4 p-3 bg-geminiDark rounded-2xl border border-geminiBorder flex items-center justify-between text-xs">
-                    <span className="text-gray-400">Progresso studio:</span>
+                    <span className="text-gray-400">Progresso piano:</span>
                     <span className="font-bold text-emerald-400">
                       {calculateGlobalProgress().completed} / {calculateGlobalProgress().total} argomenti ({calculateGlobalProgress().percent}%)
                     </span>
@@ -1496,7 +1474,7 @@ function MainAppContent() {
                   <span>Programma Giornaliero di Studio</span>
                 </h2>
                 <p className="text-xs text-gray-400 mt-1">
-                  Piano didattico estratto al 100% dalle tue fonti. Clicca su un giorno per generare le lezioni.
+                  Piano didattico estratto direttamente dalle tue fonti. Clicca su un giorno per generare le lezioni.
                 </p>
               </div>
 
@@ -1598,7 +1576,7 @@ function MainAppContent() {
                 {currentDayData?.dayTitle}
               </h2>
               <p className="text-xs text-gray-400">
-                Seleziona un argomento per consultare la lezione estratta {activeProject?.sourceType === 'my_materials' ? 'esclusivamente dai tuoi file' : 'dalle fonti online'}.
+                Seleziona un argomento per generare o consultare la lezione didattica {activeProject?.sourceType === 'my_materials' ? 'estratta esclusivamente dai tuoi file' : 'basata sulle fonti online'}.
               </p>
             </div>
 

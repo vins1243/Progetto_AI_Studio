@@ -11,7 +11,9 @@ export const handler = async (event) => {
       action,
       prompt, 
       history, 
-      files, // Array di file con { name, text, size, mimeType, wordsCount, base64 }
+      file, 
+      files, 
+      extractedText, // Testo pulito già estratto dal client da PDF, Word, PPTX o file di testo
       sourceType, 
       isLessonGeneration, 
       topicTitle,
@@ -32,59 +34,56 @@ export const handler = async (event) => {
 
     const openai = new OpenAI({ apiKey });
 
-    const allFiles = Array.isArray(files) ? files : [];
+    // Gestione immagini se presenti
+    const allFiles = files && Array.isArray(files) ? files : (file ? [file] : []);
+    const imageParts = [];
+    for (const f of allFiles) {
+      if (f && f.base64 && (f.mimeType || '').startsWith('image/')) {
+        imageParts.push({
+          type: 'image_url',
+          image_url: {
+            url: f.base64.startsWith('data:') ? f.base64 : `data:${f.mimeType || 'image/jpeg'};base64,${f.base64}`,
+          },
+        });
+      }
+    }
+
+    const documentContent = (extractedText || '').trim();
 
     // -------------------------------------------------------------
-    // AZIONE 1: GENERAZIONE SYLLABUS CON CIRCUITO DI VERIFICA COPERTURA 100% DEI FILE
+    // AZIONE 1: GENERAZIONE SYLLABUS BASATO AL 100% SULLE FONTI
     // -------------------------------------------------------------
     if (action === 'generate_syllabus') {
-      const numDays = Math.max(3, Math.min(daysTotal || 30, 60));
+      const numDays = Math.max(3, Math.min(daysTotal || 30, 45));
 
-      // Costruiamo una mappatura ordinata per ciascun singolo file (senza troncamento globale che esclude i file successivi)
-      let perFileSummary = '';
-      let validFilesCount = 0;
-
-      allFiles.forEach((f, idx) => {
-        const fileName = f.name || `Documento ${idx + 1}`;
-        const rawText = (f.text || f.extractedText || '').trim();
-
-        if (rawText && rawText.length > 10) {
-          validFilesCount++;
-          // Prendiamo una porzione ricca e bilanciata di ciascun file (fino a 15.000 caratteri a file)
-          const fileDigest = rawText.slice(0, 15000);
-          perFileSummary += `\n\n--- [FILE ${idx + 1} di ${allFiles.length}]: "${fileName}" (Parole: ${f.wordsCount || rawText.split(/\s+/).length}) ---\n${fileDigest}\n--- [FINE FILE ${idx + 1}: "${fileName}"] ---\n`;
-        }
-      });
-
-      if (sourceType === 'my_materials' && validFilesCount === 0) {
+      if (sourceType === 'my_materials' && !documentContent && imageParts.length === 0) {
         return {
           statusCode: 400,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
-            error: 'Nessun testo estratto dai documenti caricati. Assicurati di aver caricato documenti contenenti testo leggibile.' 
+            error: 'Nessun testo leggibile estratto dai file caricati. Assicurati che i documenti contengano testo selezionabile e non siano scansioni vuote.' 
           }),
         };
       }
 
-      const syllabusSystemPrompt = `Sei un professore universitario e pianificatore didattico di altissimo profilo accademico.
-Il tuo compito è analizzare TUTTI i ${validFilesCount} file/documenti caricati dallo studente e strutturare un piano di studio completo e perfettamente bilanciato di esattamente ${numDays} giorni.
+      const syllabusSystemPrompt = `Sei un professore universitario e pianificatore didattico esperto.
+Il tuo compito è analizzare approfonditamente il testo estratto dai documenti dello studente e creare un piano di studio di esattamente ${numDays} giorni.
 
-REGOLE INDEROGABILI E CIRCUITO DI VERIFICA INTERNA:
-1. COPERTURA TOTALE DEI FILE (100%): Devi verificare di aver incluso argomenti e capitoli provenienti da OGNI SINGOLO FILE caricato (dal File 1 fino all'ultimo File ${allFiles.length}). Nessun documento caricato deve essere tralasciato o dimenticato.
-2. ESCLUSIVITÀ DEI CONTENUTI: Tutti i titoli e i temi del piano devono essere tratti ESCLUSIVAMENTE dai testi e dai capitoli presenti nei file allegati. Non inventare nozioni o moduli generici estranei alle fonti.
-3. PROGRESSIONE DIDATTICA: Organizza gli argomenti secondo un ordine logico, propedeutico e continuo.
-4. STRUTTURA GIORNALIERA: Ogni giorno ("dayTitle") deve contenere da 1 a 3 argomenti ("topics") con titoli specifici, chiari ed esaustivi tratti direttamente dalle fonti.
-5. FORMATO RISPOSTA: Restituisci ESCLUSIVAMENTE un JSON valido con questa struttura esatta:
+REGOLE INDEROGABILI:
+1. FONTI ESCLUSIVE: Tutti i temi e argomenti del piano DEVONO provenire DIRETTAMENTE dai contenuti e capitoli presenti nel testo fornito. Non inventare nozioni o moduli generici non menzionati nel materiale.
+2. ORDINAMENTO LOGICO: Disponi gli argomenti secondo un percorso didattico coerente e progressivo.
+3. MODULARITÀ: Ogni giornata ("dayTitle") deve contenere 1, 2 o al massimo 3 argomenti ("topics") con titoli descrittivi e reali estratti dal testo.
+4. FORMATO DI RISPOSTA: Restituisci ESCLUSIVAMENTE un JSON valido con questa struttura:
 {
   "schedule": [
     {
       "dayNumber": 1,
-      "dayTitle": "Giorno 1: Titolo modulo estratto dalle fonti",
+      "dayTitle": "Giorno 1: Titolo tema principale estratto dalle fonti",
       "phase": "Fase 1: Studio e Comprensione",
       "topics": [
         {
           "id": "d1_t1",
-          "title": "Titolo specifico dell'argomento presente nelle fonti",
+          "title": "Titolo reale dell'argomento presente nel testo",
           "difficulty": "Fondamentale"
         }
       ]
@@ -93,22 +92,36 @@ REGOLE INDEROGABILI E CIRCUITO DI VERIFICA INTERNA:
 }`;
 
       const syllabusUserPrompt = `Materia/Note studente: "${examDescription || 'Programma di Studio'}".
-Giorni disponibili per lo studio: ${numDays}.
-Livello di preparazione desiderato: ${prepLevel || 80}%.
+Giorni disponibili: ${numDays}.
+Livello target: ${prepLevel || 80}%.
 Stile: ${languageStyle || 'automatico'}.
-Numero totale di documenti da includere obbligatoriamente: ${validFilesCount}.
 
-FONTI E CONTENUTO ESTRATTO DA TUTTI I FILE DELLO STUDENTE:
-${perFileSummary}
+${documentContent ? `TESTO COMPLETO ESTRATTO DAI DOCUMENTI DELLO STUDENTE:\n${documentContent.slice(0, 75000)}` : 'Nessun file testuale, basati sulla descrizione accademica.'}
 
-Esegui la scansione completa di tutti i file e genera il piano di studio JSON che copre il 100% dei materiali allegati.`;
+Genera il piano di studio JSON rigorosamente vincolato alle fonti fornite.`;
+
+      const messages = [
+        { role: 'system', content: syllabusSystemPrompt }
+      ];
+
+      if (imageParts.length > 0) {
+        messages.push({
+          role: 'user',
+          content: [
+            { type: 'text', text: syllabusUserPrompt },
+            ...imageParts,
+          ],
+        });
+      } else {
+        messages.push({
+          role: 'user',
+          content: syllabusUserPrompt,
+        });
+      }
 
       const completion = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: syllabusSystemPrompt },
-          { role: 'user', content: syllabusUserPrompt }
-        ],
+        messages: messages,
         temperature: 0.2,
         response_format: { type: 'json_object' }
       });
@@ -133,31 +146,21 @@ Esegui la scansione completa di tutti i file e genera il piano di studio JSON ch
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           schedule: Array.isArray(parsed) && parsed.length > 0 ? parsed : null,
-          filesCovered: validFilesCount
+          wordsAnalyzed: documentContent ? documentContent.split(/\s+/).length : 0
         }),
       };
     }
 
     // -------------------------------------------------------------
-    // AZIONE 2: GENERAZIONE LEZIONE RIGOROSA BASATA SULLE FONTI
+    // AZIONE 2: GENERAZIONE LEZIONE RIGOROSA
     // -------------------------------------------------------------
     if (isLessonGeneration) {
       const isStrict = sourceType === 'my_materials';
-      
-      // Raccoglie il testo di tutti i file
-      let combinedSources = '';
-      allFiles.forEach((f, idx) => {
-        const text = (f.text || f.extractedText || '').trim();
-        if (text) {
-          combinedSources += `\n\n=== DOCUMENTO: "${f.name || `File ${idx + 1}`}" ===\n${text}\n=== FINE DOCUMENTO ===\n`;
-        }
-      });
-
       const lessonSystemPrompt = `Sei un docente universitario e tutor accademico di altissimo livello.
 Il tuo compito è redigere una lezione/riassunto specialistico, chiaro, altamente logico e approfondito sull'argomento richiesto.
 
-${isStrict ? `REGOLA FONDAMENTALE E RIGIDA:
-Devi spiegare l'argomento basandoti UNICAMENTE ED ESCLUSIVAMENTE sulle informazioni, spiegazioni, definizioni, formule ed esempi PRESENTI NEI DOCUMENTI ALLEGATI DELLO STUDENTE.
+${isStrict ? `REGOLA INDEROGABILE:
+Devi spiegare l'argomento basandoti UNICAMENTE ED ESCLUSIVAMENTE sulle informazioni, spiegazioni, definizioni, formule ed esempi PRESENTI NEI TESTI ALLEGATI DELLO STUDENTE.
 NON aggiungere nozioni esterne da internet.
 Il tuo compito è rendere il materiale originale molto più chiaro, ordinato, schematizzato e pedagogico, senza inventare o deviare dalle fonti caricate.` : `Spiega l'argomento attingendo alle migliori nozioni scientifiche e accademiche di riferimento.`}
 
@@ -170,16 +173,32 @@ FORMATTAZIONE:
       const lessonUserPrompt = `Argomento della lezione: "${topicTitle}".
 Materia: "${examDescription || ''}", Livello target: ${prepLevel || 80}%, Stile: ${languageStyle || 'automatico'}.
 
-${combinedSources ? `FONTI DELLO STUDENTE ESTRATTE DAI FILE CARICATI:\n${combinedSources.slice(0, 90000)}` : ''}
+${documentContent ? `TESTO DELLE FONTI DELLO STUDENTE:\n${documentContent.slice(0, 85000)}` : ''}
 
 Redigi la lezione didattica in modo chiaro, schematizzato e rigorosamente fedele alle fonti fornite.`;
 
+      const messagesList = [
+        { role: 'system', content: lessonSystemPrompt }
+      ];
+
+      if (imageParts.length > 0) {
+        messagesList.push({
+          role: 'user',
+          content: [
+            { type: 'text', text: lessonUserPrompt },
+            ...imageParts,
+          ],
+        });
+      } else {
+        messagesList.push({
+          role: 'user',
+          content: lessonUserPrompt,
+        });
+      }
+
       const completion = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: lessonSystemPrompt },
-          { role: 'user', content: lessonUserPrompt }
-        ],
+        messages: messagesList,
         temperature: 0.3,
       });
 
@@ -197,17 +216,6 @@ Redigi la lezione didattica in modo chiaro, schematizzato e rigorosamente fedele
     const standardSystemInstruction = `Sei un tutor universitario e assistente allo studio avanzato.
 Rispondi in modo chiaro, approfondito e pedagogico in formato Markdown con termini chiave in grassetto ed equazioni LaTeX in $ o $$ quando utili.`;
 
-    let chatSources = '';
-    allFiles.forEach(f => {
-      const text = (f.text || f.extractedText || '').trim();
-      if (text) chatSources += `\n\n--- DOCUMENTO "${f.name}" ---\n${text.slice(0, 20000)}`;
-    });
-
-    let finalPromptText = prompt || '';
-    if (chatSources) {
-      finalPromptText += `\n\n--- DOCUMENTI ALLEGATI DALL'UTENTE ---${chatSources.slice(0, 60000)}`;
-    }
-
     const messages = [
       { role: 'system', content: standardSystemInstruction }
     ];
@@ -221,10 +229,25 @@ Rispondi in modo chiaro, approfondito e pedagogico in formato Markdown con termi
       }
     }
 
-    messages.push({
-      role: 'user',
-      content: finalPromptText,
-    });
+    let finalPromptText = prompt || '';
+    if (documentContent) {
+      finalPromptText += `\n\n--- TESTO DEI DOCUMENTI ALLEGATI DALL'UTENTE ---\n${documentContent.slice(0, 60000)}`;
+    }
+
+    if (imageParts.length > 0) {
+      messages.push({
+        role: 'user',
+        content: [
+          { type: 'text', text: finalPromptText },
+          ...imageParts,
+        ],
+      });
+    } else {
+      messages.push({
+        role: 'user',
+        content: finalPromptText,
+      });
+    }
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
