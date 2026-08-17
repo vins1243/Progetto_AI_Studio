@@ -6,7 +6,7 @@ export const handler = async (event) => {
   }
 
   try {
-    const { prompt, history, file } = JSON.parse(event.body);
+    const { prompt, history, file, files, sourceType, isLessonGeneration, topicTitle } = JSON.parse(event.body);
     const apiKey = process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
@@ -18,14 +18,31 @@ export const handler = async (event) => {
 
     const openai = new OpenAI({ apiKey });
 
-    const systemInstruction = `Sei un tutor universitario e assistente allo studio avanzato.
-Il tuo compito e aiutare lo studente a comprendere concetti, analizzare materiali caricati, creare schemi chiari, sintetizzare appunti e verificare la comprensione con domande mirate.
+    // Definizione del System Prompt in base alla modalità
+    let systemInstruction = '';
+    if (isLessonGeneration) {
+      if (sourceType === 'my_materials') {
+        systemInstruction = `Sei un docente universitario e tutor accademico di altissimo livello.
+Il tuo compito è generare una lezione/riassunto chiaro, approfondito e pedagogico sull'argomento richiesto.
+REGOLA FONDAMENTALE E RIGIDA: Devi basarti ESCLUSIVAMENTE ed UNICAMENTE sul testo e sui materiali caricati dall'utente inclusi nel prompt.
+Non aggiungere nozioni esterne da internet o informazioni che non siano presenti o deducibili dalle fonti fornite.
+Formatta la lezione con titoli in Markdown, concetti chiave in grassetto, elenchi puntati chiari e definizioni precise.`;
+      } else {
+        systemInstruction = `Sei un docente universitario e tutor accademico di altissimo livello.
+Il tuo compito è generare una lezione/riassunto chiaro, rigoroso, approfondito e ben strutturato sull'argomento richiesto, attingendo alle migliori nozioni scientifiche e accademiche.
+Formatta la lezione con titoli in Markdown, concetti chiave in grassetto, schemi a punti e definizioni precise.`;
+      }
+    } else {
+      systemInstruction = `Sei un tutor universitario e assistente allo studio avanzato.
+Il tuo compito è aiutare lo studente a comprendere concetti, analizzare materiali caricati, creare schemi chiari, sintetizzare appunti e verificare la comprensione con domande mirate.
 Rispondi con un tono professionale, chiaro e ben strutturato in formato Markdown.`;
+    }
 
     const messages = [
       { role: 'system', content: systemInstruction }
     ];
 
+    // Aggiungi cronologia conversazione se presente
     if (history && history.length > 0) {
       for (const msg of history) {
         messages.push({
@@ -35,46 +52,56 @@ Rispondi con un tono professionale, chiaro e ben strutturato in formato Markdown
       }
     }
 
-    if (file && file.base64 && file.mimeType) {
-      if (file.mimeType.startsWith('image/')) {
-        messages.push({
-          role: 'user',
-          content: [
-            { type: 'text', text: prompt || 'Analizza questa immagine/appunti di studio.' },
-            {
-              type: 'image_url',
-              image_url: {
-                url: file.base64.startsWith('data:') ? file.base64 : `data:${file.mimeType};base64,${file.base64}`,
-              },
-            },
-          ],
-        });
-      } else {
-        let fileTextContent = '';
-        try {
-          const rawBase64 = file.base64.split(',')[1] || file.base64;
-          fileTextContent = Buffer.from(rawBase64, 'base64').toString('utf-8');
-        } catch (e) {
-          fileTextContent = '[File allegato: ' + file.name + ']';
-        }
+    // Gestione file multipli o file singolo
+    const allFiles = files && Array.isArray(files) ? files : (file ? [file] : []);
+    const imageParts = [];
+    let aggregatedFileText = '';
 
-        const combinedPrompt = `${prompt ? prompt + '\n\n' : ''}--- Allegato: ${file.name} ---\n${fileTextContent}`;
-        messages.push({
-          role: 'user',
-          content: combinedPrompt,
-        });
+    for (const f of allFiles) {
+      if (f && f.base64 && f.mimeType) {
+        if (f.mimeType.startsWith('image/')) {
+          imageParts.push({
+            type: 'image_url',
+            image_url: {
+              url: f.base64.startsWith('data:') ? f.base64 : `data:${f.mimeType};base64,${f.base64}`,
+            },
+          });
+        } else {
+          try {
+            const rawBase64 = f.base64.split(',')[1] || f.base64;
+            const decoded = Buffer.from(rawBase64, 'base64').toString('utf-8');
+            aggregatedFileText += `\n\n--- INIZIO DOCUMENTO: ${f.name} ---\n${decoded}\n--- FINE DOCUMENTO ---\n`;
+          } catch (e) {
+            aggregatedFileText += `\n\n[File allegato: ${f.name} (${f.size || ''})]`;
+          }
+        }
       }
+    }
+
+    let finalPromptText = prompt || (isLessonGeneration ? `Genera una lezione approfondita e strutturata sull'argomento: "${topicTitle}".` : '');
+    if (aggregatedFileText) {
+      finalPromptText += `\n\n--- FONTI E MATERIALI CARICATI DALL'UTENTE ---${aggregatedFileText}`;
+    }
+
+    if (imageParts.length > 0) {
+      messages.push({
+        role: 'user',
+        content: [
+          { type: 'text', text: finalPromptText },
+          ...imageParts,
+        ],
+      });
     } else {
       messages.push({
         role: 'user',
-        content: prompt || '',
+        content: finalPromptText,
       });
     }
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: messages,
-      temperature: 0.7,
+      temperature: 0.5,
     });
 
     const reply = completion.choices[0]?.message?.content || 'Nessuna risposta generata.';

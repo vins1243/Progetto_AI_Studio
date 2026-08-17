@@ -22,17 +22,12 @@ import {
   Target,
   FileCheck,
   FolderKanban,
-  CheckSquare,
-  Square,
-  BookMarked,
-  RefreshCw,
-  Layers,
-  ChevronRight,
-  HelpCircle
+  FileCode2,
+  ChevronRight
 } from 'lucide-react';
 
 export default function App() {
-  // Navigation State: 'chat' | 'wizard' | 'project' | 'study_plan' | 'day_detail'
+  // Navigation & View state: 'chat' | 'wizard' | 'project'
   const [currentView, setCurrentView] = useState('chat');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -53,9 +48,6 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
   const [activeProject, setActiveProject] = useState(null);
-  const [selectedDayNumber, setSelectedDayNumber] = useState(1);
-  const [selectedTopicId, setSelectedTopicId] = useState(null);
-  const [isGeneratingLesson, setIsGeneratingLesson] = useState(false);
 
   // Wizard Form State
   const [wizardStep, setWizardStep] = useState(1);
@@ -71,7 +63,6 @@ export default function App() {
 
   const fileInputRef = useRef(null);
   const wizardFileInputRef = useRef(null);
-  const projectAddFileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
 
@@ -161,7 +152,7 @@ export default function App() {
     e.target.value = '';
   };
 
-  // Upload Multi-File per Wizard (Supporta selezione multipla e aggiunte successive)
+  // Upload Multi-File per Wizard
   const handleWizardFilesChange = (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
@@ -189,123 +180,18 @@ export default function App() {
     setWizardUploadedFiles(prev => prev.filter(f => f.id !== fileId));
   };
 
-  // Aggiunta file direttamente dalla Pagina Progetto
-  const handleProjectAddFiles = (e) => {
-    const files = Array.from(e.target.files);
-    if (!files.length || !activeProject) return;
-
-    files.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const newFileObj = {
-          id: Date.now() + Math.random(),
-          name: file.name,
-          mimeType: file.type || 'application/octet-stream',
-          size: (file.size / 1024).toFixed(1) + ' KB',
-          base64: reader.result,
-        };
-
-        const updatedFiles = [...(activeProject.files || []), newFileObj];
-        const updatedProject = { ...activeProject, files: updatedFiles };
-        setActiveProject(updatedProject);
-        setSavedProjects(prev => prev.map(p => p.id === activeProject.id ? updatedProject : p));
-      };
-      reader.readAsDataURL(file);
-    });
-    e.target.value = '';
-  };
-
-  // Helper calcolo giorni mancanti all'esame
-  const calculateDaysLeft = (targetDateStr) => {
-    if (!targetDateStr) return 30;
-    const target = new Date(targetDateStr);
-    const now = new Date();
-    const diffTime = target - now;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays > 0 ? diffDays : 1;
-  };
-
-  // Helper generatore Piano Giornaliero Intelligente
-  const generateDailySchedule = (subjectTitle, totalDays, prepLvl, filesList, typeExam) => {
-    const daysCount = Math.max(3, Math.min(totalDays, 60)); // limitiamo a un range realistico (3-60 giorni)
-    const schedule = [];
-    const baseDate = new Date();
-
-    // Moduli tematici tipici per la materia o dedotti dai file
-    const sampleTopics = [
-      "Basi e Principi Generali della Materia",
-      "Terminologia, Classificazioni e Concetti Chiave",
-      "Meccanismi Fondamentali ed Eziologia",
-      "Processi Cellulari, Danno e Risposta Infiammatoria",
-      "Quadri Clinici Principali e Morfologia",
-      "Patologie Sistemiche ed Esempi di Rilievo",
-      "Diagnostica, Biomarcatori e Tecniche d'Indagine",
-      "Correlazioni Anatomo-Cliniche e Fisiopatologiche",
-      "Complicanze, Prognosi ed Evoluzione",
-      "Casi di Studio, Domande Frequenti d'Esame",
-      "Integrazione delle Fonti e Mappe Concettuali",
-      "Ripasso Generale e Simulazione di Verifica"
-    ];
-
-    const topicsPerDay = prepLvl >= 85 ? 3 : 2;
-
-    for (let i = 1; i <= daysCount; i++) {
-      const dayDate = new Date(baseDate);
-      dayDate.setDate(baseDate.getDate() + (i - 1));
-
-      // Assegna fase
-      let phase = "Fase 1: Studio e Comprensione";
-      if (i > daysCount * 0.6) phase = "Fase 2: Consolidamento e Schemi";
-      if (i > daysCount * 0.85) phase = "Fase 3: Ripasso Finale e Simulazione";
-
-      // Argomenti del giorno
-      const topicIndex = (i - 1) % sampleTopics.length;
-      const mainTheme = sampleTopics[topicIndex];
-
-      const dayTopics = [];
-      for (let t = 1; t <= topicsPerDay; t++) {
-        dayTopics.push({
-          id: `d${i}_t${t}`,
-          title: `${mainTheme} - Parte ${t}: Focus su ${subjectTitle || 'argomento principale'}`,
-          difficulty: i % 3 === 0 ? 'Avanzato' : (i % 2 === 0 ? 'Intermedio' : 'Base'),
-          completed: false,
-          lesson: null,
-        });
-      }
-
-      schedule.push({
-        dayNumber: i,
-        date: dayDate.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-        dayTitle: `Giorno ${i}: ${mainTheme}`,
-        phase: phase,
-        topics: dayTopics,
-      });
-    }
-
-    return schedule;
-  };
-
-  // Transizione al Loading e creazione progetto con Piano Giornaliero
+  // Transizione al Loading e creazione progetto
   const handleFinalizeGuide = () => {
     setWizardStep(4);
     setLoadingProgress(0);
-    setLoadingStatusText('Scansione dei file e valutazione della loro lunghezza...');
-
-    const daysTotal = calculateDaysLeft(examDate);
+    setLoadingStatusText('Analisi dei parametri e delle preferenze...');
 
     const interval = setInterval(() => {
       setLoadingProgress(prev => {
         if (prev >= 98) {
           clearInterval(interval);
           setTimeout(() => {
-            const initialSchedule = generateDailySchedule(
-              examDescription || 'Materia Principale',
-              daysTotal,
-              prepLevel,
-              wizardUploadedFiles,
-              examType
-            );
-
+            // Crea oggetto progetto
             const newProject = {
               id: Date.now().toString(),
               createdAt: new Date().toISOString(),
@@ -315,14 +201,7 @@ export default function App() {
               examType: examType,
               languageStyle: languageStyle,
               sourceType: sourceType,
-              files: wizardUploadedFiles.map(f => ({
-                id: f.id,
-                name: f.name,
-                size: f.size,
-                mimeType: f.mimeType,
-                base64: f.base64
-              })),
-              schedule: initialSchedule,
+              files: wizardUploadedFiles.map(f => ({ name: f.name, size: f.size, mimeType: f.mimeType })),
             };
             setSavedProjects(old => [newProject, ...old]);
             setActiveProject(newProject);
@@ -330,100 +209,15 @@ export default function App() {
           }, 400);
           return 100;
         }
-        if (prev === 20) setLoadingStatusText('Calcolo della difficoltà degli argomenti e del carico giornaliero...');
-        if (prev === 55) setLoadingStatusText('Assegnazione degli argomenti specifici per ogni singolo giorno...');
-        if (prev === 85) setLoadingStatusText('Finalizzazione del piano di studio personalizzato...');
+        if (prev === 25) setLoadingStatusText('Elaborazione e indicizzazione dei materiali...');
+        if (prev === 60) setLoadingStatusText('Strutturazione del piano di studio personalizzato...');
+        if (prev === 85) setLoadingStatusText('Finalizzazione e calcolo delle scadenze...');
         return prev + 3;
       });
-    }, 55);
+    }, 60);
   };
 
-  // Generazione Lezione per un argomento specifico
-  const handleGenerateLesson = async (dayNum, topic) => {
-    if (isGeneratingLesson || !activeProject) return;
-    setIsGeneratingLesson(true);
-
-    try {
-      const res = await fetch('/.netlify/functions/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          isLessonGeneration: true,
-          topicTitle: topic.title,
-          sourceType: activeProject.sourceType,
-          files: activeProject.sourceType === 'my_materials' ? activeProject.files : [],
-          prompt: `Genera una lezione/riassunto strutturato e approfondito per l'argomento: "${topic.title}".
-Dettagli esame: ${activeProject.description}, livello target: ${activeProject.prepLevel}%, stile: ${activeProject.languageStyle}.
-${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusivamente le fonti fornite nei file allegati. Non inventare o aggiungere nozioni esterne.' : 'Usa le migliori nozioni accademiche e scientifiche online.'}`
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Errore nella generazione della lezione.');
-
-      const lessonContent = data.reply;
-
-      // Aggiorna il piano di studio con la lezione generata
-      const updatedSchedule = activeProject.schedule.map(d => {
-        if (d.dayNumber === dayNum) {
-          const updatedTopics = d.topics.map(t => {
-            if (t.id === topic.id) {
-              return { ...t, lesson: lessonContent };
-            }
-            return t;
-          });
-          return { ...d, topics: updatedTopics };
-        }
-        return d;
-      });
-
-      const updatedProject = { ...activeProject, schedule: updatedSchedule };
-      setActiveProject(updatedProject);
-      setSavedProjects(prev => prev.map(p => p.id === activeProject.id ? updatedProject : p));
-    } catch (err) {
-      alert(`Errore: ${err.message}`);
-    } finally {
-      setIsGeneratingLesson(false);
-    }
-  };
-
-  // Toggle completamento argomento
-  const handleToggleTopicComplete = (dayNum, topicId) => {
-    if (!activeProject) return;
-    const updatedSchedule = activeProject.schedule.map(d => {
-      if (d.dayNumber === dayNum) {
-        const updatedTopics = d.topics.map(t => {
-          if (t.id === topicId) {
-            return { ...t, completed: !t.completed };
-          }
-          return t;
-        });
-        return { ...d, topics: updatedTopics };
-      }
-      return d;
-    });
-
-    const updatedProject = { ...activeProject, schedule: updatedSchedule };
-    setActiveProject(updatedProject);
-    setSavedProjects(prev => prev.map(p => p.id === activeProject.id ? updatedProject : p));
-  };
-
-  // Calcolo progresso globale piano di studio
-  const calculateGlobalProgress = () => {
-    if (!activeProject?.schedule) return { completed: 0, total: 0, percent: 0 };
-    let total = 0;
-    let completed = 0;
-    activeProject.schedule.forEach(d => {
-      d.topics.forEach(t => {
-        total++;
-        if (t.completed) completed++;
-      });
-    });
-    const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
-    return { completed, total, percent };
-  };
-
-  // Invio messaggio Chat Classica
+  // Invio messaggio Chat
   const handleSendMessage = async (textToSend = inputPrompt) => {
     const prompt = textToSend.trim();
     if (!prompt && !attachedFile) return;
@@ -493,15 +287,23 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
     e.target.style.height = Math.min(e.target.scrollHeight, 180) + 'px';
   };
 
+  // Helper calcolo giorni mancanti all'esame
+  const calculateDaysLeft = (targetDateStr) => {
+    if (!targetDateStr) return null;
+    const target = new Date(targetDateStr);
+    const now = new Date();
+    const diffTime = target - now;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays >= 0 ? diffDays : 0;
+  };
+
+  // Helper etichette livello preparazione
   const getPrepLabel = (lvl) => {
     if (lvl <= 35) return 'Basi minime essenziali (Superamento)';
     if (lvl <= 65) return 'Buona conoscenza generale';
     if (lvl <= 85) return 'Studio approfondito (Voto alto)';
     return 'Padronanza totale & Dettagli (30 e Lode)';
   };
-
-  const currentDayData = activeProject?.schedule?.find(d => d.dayNumber === selectedDayNumber);
-  const currentSelectedTopic = currentDayData?.topics?.find(t => t.id === selectedTopicId) || currentDayData?.topics?.[0];
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-geminiDark text-gray-200 relative">
@@ -557,14 +359,14 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
                       setIsSidebarOpen(false);
                     }}
                     className={`group flex items-center justify-between px-3 py-2 rounded-xl text-sm cursor-pointer transition ${
-                      activeProject?.id === proj.id && (currentView === 'project' || currentView === 'study_plan' || currentView === 'day_detail')
+                      activeProject?.id === proj.id && currentView === 'project'
                         ? 'bg-blue-600/20 text-blue-300 font-medium border border-blue-500/40'
                         : 'text-gray-300 hover:bg-geminiHover/50'
                     }`}
                   >
                     <div className="flex items-center gap-2 truncate pr-2">
                       <Target size={14} className="text-blue-400 shrink-0" />
-                      <span className="truncate">{proj.description?.slice(0, 22) || 'Progetto'}...</span>
+                      <span className="truncate">{proj.description.slice(0, 22)}...</span>
                     </div>
                     <button
                       onClick={(e) => handleDeleteProject(e, proj.id)}
@@ -648,6 +450,7 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
             </div>
           </div>
 
+          {/* PULSANTE IN ALTO "CREA GUIDA ALLO STUDIO" */}
           <div className="flex items-center gap-2">
             <button 
               onClick={handleStartWizard}
@@ -674,7 +477,7 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
                   </div>
                   <div>
                     <h2 className="text-xl font-bold text-gray-100">Quando hai l'esame?</h2>
-                    <p className="text-xs text-gray-400">Seleziona la data per strutturare il calendario giornaliero.</p>
+                    <p className="text-xs text-gray-400">Seleziona la data prevista per calcolare i ritmi di studio.</p>
                   </div>
                 </div>
 
@@ -764,12 +567,12 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
                     rows={2}
                     value={examDescription}
                     onChange={(e) => setExamDescription(e.target.value)}
-                    placeholder="Es. Anatomia Patologica, basi molecolari, infiammazione, neoplasie..."
+                    placeholder="Es. Anatomia Patologica, basi cellulari, oncologia generale..."
                     className="w-full bg-geminiDark border border-geminiBorder rounded-2xl p-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition resize-none"
                   />
                 </div>
 
-                {/* TIPO DI ESAME */}
+                {/* SELETTORE A PALLINI: TIPO DI ESAME */}
                 <div className="space-y-2">
                   <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
                     Tipologia di prova
@@ -802,7 +605,7 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
                   </div>
                 </div>
 
-                {/* STILE ESPOSITIVO */}
+                {/* SELETTORE A PALLINI: LINGUAGGIO / STILE */}
                 <div className="space-y-2">
                   <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
                     Stile espositivo
@@ -835,7 +638,7 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
                   </div>
                 </div>
 
-                {/* NAVIGAZIONE */}
+                {/* BOTTONI NAVIGAZIONE */}
                 <div className="flex justify-between items-center pt-4 border-t border-geminiBorder/60">
                   <button 
                     onClick={() => setWizardStep(1)}
@@ -855,7 +658,7 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
               </div>
             )}
 
-            {/* STEP 3: FONTI (MATERIALE PROPRIO CON UPLOAD MULTIPLO O CERCA ONLINE) */}
+            {/* STEP 3: FONTI (MATERIALE PROPRIO O CERCA ONLINE) */}
             {wizardStep === 3 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
                 <div className="flex items-center gap-3">
@@ -864,7 +667,7 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
                   </div>
                   <div>
                     <h2 className="text-xl font-bold text-gray-100">Fonti di Studio</h2>
-                    <p className="text-xs text-gray-400">Scegli se basarti sui tuoi file o effettuare ricerche online.</p>
+                    <p className="text-xs text-gray-400">Scegli da dove attingere per costruire la guida.</p>
                   </div>
                 </div>
 
@@ -892,7 +695,7 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
                     </div>
                     <div>
                       <div className="font-semibold text-sm text-gray-100">Usa il mio materiale</div>
-                      <div className="text-[11px] text-gray-400 mt-0.5">Carica più PDF, dispense, slide o appunti.</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">Carica PDF, appunti o slide personali.</div>
                     </div>
                   </div>
 
@@ -918,20 +721,20 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
                     </div>
                     <div>
                       <div className="font-semibold text-sm text-gray-100">Cerca online</div>
-                      <div className="text-[11px] text-gray-400 mt-0.5">L'AI ricercherà e integrerà nozioni accademiche online.</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">L'AI ricercherà le nozioni e la bibliografia online.</div>
                     </div>
                   </div>
                 </div>
 
-                {/* CARICAMENTO MULTIPLO FILE */}
+                {/* SE SELEZIONA "USA IL MIO MATERIALE": TENDINA DI CARICAMENTO FILE */}
                 {sourceType === 'my_materials' && (
                   <div className="space-y-3 pt-2 bg-geminiDark/60 p-4 rounded-2xl border border-geminiBorder/70">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
                         <FileText size={14} className="text-blue-400" />
-                        <span>Carica tutti i tuoi file di studio</span>
+                        <span>Carica i tuoi file</span>
                       </label>
-                      <span className="text-[11px] text-blue-400 font-semibold">{wizardUploadedFiles.length} file selezionati</span>
+                      <span className="text-[11px] text-gray-400">{wizardUploadedFiles.length} file caricati</span>
                     </div>
 
                     <input 
@@ -945,23 +748,23 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
 
                     <div 
                       onClick={() => wizardFileInputRef.current?.click()}
-                      className="border-2 border-dashed border-geminiBorder hover:border-blue-500 rounded-2xl p-4 text-center cursor-pointer transition bg-geminiDarkSecondary/40 hover:bg-geminiDarkSecondary group"
+                      className="border-2 border-dashed border-geminiBorder hover:border-blue-500 rounded-2xl p-4 text-center cursor-pointer transition bg-geminiDarkSecondary/40 hover:bg-geminiDarkSecondary"
                     >
-                      <UploadCloud size={26} className="mx-auto text-blue-400 mb-1.5 group-hover:scale-110 transition" />
-                      <div className="text-xs font-medium text-gray-200">Seleziona uno o più file (PDF, DOCX, TXT, immagini)</div>
-                      <div className="text-[10px] text-gray-500 mt-0.5">Puoi cliccare più volte per aggiungere altri documenti</div>
+                      <UploadCloud size={24} className="mx-auto text-blue-400 mb-1.5" />
+                      <div className="text-xs font-medium text-gray-200">Clicca per selezionare tutti i file che desideri</div>
+                      <div className="text-[10px] text-gray-500 mt-0.5">PDF, DOCX, TXT o immagini/slide</div>
                     </div>
 
                     {/* LISTA DEI FILE CARICATI */}
                     {wizardUploadedFiles.length > 0 && (
-                      <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                      <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
                         {wizardUploadedFiles.map(file => (
                           <div 
                             key={file.id}
                             className="flex items-center justify-between px-3 py-2 rounded-xl bg-geminiDarkSecondary border border-geminiBorder text-xs text-gray-200"
                           >
                             <div className="flex items-center gap-2 truncate pr-2">
-                              <FileCheck size={14} className="text-emerald-400 shrink-0" />
+                              <FileCheck size={14} className="text-blue-400 shrink-0" />
                               <span className="truncate font-medium">{file.name}</span>
                               <span className="text-gray-400 text-[10px]">({file.size})</span>
                             </div>
@@ -979,7 +782,7 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
                   </div>
                 )}
 
-                {/* NAVIGAZIONE */}
+                {/* BOTTONI NAVIGAZIONE */}
                 <div className="flex justify-between items-center pt-4 border-t border-geminiBorder/60">
                   <button 
                     onClick={() => setWizardStep(2)}
@@ -993,13 +796,13 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
                     className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-full text-sm font-semibold transition shadow-lg shadow-blue-600/30"
                   >
                     <Sparkles size={16} />
-                    <span>Genera Guida e Piano</span>
+                    <span>Genera Guida</span>
                   </button>
                 </div>
               </div>
             )}
 
-            {/* STEP 4: CARICAMENTO DINAMICO 0-100% */}
+            {/* STEP 4: CARICAMENTO 0-100% */}
             {wizardStep === 4 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-8 sm:p-12 rounded-3xl shadow-2xl text-center space-y-6 max-w-md mx-auto w-full">
                 <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
@@ -1008,7 +811,7 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
                 </div>
 
                 <div className="space-y-2">
-                  <h3 className="text-xl font-bold text-gray-100">Valutazione dei Materiali</h3>
+                  <h3 className="text-xl font-bold text-gray-100">Creazione della Guida in corso</h3>
                   <p className="text-xs text-gray-400 h-6 transition-all">{loadingStatusText}</p>
                 </div>
 
@@ -1034,7 +837,7 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
         {currentView === 'project' && activeProject && (
           <main className="flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-4xl mx-auto w-full space-y-6">
             
-            {/* BARRA SUPERIORE */}
+            {/* BARRA SUPERIORE PROGETTO */}
             <div className="flex items-center justify-between pb-2 border-b border-geminiBorder/40">
               <button 
                 onClick={() => setCurrentView('chat')}
@@ -1049,7 +852,7 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
               </span>
             </div>
 
-            {/* BANNER PRINCIPALE */}
+            {/* BANNER PRINCIPALE PROGETTO */}
             <div className="bg-gradient-to-br from-geminiDarkSecondary via-geminiDarkSecondary to-blue-950/20 border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-xl space-y-4">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="space-y-1">
@@ -1063,6 +866,7 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
                   </h1>
                 </div>
 
+                {/* BADGE CONTO ALLA ROVESCIA */}
                 <div className="bg-geminiDark border border-geminiBorder px-4 py-2.5 rounded-2xl text-center shadow-md">
                   <div className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Mancano</div>
                   <div className="text-xl font-extrabold text-blue-400">
@@ -1072,7 +876,7 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
                 </div>
               </div>
 
-              {/* PILLS RIEPILOGO */}
+              {/* PILLS RIEPILOGO PREFERENZE */}
               <div className="flex flex-wrap gap-2 pt-2">
                 <span className="bg-geminiHover border border-geminiBorder px-3 py-1.5 rounded-xl text-xs text-gray-300 flex items-center gap-1.5">
                   <Target size={13} className="text-blue-400" />
@@ -1089,10 +893,10 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
               </div>
             </div>
 
-            {/* GRIGLIA CARDS */}
+            {/* GRIGLIA CARDS RIEPILOGATIVE */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               
-              {/* CARD MATERIALI CON TASTO '+' PER AGGIUNGERNE ALTRI */}
+              {/* CARD 1: MATERIALI & FONTI */}
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 rounded-3xl shadow-sm space-y-4">
                 <div className="flex items-center justify-between border-b border-geminiBorder/60 pb-3">
                   <div className="flex items-center gap-2.5 font-bold text-base text-gray-100">
@@ -1100,81 +904,55 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
                     <span>Materiali e Fonti</span>
                   </div>
                   <span className="text-xs text-gray-400">
-                    {activeProject.sourceType === 'my_materials' ? `${activeProject.files?.length || 0} file` : 'Online'}
+                    {activeProject.sourceType === 'my_materials' ? `${activeProject.files.length} file` : 'Online'}
                   </span>
                 </div>
 
                 {activeProject.sourceType === 'my_materials' ? (
-                  <div className="space-y-3">
-                    {activeProject.files && activeProject.files.length > 0 ? (
-                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                        {activeProject.files.map((f, i) => (
-                          <div key={i} className="flex items-center justify-between p-2.5 rounded-xl bg-geminiDark border border-geminiBorder text-xs">
-                            <div className="flex items-center gap-2 truncate">
-                              <FileCheck size={14} className="text-emerald-400 shrink-0" />
-                              <span className="font-medium truncate">{f.name}</span>
-                            </div>
-                            <span className="text-gray-400 text-[11px] shrink-0 ml-2">{f.size}</span>
+                  activeProject.files.length > 0 ? (
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {activeProject.files.map((f, i) => (
+                        <div key={i} className="flex items-center justify-between p-2.5 rounded-xl bg-geminiDark border border-geminiBorder text-xs">
+                          <div className="flex items-center gap-2 truncate">
+                            <FileCheck size={14} className="text-emerald-400 shrink-0" />
+                            <span className="font-medium truncate">{f.name}</span>
                           </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-xs text-gray-500 py-2 text-center">Nessun file presente.</div>
-                    )}
-
-                    {/* PULSANTE '+' PER AGGIUNGERE ALTRI FILE */}
-                    <input 
-                      type="file" 
-                      ref={projectAddFileInputRef}
-                      multiple
-                      onChange={handleProjectAddFiles}
-                      accept=".pdf,.txt,.doc,.docx,image/*"
-                      className="hidden"
-                    />
-                    <button 
-                      onClick={() => projectAddFileInputRef.current?.click()}
-                      className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-geminiDark hover:bg-geminiHover border border-dashed border-geminiBorder hover:border-blue-500 text-xs font-medium text-blue-400 transition"
-                    >
-                      <Plus size={14} />
-                      <span>Aggiungi altre fonti / file</span>
-                    </button>
-                  </div>
+                          <span className="text-gray-400 text-[11px] shrink-0 ml-2">{f.size}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-gray-500 py-4 text-center">Nessun file caricato manualmente.</div>
+                  )
                 ) : (
                   <div className="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300 flex items-center gap-3">
                     <Globe size={20} className="shrink-0" />
-                    <span>La guida utilizza ricerche accademiche online per strutturare le lezioni.</span>
+                    <span>La guida utilizzerà la ricerca web e nozioni accademiche online per elaborare i contenuti.</span>
                   </div>
                 )}
               </div>
 
-              {/* CARD PIANO DI STUDIO (PORTA ALLA PAGINA GIORNALIERA) */}
+              {/* CARD 2: PROSSIMI PASSI & INTERAZIONE AI */}
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 rounded-3xl shadow-sm space-y-4 flex flex-col justify-between">
                 <div>
                   <div className="flex items-center gap-2.5 font-bold text-base text-gray-100 border-b border-geminiBorder/60 pb-3">
                     <Sparkles size={18} className="text-indigo-400" />
-                    <span>Piano di Studio Giornaliero</span>
+                    <span>Piano di Studio Pronto</span>
                   </div>
                   <p className="text-xs text-gray-400 mt-3 leading-relaxed">
-                    Il piano ha suddiviso la preparazione di <strong>{activeProject.description}</strong> in base alla difficoltà e al materiale. Accedi al programma giorno per giorno e genera lezioni su misura.
+                    I tuoi materiali e le preferenze per l'esame di <strong>{activeProject.description}</strong> sono stati registrati con successo. Nelle prossime iterazioni potrai generare quiz e schemi specifici da questa schermata.
                   </p>
-                  
-                  {/* STATISTICHE RAPIDE */}
-                  <div className="mt-4 p-3 bg-geminiDark rounded-2xl border border-geminiBorder flex items-center justify-between text-xs">
-                    <span className="text-gray-400">Progresso piano:</span>
-                    <span className="font-bold text-emerald-400">
-                      {calculateGlobalProgress().completed} / {calculateGlobalProgress().total} argomenti ({calculateGlobalProgress().percent}%)
-                    </span>
-                  </div>
                 </div>
 
-                {/* PULSANTE "AVVIA STUDIO CON IL TUTOR AI" -> APRE IL PIANO GIORNALIERO */}
                 <button 
-                  onClick={() => setCurrentView('study_plan')}
-                  className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-lg shadow-blue-600/30 transition transform active:scale-98"
+                  onClick={() => {
+                    setCurrentView('chat');
+                    handleSendMessage(`Ho configurato la mia guida allo studio per l'esame di "${activeProject.description}" previsto il ${activeProject.examDate}. Il mio livello target è ${activeProject.prepLevel}%, stile ${activeProject.languageStyle} per una prova ${activeProject.examType}. Fammi una proposta di programma di studio suddivisa per le prossime settimane.`);
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-600/30 transition"
                 >
                   <Sparkles size={15} />
                   <span>Avvia studio con il Tutor AI</span>
-                  <ArrowRight size={14} />
                 </button>
               </div>
 
@@ -1184,290 +962,7 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* VISTA 3: PIANO DI STUDIO GIORNALIERO (LISTA DEI GIORNI)       */}
-        {/* ------------------------------------------------------------- */}
-        {currentView === 'study_plan' && activeProject && (
-          <main className="flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-4xl mx-auto w-full space-y-6">
-            
-            {/* HEADER DEL PIANO */}
-            <div className="flex items-center justify-between pb-2 border-b border-geminiBorder/40">
-              <button 
-                onClick={() => setCurrentView('project')}
-                className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white transition"
-              >
-                <ArrowLeft size={14} />
-                <span>Torna al Progetto</span>
-              </button>
-              
-              <div className="text-xs text-gray-400">
-                Materia: <strong className="text-gray-200">{activeProject.description}</strong>
-              </div>
-            </div>
-
-            {/* BANNER RIEPILOGO STATISTICHE */}
-            <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 rounded-3xl shadow-lg flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-bold text-gray-100 flex items-center gap-2">
-                  <BookMarked className="text-blue-400" size={22} />
-                  <span>Programma Giornaliero di Studio</span>
-                </h2>
-                <p className="text-xs text-gray-400 mt-1">
-                  Clicca su un giorno per visualizzare gli argomenti e generare le relative lezioni.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-4">
-                <div className="bg-geminiDark px-4 py-2.5 rounded-2xl border border-geminiBorder text-center">
-                  <div className="text-[10px] text-gray-400 uppercase font-bold">Giorni Totali</div>
-                  <div className="text-lg font-bold text-blue-400">{activeProject.schedule?.length || 0}</div>
-                </div>
-                <div className="bg-geminiDark px-4 py-2.5 rounded-2xl border border-geminiBorder text-center">
-                  <div className="text-[10px] text-gray-400 uppercase font-bold">Completamento</div>
-                  <div className="text-lg font-bold text-emerald-400">{calculateGlobalProgress().percent}%</div>
-                </div>
-              </div>
-            </div>
-
-            {/* LISTA DEI GIORNI */}
-            <div className="space-y-3.5 pb-12">
-              {activeProject.schedule?.map(day => {
-                const dayCompletedTopics = day.topics.filter(t => t.completed).length;
-                const isDayAllDone = dayCompletedTopics === day.topics.length && day.topics.length > 0;
-
-                return (
-                  <div 
-                    key={day.dayNumber}
-                    onClick={() => {
-                      setSelectedDayNumber(day.dayNumber);
-                      setSelectedTopicId(day.topics[0]?.id || null);
-                      setCurrentView('day_detail');
-                    }}
-                    className={`p-4 sm:p-5 rounded-2xl border cursor-pointer transition flex items-center justify-between group ${
-                      isDayAllDone 
-                        ? 'bg-emerald-950/20 border-emerald-500/40 hover:border-emerald-500'
-                        : 'bg-geminiDarkSecondary border-geminiBorder hover:border-blue-500 hover:bg-geminiDarkSecondary/90'
-                    }`}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-sm shrink-0 ${
-                        isDayAllDone 
-                          ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20' 
-                          : 'bg-geminiDark border border-geminiBorder text-blue-400 group-hover:border-blue-500'
-                      }`}>
-                        {isDayAllDone ? <CheckCircle2 size={20} /> : `G${day.dayNumber}`}
-                      </div>
-
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] font-semibold text-blue-400 uppercase tracking-wider">{day.date}</span>
-                          <span className="text-gray-500">•</span>
-                          <span className="text-[11px] text-gray-400">{day.phase}</span>
-                        </div>
-                        <h3 className="text-sm sm:text-base font-bold text-gray-100 group-hover:text-blue-300 transition">
-                          {day.dayTitle}
-                        </h3>
-                        <div className="text-xs text-gray-400 mt-0.5">
-                          {day.topics.length} argomenti previsti ({dayCompletedTopics} completati)
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <span className="hidden sm:inline-block text-xs font-medium text-gray-400 group-hover:text-gray-200 transition">
-                        Visualizza lezioni
-                      </span>
-                      <div className="w-8 h-8 rounded-full bg-geminiDark flex items-center justify-center text-gray-400 group-hover:text-white group-hover:bg-blue-600 transition">
-                        <ChevronRight size={16} />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-          </main>
-        )}
-
-        {/* ------------------------------------------------------------- */}
-        {/* VISTA 4: DETTAGLIO GIORNO & GENERATORE LEZIONE SU MISURA      */}
-        {/* ------------------------------------------------------------- */}
-        {currentView === 'day_detail' && activeProject && currentDayData && (
-          <main className="flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-4xl mx-auto w-full space-y-6">
-            
-            {/* HEADER GIORNO */}
-            <div className="flex items-center justify-between pb-2 border-b border-geminiBorder/40">
-              <button 
-                onClick={() => setCurrentView('study_plan')}
-                className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white transition"
-              >
-                <ArrowLeft size={14} />
-                <span>Torna al Piano Giornaliero</span>
-              </button>
-              
-              <div className="flex items-center gap-2 text-xs text-gray-400">
-                <CalendarIcon size={14} className="text-blue-400" />
-                <span>{currentDayData.date}</span>
-              </div>
-            </div>
-
-            {/* TITOLO GIORNO */}
-            <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 rounded-3xl shadow-lg space-y-2">
-              <div className="text-xs font-semibold text-blue-400 uppercase tracking-wider">{currentDayData.phase}</div>
-              <h2 className="text-xl sm:text-2xl font-bold text-gray-100">
-                {currentDayData.dayTitle}
-              </h2>
-              <p className="text-xs text-gray-400">
-                Seleziona un argomento dall'elenco sottostante per generare la lezione basata {activeProject.sourceType === 'my_materials' ? 'esclusivamente sulle tue fonti' : 'sulle nozioni accademiche online'}.
-              </p>
-            </div>
-
-            {/* SELETTORE ARGOMENTI DEL GIORNO */}
-            <div className="space-y-3">
-              <div className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                Argomenti da studiare oggi:
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {currentDayData.topics.map(topic => (
-                  <div
-                    key={topic.id}
-                    onClick={() => setSelectedTopicId(topic.id)}
-                    className={`p-4 rounded-2xl border cursor-pointer transition flex items-start justify-between ${
-                      currentSelectedTopic?.id === topic.id
-                        ? 'bg-blue-600/15 border-blue-500 shadow-md ring-1 ring-blue-500/50'
-                        : 'bg-geminiDarkSecondary border-geminiBorder hover:border-gray-500'
-                    }`}
-                  >
-                    <div className="space-y-1.5 pr-2">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                          topic.difficulty === 'Avanzato' ? 'bg-red-500/15 text-red-400 border border-red-500/20' :
-                          topic.difficulty === 'Intermedio' ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20' :
-                          'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
-                        }`}>
-                          {topic.difficulty}
-                        </span>
-                        {topic.lesson && (
-                          <span className="text-[10px] bg-blue-500/15 text-blue-400 px-2 py-0.5 rounded-md border border-blue-500/20">
-                            Lezione pronta
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs font-bold text-gray-200 leading-relaxed">
-                        {topic.title}
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleToggleTopicComplete(currentDayData.dayNumber, topic.id);
-                      }}
-                      className="p-1 text-gray-400 hover:text-emerald-400 transition"
-                      title={topic.completed ? "Segna come da fare" : "Segna come completato"}
-                    >
-                      {topic.completed ? (
-                        <CheckSquare size={18} className="text-emerald-400" />
-                      ) : (
-                        <Square size={18} />
-                      )}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* SEZIONE DETTAGLIO ARGOMENTO & LEZIONE GENERATA */}
-            {currentSelectedTopic && (
-              <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-xl space-y-6">
-                
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-geminiBorder/60 pb-4">
-                  <div>
-                    <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">Dettaglio Studio</span>
-                    <h3 className="text-lg font-bold text-gray-100 mt-0.5">{currentSelectedTopic.title}</h3>
-                  </div>
-
-                  {/* PULSANTE GENERA LEZIONE */}
-                  <button
-                    onClick={() => handleGenerateLesson(currentDayData.dayNumber, currentSelectedTopic)}
-                    disabled={isGeneratingLesson}
-                    className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition shadow-lg ${
-                      isGeneratingLesson 
-                        ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
-                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/30'
-                    }`}
-                  >
-                    {isGeneratingLesson ? (
-                      <>
-                        <RefreshCw size={14} className="animate-spin" />
-                        <span>Generazione lezione in corso...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles size={15} />
-                        <span>{currentSelectedTopic.lesson ? 'Rigenera lezione' : 'Genera lezione'}</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {/* VISUALIZZAZIONE CONTENUTO LEZIONE */}
-                {isGeneratingLesson ? (
-                  <div className="py-16 text-center space-y-4">
-                    <div className="w-12 h-12 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 mx-auto animate-bounce">
-                      <Sparkles size={24} />
-                    </div>
-                    <div className="space-y-1">
-                      <div className="text-sm font-semibold text-gray-200">Elaborazione della lezione personalizzata...</div>
-                      <div className="text-xs text-gray-400">
-                        {activeProject.sourceType === 'my_materials' 
-                          ? 'Estrazione dei concetti chiave esclusivamente dai file caricati.' 
-                          : 'Ricerche accademiche e strutturazione pedagogica.'}
-                      </div>
-                    </div>
-                  </div>
-                ) : currentSelectedTopic.lesson ? (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between text-xs text-gray-400 bg-geminiDark p-3 rounded-2xl border border-geminiBorder">
-                      <div className="flex items-center gap-2">
-                        <BookOpen size={15} className="text-blue-400" />
-                        <span>Fonte: <strong>{activeProject.sourceType === 'my_materials' ? 'Esclusivamente dai file caricati' : 'Ricerca accademica online'}</strong></span>
-                      </div>
-                      <button
-                        onClick={() => handleToggleTopicComplete(currentDayData.dayNumber, currentSelectedTopic.id)}
-                        className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition ${
-                          currentSelectedTopic.completed 
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
-                            : 'bg-geminiHover text-gray-300 hover:text-white border border-geminiBorder'
-                        }`}
-                      >
-                        {currentSelectedTopic.completed ? <CheckCircle2 size={13} /> : <CheckSquare size={13} />}
-                        <span>{currentSelectedTopic.completed ? 'Studiato' : 'Segna come studiato'}</span>
-                      </button>
-                    </div>
-
-                    <div className="p-5 bg-geminiDark rounded-2xl border border-geminiBorder/70 text-sm leading-relaxed text-gray-200 whitespace-pre-wrap">
-                      {currentSelectedTopic.lesson}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="py-12 text-center bg-geminiDark/50 rounded-2xl border border-dashed border-geminiBorder p-6 space-y-3">
-                    <BookOpen size={28} className="mx-auto text-gray-500" />
-                    <div className="text-xs text-gray-300 font-medium">Nessuna lezione generata per questo argomento</div>
-                    <p className="text-[11px] text-gray-500 max-w-sm mx-auto">
-                      Clicca su <strong>"Genera lezione"</strong> in alto per ricevere una sintesi didattica basata {activeProject.sourceType === 'my_materials' ? 'sui tuoi file' : 'sulle fonti online'}.
-                    </p>
-                  </div>
-                )}
-
-              </div>
-            )}
-
-          </main>
-        )}
-
-        {/* ------------------------------------------------------------- */}
-        {/* VISTA 5: CHAT CLASSICA                                        */}
+        {/* VISTA 3: CHAT CLASSICA (HOME GEMINI-STYLE)                    */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'chat' && (
           <>
@@ -1554,6 +1049,7 @@ ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusi
               )}
             </main>
 
+            {/* INPUT BAR IN BASSO */}
             <footer className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-geminiDark via-geminiDark to-transparent">
               <div className="max-w-3xl mx-auto">
                 
