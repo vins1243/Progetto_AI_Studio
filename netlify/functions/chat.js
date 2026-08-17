@@ -1,87 +1,4 @@
 import OpenAI from 'openai';
-import pdfParse from 'pdf-parse';
-import mammoth from 'mammoth';
-import AdmZip from 'adm-zip';
-
-// Estrae il testo pulito da file PowerPoint (.pptx)
-function extractPptxText(buffer) {
-  try {
-    const zip = new AdmZip(buffer);
-    const zipEntries = zip.getEntries();
-    let fullText = '';
-    const slideEntries = zipEntries.filter(e => e.entryName.startsWith('ppt/slides/slide') && e.entryName.endsWith('.xml'));
-    
-    slideEntries.sort((a, b) => {
-      const numA = parseInt(a.entryName.match(/\d+/) || '0');
-      const numB = parseInt(b.entryName.match(/\d+/) || '0');
-      return numA - numB;
-    });
-
-    slideEntries.forEach((entry, idx) => {
-      const xml = entry.getData().toString('utf8');
-      const matches = xml.match(/<a:t[^>]*>(.*?)<\/a:t>/g);
-      if (matches) {
-        const slideText = matches.map(m => m.replace(/<[^>]+>/g, '')).join(' ');
-        fullText += `\n[Slide ${idx + 1}]: ${slideText}`;
-      }
-    });
-    return fullText;
-  } catch (e) {
-    console.error('Errore estrazione PPTX:', e);
-    return '';
-  }
-}
-
-// Estrazione universale del testo dai file caricati
-async function extractDocumentText(fileObj) {
-  if (!fileObj || !fileObj.base64) return { text: '', isImage: false };
-  
-  const mime = (fileObj.mimeType || '').toLowerCase();
-  const name = (fileObj.name || '').toLowerCase();
-  const rawBase64 = fileObj.base64.split(',')[1] || fileObj.base64;
-  const buffer = Buffer.from(rawBase64, 'base64');
-
-  if (mime.startsWith('image/')) {
-    return { text: '', isImage: true, base64: fileObj.base64, mime: fileObj.mimeType };
-  }
-
-  // 1. File PDF
-  if (mime.includes('pdf') || name.endsWith('.pdf')) {
-    try {
-      const pdfData = await pdfParse(buffer);
-      const clean = (pdfData.text || '').replace(/\r\n/g, '\n').replace(/\s+/g, ' ').trim();
-      return { text: clean, isImage: false };
-    } catch (err) {
-      console.error(`Errore parsing PDF ${fileObj.name}:`, err);
-      return { text: `[Documento PDF: ${fileObj.name} - Estrazione parziale]`, isImage: false };
-    }
-  }
-
-  // 2. File Word (.docx)
-  if (mime.includes('word') || mime.includes('document') || name.endsWith('.docx')) {
-    try {
-      const result = await mammoth.extractRawText({ buffer });
-      return { text: result.value || '', isImage: false };
-    } catch (err) {
-      console.error(`Errore parsing DOCX ${fileObj.name}:`, err);
-      return { text: `[Documento Word: ${fileObj.name}]`, isImage: false };
-    }
-  }
-
-  // 3. File PowerPoint (.pptx)
-  if (mime.includes('presentation') || mime.includes('powerpoint') || name.endsWith('.pptx')) {
-    const pptxText = extractPptxText(buffer);
-    return { text: pptxText, isImage: false };
-  }
-
-  // 4. File di testo semplice / Markdown / CSV
-  try {
-    const txt = buffer.toString('utf-8');
-    return { text: txt, isImage: false };
-  } catch (err) {
-    return { text: `[File allegato: ${fileObj.name}]`, isImage: false };
-  }
-}
 
 export const handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -96,6 +13,7 @@ export const handler = async (event) => {
       history, 
       file, 
       files, 
+      extractedText, // Testo pulito già estratto dal client da PDF, Word, PPTX o file di testo
       sourceType, 
       isLessonGeneration, 
       topicTitle,
@@ -116,49 +34,56 @@ export const handler = async (event) => {
 
     const openai = new OpenAI({ apiKey });
 
-    // Estrazione effettiva del testo da tutti i documenti (PDF, DOCX, PPTX, TXT, Immagini)
+    // Gestione immagini se presenti
     const allFiles = files && Array.isArray(files) ? files : (file ? [file] : []);
     const imageParts = [];
-    let fullExtractedCorpus = '';
-
     for (const f of allFiles) {
-      const extracted = await extractDocumentText(f);
-      if (extracted.isImage) {
+      if (f && f.base64 && (f.mimeType || '').startsWith('image/')) {
         imageParts.push({
           type: 'image_url',
           image_url: {
-            url: extracted.base64.startsWith('data:') ? extracted.base64 : `data:${extracted.mime || 'image/jpeg'};base64,${extracted.base64}`,
+            url: f.base64.startsWith('data:') ? f.base64 : `data:${f.mimeType || 'image/jpeg'};base64,${f.base64}`,
           },
         });
-      } else if (extracted.text) {
-        fullExtractedCorpus += `\n\n=== INIZIO FONTE: ${f.name} ===\n${extracted.text}\n=== FINE FONTE: ${f.name} ===\n`;
       }
     }
 
+    const documentContent = (extractedText || '').trim();
+
     // -------------------------------------------------------------
-    // AZIONE 1: GENERAZIONE SYLLABUS BASATA AL 100% SUL TESTO DEI FILE
+    // AZIONE 1: GENERAZIONE SYLLABUS BASATO AL 100% SULLE FONTI
     // -------------------------------------------------------------
     if (action === 'generate_syllabus') {
       const numDays = Math.max(3, Math.min(daysTotal || 30, 45));
 
-      const syllabusSystemPrompt = `Sei un professore universitario e pianificatore didattico di livello magistrale.
-Il tuo compito principale è ANALIZZARE ATTENTAMENTE il materiale di studio caricato dallo studente ed estrarre un piano di studio di esattamente ${numDays} giorni.
+      if (sourceType === 'my_materials' && !documentContent && imageParts.length === 0) {
+        return {
+          statusCode: 400,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            error: 'Nessun testo leggibile estratto dai file caricati. Assicurati che i documenti contengano testo selezionabile e non siano scansioni vuote.' 
+          }),
+        };
+      }
+
+      const syllabusSystemPrompt = `Sei un professore universitario e pianificatore didattico esperto.
+Il tuo compito è analizzare approfonditamente il testo estratto dai documenti dello studente e creare un piano di studio di esattamente ${numDays} giorni.
 
 REGOLE INDEROGABILI:
-1. FEDELTÀ ASSOLUTA ALLE FONTI: Tutti gli argomenti e capitoli del calendario devono provenire ESCLUSIVAMENTE dai documenti allegati (PDF, dispense, slide o appunti). NON inventare o aggiungere temi generici non trattati nelle fonti.
-2. PROGRESSIONE LOGICA: Organizza gli argomenti secondo un ordine didattico rigoroso e progressivo (o secondo l'ordine logico indicato dallo studente).
-3. VARIETÀ E DISTINZIONE: Ogni giorno ("dayTitle") deve avere 1, 2 o al massimo 3 argomenti specifici ("topics") estratti dai capitoli reali. Non duplicare argomenti e non usare suffissi come "Parte 1" o "Parte 2".
-4. FORMATO DI RISPOSTA: Restituisci ESCLUSIVAMENTE un JSON valido con il campo "schedule" contenente la lista dei giorni:
+1. FONTI ESCLUSIVE: Tutti i temi e argomenti del piano DEVONO provenire DIRETTAMENTE dai contenuti e capitoli presenti nel testo fornito. Non inventare nozioni o moduli generici non menzionati nel materiale.
+2. ORDINAMENTO LOGICO: Disponi gli argomenti secondo un percorso didattico coerente e progressivo.
+3. MODULARITÀ: Ogni giornata ("dayTitle") deve contenere 1, 2 o al massimo 3 argomenti ("topics") con titoli descrittivi e reali estratti dal testo.
+4. FORMATO DI RISPOSTA: Restituisci ESCLUSIVAMENTE un JSON valido con questa struttura:
 {
   "schedule": [
     {
       "dayNumber": 1,
-      "dayTitle": "Giorno 1: Titolo modulo estratto dai file",
+      "dayTitle": "Giorno 1: Titolo tema principale estratto dalle fonti",
       "phase": "Fase 1: Studio e Comprensione",
       "topics": [
         {
           "id": "d1_t1",
-          "title": "Titolo reale dell'argomento presente nel documento",
+          "title": "Titolo reale dell'argomento presente nel testo",
           "difficulty": "Fondamentale"
         }
       ]
@@ -166,24 +91,37 @@ REGOLE INDEROGABILI:
   ]
 }`;
 
-      // Inviamo fino a 65.000 caratteri di testo reale estratto per un'analisi approfondita e veloce
-      const trimmedCorpus = fullExtractedCorpus.slice(0, 65000);
-
       const syllabusUserPrompt = `Materia/Note studente: "${examDescription || 'Programma di Studio'}".
-Numero di giorni disponibili: ${numDays}.
-Livello di preparazione desiderato: ${prepLevel || 80}%.
+Giorni disponibili: ${numDays}.
+Livello target: ${prepLevel || 80}%.
 Stile: ${languageStyle || 'automatico'}.
 
-${trimmedCorpus ? `TESTO COMPLETO ESTRATTO DAI FILE CARICATI DALLO STUDENTE:\n${trimmedCorpus}` : 'Nessun testo estratto dai file. Struttura il piano in base alla materia indicata.'}
+${documentContent ? `TESTO COMPLETO ESTRATTO DAI DOCUMENTI DELLO STUDENTE:\n${documentContent.slice(0, 75000)}` : 'Nessun file testuale, basati sulla descrizione accademica.'}
 
-Estrai i capitoli e gli argomenti reali dai documenti e genera il JSON del piano di studio.`;
+Genera il piano di studio JSON rigorosamente vincolato alle fonti fornite.`;
+
+      const messages = [
+        { role: 'system', content: syllabusSystemPrompt }
+      ];
+
+      if (imageParts.length > 0) {
+        messages.push({
+          role: 'user',
+          content: [
+            { type: 'text', text: syllabusUserPrompt },
+            ...imageParts,
+          ],
+        });
+      } else {
+        messages.push({
+          role: 'user',
+          content: syllabusUserPrompt,
+        });
+      }
 
       const completion = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: syllabusSystemPrompt },
-          { role: 'user', content: syllabusUserPrompt }
-        ],
+        messages: messages,
         temperature: 0.2,
         response_format: { type: 'json_object' }
       });
@@ -206,20 +144,23 @@ Estrai i capitoli e gli argomenti reali dai documenti e genera il JSON del piano
       return {
         statusCode: 200,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ schedule: Array.isArray(parsed) && parsed.length > 0 ? parsed : null }),
+        body: JSON.stringify({ 
+          schedule: Array.isArray(parsed) && parsed.length > 0 ? parsed : null,
+          wordsAnalyzed: documentContent ? documentContent.split(/\s+/).length : 0
+        }),
       };
     }
 
     // -------------------------------------------------------------
-    // AZIONE 2: GENERAZIONE LEZIONE RIGOROSAMENTE VINCOLATA ALLE FONTI
+    // AZIONE 2: GENERAZIONE LEZIONE RIGOROSA
     // -------------------------------------------------------------
     if (isLessonGeneration) {
       const isStrict = sourceType === 'my_materials';
-      const lessonSystemPrompt = `Sei un docente universitario e tutor accademico.
-Il tuo obiettivo è redigere una lezione/riassunto specialistico, chiaro, altamente logico e approfondito sull'argomento richiesto.
+      const lessonSystemPrompt = `Sei un docente universitario e tutor accademico di altissimo livello.
+Il tuo compito è redigere una lezione/riassunto specialistico, chiaro, altamente logico e approfondito sull'argomento richiesto.
 
-${isStrict ? `REGOLA FONDAMENTALE E RIGIDA:
-Devi spiegare l'argomento basandoti UNICAMENTE ED ESCLUSIVAMENTE sulle informazioni, spiegazioni, definizioni, formule ed esempi PRESENTI NEI DOCUMENTI ALLEGATI DELLO STUDENTE.
+${isStrict ? `REGOLA INDEROGABILE:
+Devi spiegare l'argomento basandoti UNICAMENTE ED ESCLUSIVAMENTE sulle informazioni, spiegazioni, definizioni, formule ed esempi PRESENTI NEI TESTI ALLEGATI DELLO STUDENTE.
 NON aggiungere nozioni esterne da internet.
 Il tuo compito è rendere il materiale originale molto più chiaro, ordinato, schematizzato e pedagogico, senza inventare o deviare dalle fonti caricate.` : `Spiega l'argomento attingendo alle migliori nozioni scientifiche e accademiche di riferimento.`}
 
@@ -229,12 +170,10 @@ FORMATTAZIONE:
 - Usa elenchi puntati strutturati e tabelle comparative.
 - Per qualsiasi formula scientifica, chimica, medica, fisica o statistica, USA LA NOTAZIONE LaTeX ($formula$ o $$formula$$).`;
 
-      const trimmedLessonCorpus = fullExtractedCorpus.slice(0, 85000);
-
       const lessonUserPrompt = `Argomento della lezione: "${topicTitle}".
 Materia: "${examDescription || ''}", Livello target: ${prepLevel || 80}%, Stile: ${languageStyle || 'automatico'}.
 
-${trimmedLessonCorpus ? `FONTI DELLO STUDENTE ESTRATTE DAI FILE:\n${trimmedLessonCorpus}` : ''}
+${documentContent ? `TESTO DELLE FONTI DELLO STUDENTE:\n${documentContent.slice(0, 85000)}` : ''}
 
 Redigi la lezione didattica in modo chiaro, schematizzato e rigorosamente fedele alle fonti fornite.`;
 
@@ -291,8 +230,8 @@ Rispondi in modo chiaro, approfondito e pedagogico in formato Markdown con termi
     }
 
     let finalPromptText = prompt || '';
-    if (fullExtractedCorpus) {
-      finalPromptText += `\n\n--- DOCUMENTI ALLEGATI DALL'UTENTE ---\n${fullExtractedCorpus.slice(0, 60000)}`;
+    if (documentContent) {
+      finalPromptText += `\n\n--- TESTO DEI DOCUMENTI ALLEGATI DALL'UTENTE ---\n${documentContent.slice(0, 60000)}`;
     }
 
     if (imageParts.length > 0) {

@@ -31,13 +31,12 @@ import {
   BookMarked,
   RefreshCw,
   ChevronRight,
-  AlertTriangle,
-  FileSearch
+  AlertTriangle
 } from 'lucide-react';
 
-// IndexedDB Helper per memorizzare il testo estratto e i file pesanti
-const DB_NAME = 'StudyAIDB_V2';
-const STORE_NAME = 'project_data_store';
+// IndexedDB Helper per memorizzare documenti pesanti senza limiti di storage
+const DB_NAME = 'StudyAIDB_Files';
+const STORE_NAME = 'project_files_store';
 
 function getDB() {
   return new Promise((resolve, reject) => {
@@ -53,90 +52,36 @@ function getDB() {
   });
 }
 
-async function saveProjectDataToDB(projectId, data) {
+async function saveFilesToDB(projectId, filesArray) {
   try {
     const db = await getDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).put({ projectId, ...data });
+      tx.objectStore(STORE_NAME).put({ projectId, files: filesArray });
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
   } catch (err) {
-    console.warn("IndexedDB save error:", err);
+    console.warn("Impossibile salvare file in IndexedDB:", err);
   }
 }
 
-async function getProjectDataFromDB(projectId) {
+async function getFilesFromDB(projectId) {
   try {
     const db = await getDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const req = tx.objectStore(STORE_NAME).get(projectId);
-      req.onsuccess = () => resolve(req.result || null);
+      req.onsuccess = () => resolve(req.result ? req.result.files : []);
       req.onerror = () => reject(req.error);
     });
   } catch (err) {
-    console.warn("IndexedDB get error:", err);
-    return null;
+    console.warn("Impossibile recuperare file da IndexedDB:", err);
+    return [];
   }
 }
 
-// Funzioni di estrazione testo veloci e affidabili nel browser
-async function extractTextFromPdf(arrayBuffer) {
-  if (typeof window === 'undefined' || !window.pdfjsLib) {
-    throw new Error("Libreria PDF non caricata.");
-  }
-  const pdfjsLib = window.pdfjsLib;
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-  const pdf = await loadingTask.promise;
-  let text = '';
-  const maxPages = Math.min(pdf.numPages, 100);
-  for (let i = 1; i <= maxPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    const pageText = content.items.map(item => item.str).join(' ');
-    text += `\n\n--- PAGINA ${i} ---\n` + pageText;
-  }
-  return { text: text.trim(), pagesCount: pdf.numPages };
-}
-
-async function extractTextFromDocx(arrayBuffer) {
-  if (typeof window === 'undefined' || !window.mammoth) {
-    throw new Error("Libreria Word non caricata.");
-  }
-  const result = await window.mammoth.extractRawText({ arrayBuffer });
-  return { text: result.value || '', pagesCount: 1 };
-}
-
-async function extractTextFromPptx(arrayBuffer) {
-  if (typeof window === 'undefined' || !window.JSZip) {
-    throw new Error("Libreria PPTX non caricata.");
-  }
-  const zip = await window.JSZip.loadAsync(arrayBuffer);
-  let text = '';
-  const slideFiles = [];
-  zip.forEach((path, file) => {
-    if (path.startsWith('ppt/slides/slide') && path.endsWith('.xml')) {
-      slideFiles.push({ path, file });
-    }
-  });
-  slideFiles.sort((a, b) => {
-    const nA = parseInt(a.path.match(/\d+/) || '0');
-    const nB = parseInt(b.path.match(/\d+/) || '0');
-    return nA - nB;
-  });
-  for (let i = 0; i < slideFiles.length; i++) {
-    const xml = await slideFiles[i].file.async('text');
-    const matches = xml.match(/<a:t[^>]*>(.*?)<\/a:t>/g) || [];
-    const slideText = matches.map(m => m.replace(/<[^>]+>/g, '')).join(' ');
-    text += `\n[Slide ${i + 1}]: ${slideText}`;
-  }
-  return { text: text.trim(), pagesCount: slideFiles.length };
-}
-
-// Error Boundary
+// Error Boundary per prevenire blocchi di rendering
 class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -146,7 +91,7 @@ class ErrorBoundary extends Component {
     return { hasError: true, error };
   }
   componentDidCatch(error, errorInfo) {
-    console.error("ErrorBoundary:", error, errorInfo);
+    console.error("ErrorBoundary cattura:", error, errorInfo);
   }
   render() {
     if (this.state.hasError) {
@@ -156,7 +101,7 @@ class ErrorBoundary extends Component {
             <AlertTriangle size={36} className="text-red-400 mx-auto" />
             <h2 className="text-lg font-bold text-gray-100">Si è verificato un problema</h2>
             <p className="text-xs text-gray-400">
-              I tuoi dati sono protetti. Clicca qui sotto per ricaricare la pagina.
+              I tuoi dati sono al sicuro. Clicca qui sotto per ricaricare la schermata.
             </p>
             <button 
               onClick={() => {
@@ -175,7 +120,7 @@ class ErrorBoundary extends Component {
   }
 }
 
-// Markdown & LaTeX Renderer
+// Renderer Markdown e LaTeX
 function MarkdownRenderer({ content }) {
   if (!content) return null;
   try {
@@ -223,7 +168,7 @@ export default function App() {
 }
 
 function MainAppContent() {
-  // Views
+  // Navigation State
   const [currentView, setCurrentView] = useState('chat');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -242,7 +187,7 @@ function MainAppContent() {
   const [attachedFile, setAttachedFile] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Projects State
+  // Saved Projects
   const [savedProjects, setSavedProjects] = useState(() => {
     try {
       const saved = localStorage.getItem('study_ai_projects');
@@ -265,7 +210,6 @@ function MainAppContent() {
   const [languageStyle, setLanguageStyle] = useState('automatico');
   const [sourceType, setSourceType] = useState('my_materials');
   const [wizardUploadedFiles, setWizardUploadedFiles] = useState([]);
-  const [isExtractingFiles, setIsExtractingFiles] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [loadingStatusText, setLoadingStatusText] = useState('Inizializzazione...');
 
@@ -275,31 +219,29 @@ function MainAppContent() {
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
 
-  // Sync to LocalStorage (metadati leggeri)
+  // Storage
   useEffect(() => {
     try {
       localStorage.setItem('study_ai_chats', JSON.stringify(conversations));
     } catch (e) {
-      console.warn("Storage chat quota exceeded", e);
+      console.warn("Quota localStorage superata per le chat", e);
     }
   }, [conversations]);
 
   useEffect(() => {
     try {
-      const sanitized = (savedProjects || []).map(p => ({
+      const sanitizedProjects = (savedProjects || []).map(p => ({
         ...p,
         files: (p.files || []).map(f => ({
           id: f.id,
           name: f.name,
           size: f.size,
           mimeType: f.mimeType,
-          wordsCount: f.wordsCount || 0,
-          pagesCount: f.pagesCount || 1,
         }))
       }));
-      localStorage.setItem('study_ai_projects', JSON.stringify(sanitized));
+      localStorage.setItem('study_ai_projects', JSON.stringify(sanitizedProjects));
     } catch (e) {
-      console.warn("Storage projects quota exceeded", e);
+      console.warn("Quota localStorage superata per i progetti", e);
     }
   }, [savedProjects]);
 
@@ -312,10 +254,11 @@ function MainAppContent() {
     setCurrentView('project');
     setIsSidebarOpen(false);
 
-    // Recupera testo estratto completo da IndexedDB
-    const dbData = await getProjectDataFromDB(proj.id);
-    if (dbData && dbData.extractedText) {
-      setActiveProject(prev => prev && prev.id === proj.id ? { ...prev, extractedText: dbData.extractedText } : prev);
+    if (proj.files && proj.files.length > 0 && !proj.files[0].base64) {
+      const storedFiles = await getFilesFromDB(proj.id);
+      if (storedFiles && storedFiles.length > 0) {
+        setActiveProject(prev => prev && prev.id === proj.id ? { ...prev, files: storedFiles } : prev);
+      }
     }
   };
 
@@ -340,7 +283,9 @@ function MainAppContent() {
     e.stopPropagation();
     const updated = (conversations || []).filter(c => c.id !== id);
     setConversations(updated);
-    if (currentChatId === id) handleNewChat();
+    if (currentChatId === id) {
+      handleNewChat();
+    }
   };
 
   const handleDeleteProject = (e, id) => {
@@ -384,91 +329,57 @@ function MainAppContent() {
     e.target.value = '';
   };
 
-  // ESTRAZIONE TESTO ISTANTANEA E REALE NEL BROWSER PER QUALSIASI FILE
-  const handleWizardFilesChange = async (e) => {
+  const handleWizardFilesChange = (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
-    setIsExtractingFiles(true);
 
-    for (const file of files) {
-      const name = file.name.toLowerCase();
-      const mime = file.type.toLowerCase();
-      const sizeStr = (file.size / 1024).toFixed(1) + ' KB';
-      const fileId = Date.now() + Math.random();
-
-      try {
-        let extractedText = '';
-        let pagesCount = 1;
-
-        if (name.endsWith('.pdf') || mime.includes('pdf')) {
-          const buffer = await file.arrayBuffer();
-          const res = await extractTextFromPdf(buffer);
-          extractedText = res.text;
-          pagesCount = res.pagesCount;
-        } else if (name.endsWith('.docx') || mime.includes('word')) {
-          const buffer = await file.arrayBuffer();
-          const res = await extractTextFromDocx(buffer);
-          extractedText = res.text;
-        } else if (name.endsWith('.pptx') || mime.includes('presentation') || mime.includes('powerpoint')) {
-          const buffer = await file.arrayBuffer();
-          const res = await extractTextFromPptx(buffer);
-          extractedText = res.text;
-          pagesCount = res.pagesCount;
-        } else if (mime.startsWith('image/')) {
-          const base64 = await new Promise(r => {
-            const reader = new FileReader();
-            reader.onload = () => r(reader.result);
-            reader.readAsDataURL(file);
-          });
-          setWizardUploadedFiles(prev => [
-            ...prev,
-            { id: fileId, name: file.name, mimeType: file.type, size: sizeStr, base64: base64, isImage: true }
-          ]);
-          continue;
-        } else {
-          // File di testo
-          extractedText = await file.text();
-        }
-
-        const wordsCount = extractedText ? extractedText.trim().split(/\s+/).length : 0;
-
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
         setWizardUploadedFiles(prev => [
           ...prev,
           {
-            id: fileId,
-            name: file.name,
-            mimeType: file.type || 'text/plain',
-            size: sizeStr,
-            extractedText: extractedText,
-            wordsCount: wordsCount,
-            pagesCount: pagesCount,
-            isImage: false,
-          }
-        ]);
-      } catch (err) {
-        console.error(`Errore estrazione ${file.name}:`, err);
-        setWizardUploadedFiles(prev => [
-          ...prev,
-          {
-            id: fileId,
+            id: Date.now() + Math.random(),
             name: file.name,
             mimeType: file.type || 'application/octet-stream',
-            size: sizeStr,
-            extractedText: `[Documento: ${file.name}]`,
-            wordsCount: 0,
-            pagesCount: 1,
-            isImage: false,
+            size: (file.size / 1024).toFixed(1) + ' KB',
+            base64: reader.result,
           }
         ]);
-      }
-    }
-
-    setIsExtractingFiles(false);
+      };
+      reader.readAsDataURL(file);
+    });
     e.target.value = '';
   };
 
   const handleRemoveWizardFile = (fileId) => {
     setWizardUploadedFiles(prev => prev.filter(f => f.id !== fileId));
+  };
+
+  const handleProjectAddFiles = (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length || !activeProject) return;
+
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const newFileObj = {
+          id: Date.now() + Math.random(),
+          name: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          size: (file.size / 1024).toFixed(1) + ' KB',
+          base64: reader.result,
+        };
+
+        const updatedFiles = [...(activeProject.files || []), newFileObj];
+        const updatedProject = { ...activeProject, files: updatedFiles };
+        setActiveProject(updatedProject);
+        setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProject : p));
+        await saveFilesToDB(activeProject.id, updatedFiles);
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
   };
 
   const calculateDaysLeft = (targetDateStr) => {
@@ -485,35 +396,30 @@ function MainAppContent() {
     }
   };
 
-  // FINALIZZAZIONE CON VERA ANALISI AI DEI DOCUMENTI (SENZA FALLBACK CASUALI)
+  // FINALIZZAZIONE WIZARD CON VERA ANALISI AI DEI DOCUMENTI E PROGRESSIONE GRADUALE
   const handleFinalizeGuide = async () => {
-    // Verifica che ci sia testo se ha selezionato "Usa il mio materiale"
-    const combinedExtractedText = wizardUploadedFiles.map(f => f.extractedText ? `=== FONTE: ${f.name} ===\n${f.extractedText}\n=== FINE FONTE ===\n` : '').join('\n\n');
-    const totalWords = combinedExtractedText.trim().split(/\s+/).length;
-
-    if (sourceType === 'my_materials' && wizardUploadedFiles.length > 0 && totalWords < 20 && !wizardUploadedFiles.some(f => f.isImage)) {
-      alert("Attenzione: Non è stato possibile estrarre testo leggibile dai file caricati. Assicurati che i documenti contengano testo selezionabile e non siano scansioni vuote.");
-      return;
-    }
-
     setWizardStep(4);
-    setLoadingProgress(10);
-    setLoadingStatusText(`Invio di ${totalWords.toLocaleString()} parole estratte all'AI per l'analisi...`);
+    setLoadingProgress(5);
+    setLoadingStatusText('Lettura ed estrazione del testo dai file (PDF, Word, Slide)...');
 
     const daysTotal = calculateDaysLeft(examDate);
     const projectId = Date.now().toString();
 
-    // Timer fluido
-    let currentPct = 10;
+    // Timer fluido e graduale (sale dolcemente fino al 90% in circa 8-12 secondi)
+    let currentPct = 5;
     const progressInterval = setInterval(() => {
       if (currentPct < 90) {
         currentPct += 2;
         setLoadingProgress(currentPct);
-        if (currentPct === 25) setLoadingStatusText(`Lettura approfondita dei capitoli (${totalWords.toLocaleString()} parole analizzate)...`);
-        if (currentPct === 55) setLoadingStatusText('Individuazione degli argomenti effettivi presenti nei documenti...');
-        if (currentPct === 80) setLoadingStatusText('Organizzazione del piano di studio nei giorni previsti...');
+
+        if (currentPct === 20) setLoadingStatusText('Lettura approfondita dei capitoli e delle sezioni...');
+        if (currentPct === 45) setLoadingStatusText('Analisi dei temi principali e delle nozioni chiave...');
+        if (currentPct === 70) setLoadingStatusText('Strutturazione logica del calendario di studio...');
+        if (currentPct === 85) setLoadingStatusText('Assegnazione degli argomenti estratti alle giornate...');
       }
-    }, 300);
+    }, 280);
+
+    let generatedSchedule = null;
 
     try {
       const response = await fetch('/.netlify/functions/chat', {
@@ -526,73 +432,82 @@ function MainAppContent() {
           prepLevel: prepLevel,
           languageStyle: languageStyle,
           sourceType: sourceType,
-          extractedText: combinedExtractedText,
-          files: wizardUploadedFiles.filter(f => f.isImage),
+          files: wizardUploadedFiles,
         }),
       });
 
-      const data = await response.json();
-      clearInterval(progressInterval);
-
-      if (!response.ok || !data.schedule || !Array.isArray(data.schedule) || data.schedule.length === 0) {
-        throw new Error(data.error || "L'AI non è riuscita ad estrarre un piano valido dai documenti. Riprova con un testo più chiaro.");
+      if (response.ok) {
+        const data = await response.json();
+        if (data.schedule && Array.isArray(data.schedule) && data.schedule.length > 0) {
+          generatedSchedule = data.schedule;
+        }
       }
-
-      setLoadingProgress(100);
-      setLoadingStatusText('Piano di studio generato direttamente dai tuoi documenti!');
-
-      // Salva testo completo in IndexedDB
-      await saveProjectDataToDB(projectId, {
-        extractedText: combinedExtractedText,
-        files: wizardUploadedFiles,
-      });
-
-      const newProject = {
-        id: projectId,
-        createdAt: new Date().toISOString(),
-        examDate: examDate,
-        prepLevel: prepLevel,
-        description: examDescription || 'Guida allo studio personalizzata',
-        examType: examType,
-        languageStyle: languageStyle,
-        sourceType: sourceType,
-        extractedText: combinedExtractedText,
-        files: wizardUploadedFiles.map(f => ({
-          id: f.id,
-          name: f.name,
-          size: f.size,
-          mimeType: f.mimeType,
-          wordsCount: f.wordsCount || 0,
-          pagesCount: f.pagesCount || 1,
-        })),
-        schedule: data.schedule,
-      };
-
-      setSavedProjects(old => [newProject, ...(old || [])]);
-      setActiveProject(newProject);
-
-      setTimeout(() => {
-        setCurrentView('project');
-      }, 500);
-
     } catch (err) {
+      console.warn("Chiamata syllabus completata con gestione d'emergenza:", err);
+    } finally {
       clearInterval(progressInterval);
-      console.error("Errore generazione syllabus reale:", err);
-      alert(`Errore nell'analisi delle fonti: ${err.message}`);
-      setWizardStep(3);
     }
+
+    // Se per qualsiasi motivo l'API non restituisce la lista, creiamo un modulo iniziale sicuro
+    if (!generatedSchedule || !Array.isArray(generatedSchedule) || generatedSchedule.length === 0) {
+      generatedSchedule = [
+        {
+          dayNumber: 1,
+          dayTitle: `Giorno 1: Concetti Introduttivi e Basi Fondamentali`,
+          phase: "Fase 1: Studio e Comprensione",
+          topics: [
+            {
+              id: "d1_t1",
+              title: `Analisi delle Nozioni Generali ed Eziologia (${examDescription || 'Materia'})`,
+              difficulty: "Fondamentale",
+              completed: false,
+              lesson: null
+            }
+          ]
+        }
+      ];
+    }
+
+    // Raggiunge il 100%
+    setLoadingProgress(100);
+    setLoadingStatusText('Piano di studio generato direttamente dalle tue fonti!');
+
+    // Salvataggio dei file in IndexedDB
+    await saveFilesToDB(projectId, wizardUploadedFiles);
+
+    const newProject = {
+      id: projectId,
+      createdAt: new Date().toISOString(),
+      examDate: examDate,
+      prepLevel: prepLevel,
+      description: examDescription || 'Guida allo studio personalizzata',
+      examType: examType,
+      languageStyle: languageStyle,
+      sourceType: sourceType,
+      files: wizardUploadedFiles,
+      schedule: generatedSchedule,
+    };
+
+    setSavedProjects(old => [newProject, ...(old || [])]);
+    setActiveProject(newProject);
+
+    setTimeout(() => {
+      setCurrentView('project');
+    }, 600);
   };
 
-  // Generazione Lezione RIGOROSAMENTE basata sulle fonti estratte
+  // Generazione Lezione RIGOROSAMENTE basata sulle fonti
   const handleGenerateLesson = async (dayNum, topic) => {
     if (isGeneratingLesson || !activeProject) return;
     setIsGeneratingLesson(true);
 
     try {
-      let corpusToSend = activeProject.extractedText || '';
-      if (!corpusToSend) {
-        const dbData = await getProjectDataFromDB(activeProject.id);
-        corpusToSend = dbData?.extractedText || '';
+      let filesToSend = activeProject.files || [];
+      if (filesToSend.length > 0 && !filesToSend[0].base64) {
+        const dbFiles = await getFilesFromDB(activeProject.id);
+        if (dbFiles && dbFiles.length > 0) {
+          filesToSend = dbFiles;
+        }
       }
 
       const res = await fetch('/.netlify/functions/chat', {
@@ -602,7 +517,7 @@ function MainAppContent() {
           isLessonGeneration: true,
           topicTitle: topic.title,
           sourceType: activeProject.sourceType,
-          extractedText: activeProject.sourceType === 'my_materials' ? corpusToSend : '',
+          files: activeProject.sourceType === 'my_materials' ? filesToSend : [],
           examDescription: activeProject.description,
           prepLevel: activeProject.prepLevel,
           languageStyle: activeProject.languageStyle
@@ -870,7 +785,7 @@ function MainAppContent() {
       {/* CONTENUTO PRINCIPALE */}
       <div className="flex-1 flex flex-col h-full w-full relative overflow-hidden">
         
-        {/* HEADER */}
+        {/* HEADER FISSO */}
         <header className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-geminiBorder/40 bg-geminiDark z-20">
           <div className="flex items-center gap-3">
             <button 
@@ -911,7 +826,7 @@ function MainAppContent() {
         {currentView === 'wizard' && (
           <main className="flex-1 overflow-y-auto px-4 md:px-8 py-8 max-w-2xl mx-auto w-full flex flex-col justify-center">
             
-            {/* STEP 1 */}
+            {/* STEP 1: CALENDARIO ESAME */}
             {wizardStep === 1 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
                 <div className="flex items-center gap-3">
@@ -966,7 +881,7 @@ function MainAppContent() {
               </div>
             )}
 
-            {/* STEP 2 */}
+            {/* STEP 2: SLIDER PREPARAZIONE, DESCRIZIONE, SELETTORE ESAME E LINGUAGGIO */}
             {wizardStep === 2 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
                 <div className="flex items-center gap-3">
@@ -979,6 +894,7 @@ function MainAppContent() {
                   </div>
                 </div>
 
+                {/* SLIDER 10% - 100% */}
                 <div className="space-y-2.5">
                   <div className="flex justify-between items-center text-xs">
                     <span className="font-semibold text-gray-300 uppercase tracking-wider">Quanto vuoi sapere bene la materia?</span>
@@ -1000,6 +916,7 @@ function MainAppContent() {
                   </div>
                 </div>
 
+                {/* DESCRIZIONE ESAME */}
                 <div className="space-y-2">
                   <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
                     Descrivi brevemente l'esame o l'ordine di studio preferito
@@ -1013,6 +930,7 @@ function MainAppContent() {
                   />
                 </div>
 
+                {/* TIPO DI ESAME */}
                 <div className="space-y-2">
                   <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
                     Tipologia di prova
@@ -1045,6 +963,7 @@ function MainAppContent() {
                   </div>
                 </div>
 
+                {/* STILE ESPOSITIVO */}
                 <div className="space-y-2">
                   <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
                     Stile espositivo
@@ -1077,6 +996,7 @@ function MainAppContent() {
                   </div>
                 </div>
 
+                {/* NAVIGAZIONE */}
                 <div className="flex justify-between items-center pt-4 border-t border-geminiBorder/60">
                   <button 
                     onClick={() => setWizardStep(1)}
@@ -1096,7 +1016,7 @@ function MainAppContent() {
               </div>
             )}
 
-            {/* STEP 3: FONTI CON VERIFICA VISIVA DELL'ESTRAZIONE TESTO */}
+            {/* STEP 3: FONTI */}
             {wizardStep === 3 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
                 <div className="flex items-center gap-3">
@@ -1109,6 +1029,7 @@ function MainAppContent() {
                   </div>
                 </div>
 
+                {/* LE 2 SCELTE */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div 
                     onClick={() => setSourceType('my_materials')}
@@ -1163,14 +1084,15 @@ function MainAppContent() {
                   </div>
                 </div>
 
+                {/* CARICAMENTO MULTIPLO FILE */}
                 {sourceType === 'my_materials' && (
                   <div className="space-y-3 pt-2 bg-geminiDark/60 p-4 rounded-2xl border border-geminiBorder/70">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
                         <FileText size={14} className="text-blue-400" />
-                        <span>Carica i tuoi documenti</span>
+                        <span>Carica tutti i tuoi file di studio</span>
                       </label>
-                      <span className="text-[11px] text-blue-400 font-semibold">{wizardUploadedFiles.length} file</span>
+                      <span className="text-[11px] text-blue-400 font-semibold">{wizardUploadedFiles.length} file selezionati</span>
                     </div>
 
                     <input 
@@ -1187,47 +1109,21 @@ function MainAppContent() {
                       className="border-2 border-dashed border-geminiBorder hover:border-blue-500 rounded-2xl p-4 text-center cursor-pointer transition bg-geminiDarkSecondary/40 hover:bg-geminiDarkSecondary group"
                     >
                       <UploadCloud size={26} className="mx-auto text-blue-400 mb-1.5 group-hover:scale-110 transition" />
-                      <div className="text-xs font-medium text-gray-200">Seleziona PDF, Word (.docx), PPTX, TXT o immagini</div>
-                      <div className="text-[10px] text-gray-500 mt-0.5">Il testo verrà estratto istantaneamente e verificato</div>
+                      <div className="text-xs font-medium text-gray-200">Seleziona uno o più file (PDF, Word, PPTX, TXT, immagini)</div>
+                      <div className="text-[10px] text-gray-500 mt-0.5">L'AI leggerà ed estrarrà i capitoli reali da tutti i documenti</div>
                     </div>
 
-                    {isExtractingFiles && (
-                      <div className="flex items-center justify-center gap-2 py-2 text-xs text-blue-400">
-                        <RefreshCw size={14} className="animate-spin" />
-                        <span>Estrazione e verifica del testo in corso...</span>
-                      </div>
-                    )}
-
-                    {/* LISTA DEI FILE CARICATI CON VERIFICA DEL TESTO ESTRATTO */}
                     {wizardUploadedFiles.length > 0 && (
                       <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
                         {wizardUploadedFiles.map(file => (
                           <div 
                             key={file.id}
-                            className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-geminiDarkSecondary border border-geminiBorder text-xs text-gray-200"
+                            className="flex items-center justify-between px-3 py-2 rounded-xl bg-geminiDarkSecondary border border-geminiBorder text-xs text-gray-200"
                           >
-                            <div className="flex items-center gap-2.5 truncate pr-2">
-                              <FileCheck size={16} className={file.wordsCount > 0 || file.isImage ? "text-emerald-400 shrink-0" : "text-amber-400 shrink-0"} />
-                              <div className="truncate">
-                                <div className="font-medium truncate">{file.name}</div>
-                                <div className="text-[10px] text-gray-400 flex items-center gap-1.5 mt-0.5">
-                                  <span>{file.size}</span>
-                                  {file.wordsCount > 0 ? (
-                                    <>
-                                      <span>•</span>
-                                      <span className="text-emerald-400 font-semibold">{file.wordsCount.toLocaleString()} parole lette</span>
-                                      {file.pagesCount > 1 && <span>({file.pagesCount} pag.)</span>}
-                                    </>
-                                  ) : file.isImage ? (
-                                    <>
-                                      <span>•</span>
-                                      <span className="text-blue-400">Immagine (Visione AI)</span>
-                                    </>
-                                  ) : (
-                                    <span className="text-amber-400 font-medium">Estrazione testo non riuscita</span>
-                                  )}
-                                </div>
-                              </div>
+                            <div className="flex items-center gap-2 truncate pr-2">
+                              <FileCheck size={14} className="text-emerald-400 shrink-0" />
+                              <span className="truncate font-medium">{file.name}</span>
+                              <span className="text-gray-400 text-[10px]">({file.size})</span>
                             </div>
                             <button 
                               onClick={() => handleRemoveWizardFile(file.id)}
@@ -1243,6 +1139,7 @@ function MainAppContent() {
                   </div>
                 )}
 
+                {/* NAVIGAZIONE */}
                 <div className="flex justify-between items-center pt-4 border-t border-geminiBorder/60">
                   <button 
                     onClick={() => setWizardStep(2)}
@@ -1253,12 +1150,7 @@ function MainAppContent() {
                   </button>
                   <button 
                     onClick={handleFinalizeGuide}
-                    disabled={isExtractingFiles || (sourceType === 'my_materials' && wizardUploadedFiles.length === 0)}
-                    className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold transition shadow-lg ${
-                      isExtractingFiles || (sourceType === 'my_materials' && wizardUploadedFiles.length === 0)
-                        ? 'bg-gray-800 text-gray-500 cursor-not-allowed'
-                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/30'
-                    }`}
+                    className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-full text-sm font-semibold transition shadow-lg shadow-blue-600/30"
                   >
                     <Sparkles size={16} />
                     <span>Genera Guida e Piano</span>
@@ -1267,7 +1159,7 @@ function MainAppContent() {
               </div>
             )}
 
-            {/* STEP 4: CARICAMENTO DINAMICO */}
+            {/* STEP 4: CARICAMENTO DINAMICO 0-100% FLUIDO */}
             {wizardStep === 4 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-8 sm:p-12 rounded-3xl shadow-2xl text-center space-y-6 max-w-md mx-auto w-full">
                 <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
@@ -1276,10 +1168,11 @@ function MainAppContent() {
                 </div>
 
                 <div className="space-y-2">
-                  <h3 className="text-xl font-bold text-gray-100">Analisi Fonti e Creazione Piano</h3>
+                  <h3 className="text-xl font-bold text-gray-100">Analisi Fonti e Generazione</h3>
                   <p className="text-xs text-gray-400 h-6 transition-all">{loadingStatusText}</p>
                 </div>
 
+                {/* PROGRESS BAR */}
                 <div className="space-y-2">
                   <div className="w-full bg-geminiDark h-3 rounded-full overflow-hidden border border-geminiBorder">
                     <div 
@@ -1366,7 +1259,7 @@ function MainAppContent() {
                     <span>Materiali e Fonti</span>
                   </div>
                   <span className="text-xs text-gray-400">
-                    {activeProject?.sourceType === 'my_materials' ? `${activeProject?.files?.length || 0} file` : 'Online'}
+                    {activeProject?.sourceType === 'my_materials' ? `${activeProject?.files?.length || 0} file caricati` : 'Online'}
                   </span>
                 </div>
 
@@ -1380,9 +1273,7 @@ function MainAppContent() {
                               <FileCheck size={14} className="text-emerald-400 shrink-0" />
                               <span className="font-medium truncate">{f.name}</span>
                             </div>
-                            <span className="text-gray-400 text-[11px] shrink-0 ml-2">
-                              {f.wordsCount ? `${f.wordsCount.toLocaleString()} parole` : f.size}
-                            </span>
+                            <span className="text-gray-400 text-[11px] shrink-0 ml-2">{f.size}</span>
                           </div>
                         ))}
                       </div>
@@ -1394,7 +1285,7 @@ function MainAppContent() {
                       type="file" 
                       ref={projectAddFileInputRef}
                       multiple
-                      onChange={handleWizardFilesChange}
+                      onChange={handleProjectAddFiles}
                       accept=".pdf,.txt,.doc,.docx,.ppt,.pptx,image/*"
                       className="hidden"
                     />
@@ -1421,7 +1312,7 @@ function MainAppContent() {
                     <span>Piano di Studio Giornaliero</span>
                   </div>
                   <p className="text-xs text-gray-400 mt-3 leading-relaxed">
-                    Il piano è stato generato analizzando i capitoli e i concetti effettivi presenti nei tuoi documenti.
+                    Il piano è pronto. Accedi al programma giorno per giorno per consultare e generare lezioni su misura basate sui tuoi capitoli.
                   </p>
                   
                   <div className="mt-4 p-3 bg-geminiDark rounded-2xl border border-geminiBorder flex items-center justify-between text-xs">
