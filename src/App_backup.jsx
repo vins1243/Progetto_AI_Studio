@@ -9,8 +9,7 @@ import {
   Trash2, 
   Sparkles, 
   BookOpen, 
-  GraduationCap,
-  MessageSquare
+  GraduationCap 
 } from 'lucide-react';
 
 export default function App() {
@@ -29,17 +28,17 @@ export default function App() {
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
 
-  // Salvataggio cronologia in localStorage
+  // Salvataggio conversazioni in localStorage
   useEffect(() => {
     localStorage.setItem('study_ai_chats', JSON.stringify(conversations));
   }, [conversations]);
 
-  // Scroll automatico all'ultimo messaggio
+  // Scroll automatico alla fine dei messaggi
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  // Nuova chat
+  // Gestione nuova chat
   const handleNewChat = () => {
     setCurrentChatId(null);
     setMessages([]);
@@ -48,7 +47,7 @@ export default function App() {
     setIsSidebarOpen(false);
   };
 
-  // Selezione chat precedente
+  // Caricamento chat esistente
   const handleSelectChat = (chat) => {
     setCurrentChatId(chat.id);
     setMessages(chat.messages || []);
@@ -75,7 +74,7 @@ export default function App() {
     reader.onload = () => {
       setAttachedFile({
         name: file.name,
-        mimeType: file.type || 'text/plain',
+        mimeType: file.type,
         size: (file.size / 1024).toFixed(1) + ' KB',
         base64: reader.result,
       });
@@ -129,7 +128,7 @@ export default function App() {
       if (!chatId) {
         chatId = Date.now().toString();
         setCurrentChatId(chatId);
-        const title = prompt ? (prompt.slice(0, 28) + (prompt.length > 28 ? '...' : '')) : (filePayload?.name || 'Nuova sessione');
+        const title = prompt ? (prompt.slice(0, 30) + (prompt.length > 30 ? '...' : '')) : (filePayload?.name || 'Nuova conversazione');
         setConversations([{ id: chatId, title, messages: updatedMessages }, ...conversations]);
       } else {
         setConversations(conversations.map(c => c.id === chatId ? { ...c, messages: updatedMessages } : c));
@@ -155,36 +154,33 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-geminiDark text-gray-200 relative">
+    <div className="flex h-screen w-screen overflow-hidden bg-geminiDark text-gray-200">
       
-      {/* SFONDO SEMI-TRASPARENTE QUANDO LA SIDEBAR E APERTA */}
+      {/* OVERLAY PER MOBILE */}
       {isSidebarOpen && (
         <div 
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-300"
+          className="fixed inset-0 z-40 bg-black/60 md:hidden"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
-      {/* SIDEBAR RETRATTILE A SCOMPARSA TOTALE */}
+      {/* SIDEBAR RETRATTILE */}
       <aside 
-        className={`fixed inset-y-0 left-0 z-50 flex flex-col w-80 max-w-[85vw] bg-geminiDarkSecondary border-r border-geminiBorder shadow-2xl transition-transform duration-300 ease-in-out overflow-hidden ${
-          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        className={`fixed md:static inset-y-0 left-0 z-50 flex flex-col w-72 bg-geminiDarkSecondary border-r border-geminiBorder transition-transform duration-300 ease-in-out ${
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:-translate-x-full md:w-0 md:border-none'
         }`}
       >
-        {/* HEADER DELLA SIDEBAR */}
         <div className="flex items-center justify-between p-4 border-b border-geminiBorder">
           <button 
             onClick={handleNewChat}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium bg-geminiHover hover:bg-geminiBorder text-gray-100 rounded-full border border-geminiBorder transition flex-1 mr-2"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-geminiHover hover:bg-geminiBorder text-gray-100 rounded-full border border-geminiBorder transition w-full"
           >
             <Plus size={16} />
             <span>Nuova chat</span>
           </button>
-          
           <button 
             onClick={() => setIsSidebarOpen(false)}
-            className="p-2 text-gray-400 hover:text-white hover:bg-geminiHover rounded-lg transition"
-            title="Chiudi menu"
+            className="p-2 ml-2 text-gray-400 hover:text-white rounded-lg md:hidden"
           >
             <X size={20} />
           </button>
@@ -193,31 +189,25 @@ export default function App() {
         {/* LISTA CONVERSAZIONI PRECEDENTI */}
         <div className="flex-1 overflow-y-auto p-3 space-y-1">
           <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 py-2">
-            Conversazioni recenti
+            Recenti
           </div>
           {conversations.length === 0 ? (
-            <div className="text-xs text-gray-500 px-3 py-4 text-center">
-              Nessuna chat salvata finora
-            </div>
+            <div className="text-xs text-gray-500 px-3 py-2">Nessuna conversazione precedente</div>
           ) : (
             conversations.map((chat) => (
               <div 
                 key={chat.id}
                 onClick={() => handleSelectChat(chat)}
-                className={`group flex items-center justify-between px-3 py-2.5 rounded-xl text-sm cursor-pointer transition ${
+                className={`group flex items-center justify-between px-3 py-2.5 rounded-lg text-sm cursor-pointer transition ${
                   currentChatId === chat.id 
-                    ? 'bg-geminiHover text-white font-medium border border-geminiBorder/60' 
-                    : 'text-gray-300 hover:bg-geminiHover/50'
+                    ? 'bg-geminiHover text-white font-medium' 
+                    : 'text-gray-300 hover:bg-geminiHover/60'
                 }`}
               >
-                <div className="flex items-center gap-2.5 truncate pr-2">
-                  <MessageSquare size={15} className="text-gray-400 shrink-0" />
-                  <span className="truncate">{chat.title}</span>
-                </div>
+                <span className="truncate pr-2">{chat.title}</span>
                 <button 
                   onClick={(e) => handleDeleteChat(e, chat.id)}
-                  className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-400 rounded transition"
-                  title="Elimina conversazione"
+                  className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-400 transition"
                 >
                   <Trash2 size={14} />
                 </button>
@@ -227,26 +217,23 @@ export default function App() {
         </div>
       </aside>
 
-      {/* AREA PRINCIPALE DI CONTENUTO */}
-      <div className="flex-1 flex flex-col h-full w-full relative overflow-hidden">
+      {/* AREA PRINCIPALE */}
+      <div className="flex-1 flex flex-col h-full relative overflow-hidden">
         
-        {/* HEADER FISSO IN ALTO */}
-        <header className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-geminiBorder/40 bg-geminiDark z-20">
+        {/* HEADER FISSO */}
+        <header className="flex items-center justify-between px-4 py-3 border-b border-geminiBorder/40 bg-geminiDark z-20">
           <div className="flex items-center gap-3">
-            
-            {/* TASTO MENU LATERALE PER APRIRE LA SIDEBAR */}
             <button 
-              onClick={() => setIsSidebarOpen(true)}
-              className="p-2 text-gray-300 hover:text-white hover:bg-geminiHover rounded-xl border border-geminiBorder/60 transition flex items-center justify-center shadow-sm"
-              title="Apri conversazioni precedenti"
-              aria-label="Apri cronologia chat"
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="p-2 text-gray-300 hover:text-white hover:bg-geminiHover rounded-lg transition"
+              title="Apri/Chiudi cronologia"
             >
               <Menu size={20} />
             </button>
             
-            {/* LOGO DELL'APP FISSO */}
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white font-bold shadow-md">
+            {/* LOGO FISSO */}
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-400 flex items-center justify-center text-white font-bold shadow-md">
                 <GraduationCap size={18} />
               </div>
               <span className="font-semibold text-lg tracking-tight bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent">
@@ -257,17 +244,17 @@ export default function App() {
 
           <button 
             onClick={handleNewChat}
-            className="flex items-center gap-1.5 text-xs font-medium bg-geminiDarkSecondary hover:bg-geminiHover border border-geminiBorder px-3.5 py-1.5 rounded-full text-gray-300 hover:text-white transition shadow-sm"
+            className="flex items-center gap-1.5 text-xs bg-geminiDarkSecondary hover:bg-geminiHover border border-geminiBorder px-3 py-1.5 rounded-full text-gray-300 hover:text-white transition"
           >
             <Plus size={14} />
-            <span>Nuova sessione</span>
+            <span className="hidden sm:inline">Nuova sessione</span>
           </button>
         </header>
 
-        {/* CORPO DELLA CHAT / SCHERMATA INIZIALE */}
+        {/* AREA MESSAGGI */}
         <main className="flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-4xl mx-auto w-full">
           {messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center pb-24">
+            <div className="h-full flex flex-col items-center justify-center text-center pb-20">
               <div className="w-14 h-14 rounded-2xl bg-geminiDarkSecondary border border-geminiBorder flex items-center justify-center text-blue-400 mb-6 shadow-lg">
                 <Sparkles size={28} />
               </div>
@@ -279,7 +266,6 @@ export default function App() {
                 Fai una domanda, incolla i tuoi appunti o carica un PDF per riassunti, schemi e spiegazioni personalizzate.
               </p>
 
-              {/* CHIP DI SUGGERIMENTO RAPIDO */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg">
                 {[
                   { icon: BookOpen, text: "Spiegami un argomento complesso con parole semplici" },
@@ -308,19 +294,19 @@ export default function App() {
                   className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   {msg.role === 'assistant' && (
-                    <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0 mt-1 shadow-sm">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0 mt-1">
                       <GraduationCap size={16} />
                     </div>
                   )}
 
                   <div className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                     msg.role === 'user' 
-                      ? 'bg-blue-600 text-white rounded-br-sm shadow-md' 
+                      ? 'bg-blue-600/90 text-white rounded-br-sm' 
                       : 'bg-geminiDarkSecondary border border-geminiBorder text-gray-200 rounded-tl-sm shadow-sm'
                   }`}>
                     {msg.file && (
-                      <div className="flex items-center gap-2 p-2 mb-2.5 bg-black/20 rounded-lg text-xs text-gray-200 border border-white/10">
-                        <FileText size={14} className="text-blue-300" />
+                      <div className="flex items-center gap-2 p-2 mb-2 bg-black/20 rounded-lg text-xs text-gray-200 border border-white/10">
+                        <FileText size={14} />
                         <span className="font-medium truncate">{msg.file.name}</span>
                         <span className="text-gray-300">({msg.file.size})</span>
                       </div>
@@ -340,7 +326,7 @@ export default function App() {
                     <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
                     <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse delay-150" />
                     <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse delay-300" />
-                    <span className="ml-1 text-xs">L'AI sta elaborando la risposta...</span>
+                    <span className="ml-1 text-xs">L'AI sta elaborando...</span>
                   </div>
                 </div>
               )}
@@ -349,14 +335,14 @@ export default function App() {
           )}
         </main>
 
-        {/* INPUT BAR INFERIORE (STILE GEMINI) */}
+        {/* INPUT BAR */}
         <footer className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-geminiDark via-geminiDark to-transparent">
           <div className="max-w-3xl mx-auto">
             
             {attachedFile && (
-              <div className="flex items-center gap-2 mb-2 px-3 py-1.5 bg-geminiDarkSecondary border border-geminiBorder rounded-lg text-xs w-fit text-blue-300 shadow-md">
+              <div className="flex items-center gap-2 mb-2 px-3 py-1.5 bg-geminiDarkSecondary border border-geminiBorder rounded-lg text-xs w-fit text-blue-300">
                 <FileText size={14} />
-                <span className="truncate max-w-[220px] font-medium">{attachedFile.name}</span>
+                <span className="truncate max-w-[200px] font-medium">{attachedFile.name}</span>
                 <span className="text-gray-400">({attachedFile.size})</span>
                 <button 
                   onClick={() => setAttachedFile(null)}
@@ -401,7 +387,7 @@ export default function App() {
                 disabled={(!inputPrompt.trim() && !attachedFile) || isLoading}
                 className={`p-2 rounded-full transition mb-0.5 ${
                   (inputPrompt.trim() || attachedFile) && !isLoading
-                    ? 'bg-blue-600 text-white hover:bg-blue-500 shadow-sm' 
+                    ? 'bg-blue-600 text-white hover:bg-blue-500' 
                     : 'text-gray-600 bg-transparent cursor-not-allowed'
                 }`}
                 title="Invia messaggio"
