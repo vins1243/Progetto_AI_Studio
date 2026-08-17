@@ -34,7 +34,7 @@ export const handler = async (event) => {
 
     const openai = new OpenAI({ apiKey });
 
-    // Estrazione del testo ottimizzata per evitare timeout e payload pesanti
+    // Estrazione del testo reale da tutti i file caricati (PDF, TXT, DOCX, ecc.)
     const allFiles = files && Array.isArray(files) ? files : (file ? [file] : []);
     const imageParts = [];
     let aggregatedFileText = '';
@@ -58,58 +58,61 @@ export const handler = async (event) => {
             const buffer = Buffer.from(rawBase64, 'base64');
 
             if (isPdf) {
-              // Estraiamo le prime 25 pagine (contengono indice, capitoli e concetti chiave) per massima velocità
-              const pdfData = await pdfParse(buffer, { max: 25 });
-              const cleanText = pdfData.text ? pdfData.text.replace(/\r\n/g, '\n').replace(/\s+/g, ' ').slice(0, 35000) : '';
-              aggregatedFileText += `\n\n=== DOCUMENTO PDF: ${f.name} (Indice e Capitoli) ===\n${cleanText}\n=== FINE ESTRATTO ===\n`;
+              // Estrazione testo da PDF
+              const pdfData = await pdfParse(buffer);
+              const cleanText = pdfData.text ? pdfData.text.replace(/\r\n/g, '\n').slice(0, 120000) : '';
+              aggregatedFileText += `\n\n=== DOCUMENTO PDF CARICATO: ${f.name} ===\n${cleanText}\n=== FINE DOCUMENTO: ${f.name} ===\n`;
             } else {
-              const textContent = buffer.toString('utf-8').slice(0, 35000);
+              // File di testo / markdown / appunti
+              const textContent = buffer.toString('utf-8').slice(0, 120000);
               aggregatedFileText += `\n\n=== DOCUMENTO TESTO: ${f.name} ===\n${textContent}\n=== FINE DOCUMENTO ===\n`;
             }
           } catch (err) {
             console.error(`Errore estrazione testo per ${f.name}:`, err);
-            aggregatedFileText += `\n\n[File allegato: ${f.name}]\n`;
+            aggregatedFileText += `\n\n[File allegato: ${f.name} (estrazione testo non riuscita)]\n`;
           }
         }
       }
     }
 
     // -------------------------------------------------------------
-    // AZIONE 1: GENERAZIONE SYLLABUS RAPIDA E BASATA SULLE FONTI REALI
+    // AZIONE 1: GENERAZIONE SYLLABUS INTELLIGENTE BASATO SULLE FONTI
     // -------------------------------------------------------------
     if (action === 'generate_syllabus') {
-      const numDays = Math.max(3, Math.min(daysTotal || 30, 45));
+      const numDays = Math.max(3, Math.min(daysTotal || 30, 60));
+      
+      const syllabusSystemPrompt = `Sei un esperto pianificatore accademico e professore universitario.
+Il tuo compito è analizzare i documenti e materiali caricati dallo studente e creare un piano di studio dettagliato suddiviso per ${numDays} giorni.
 
-      const syllabusSystemPrompt = `Sei un esperto accademico e professore universitario.
-Analizza il testo/indice dei documenti caricati dallo studente e crea un piano di studio organizzato per ${numDays} giorni.
+REGOLE TASSATIVE:
+1. ESCLUSIVITÀ DELLE FONTI: Il piano deve essere basato SOLO ed ESCLUSIVAMENTE sui concetti, capitoli, paragrafi e argomenti EFFETTIVAMENTE PRESENTI nei documenti forniti. Non aggiungere o trattare argomenti che non siano presenti nei testi caricati.
+2. ORGANIZZAZIONE LOGICA: Organizza gli argomenti secondo un ordine didattico progressivo, logico e propedeutico (dai concetti base agli approfondimenti).
+3. MODULARITÀ: Per ogni giorno crea un tema principale ("dayTitle") e una lista di argomenti specifici ("topics") che contengano titoli chiari e precisi estratti dal materiale. Non usare duplicazioni o suffissi artificiali come "Parte 1" o "Parte 2".
+4. FORMATO DI RISPOSTA: Restituisci ESCLUSIVAMENTE un array JSON valido con questa struttura (nessun testo prima o dopo):
+[
+  {
+    "dayNumber": 1,
+    "dayTitle": "Giorno 1: Titolo tema principale estratto dalle fonti",
+    "phase": "Fase 1: Studio e Comprensione",
+    "topics": [
+      {
+        "id": "d1_t1",
+        "title": "Titolo specifico e descrittivo del primo argomento reale",
+        "difficulty": "Base"
+      }
+    ]
+  }
+]`;
 
-REGOLE ASSOLUTE:
-1. BASATI ESCLUSIVAMENTE sui capitoli, argomenti e concetti presenti nei documenti forniti. Non aggiungere nozioni esterne.
-2. Crea una progressione didattica logica. Ogni giorno ha un tema ("dayTitle") e 1 o 2 argomenti specifici ("topics").
-3. Niente suffissi artificiali come "Parte 1" o "Parte 2". Titoli chiari ed esaustivi.
-4. Restituisci SOLO un JSON valido con la chiave "schedule" contenente la lista dei giorni:
-{
-  "schedule": [
-    {
-      "dayNumber": 1,
-      "dayTitle": "Giorno 1: Titolo modulo estratto dalle fonti",
-      "phase": "Fase 1: Studio e Comprensione",
-      "topics": [
-        {
-          "id": "d1_t1",
-          "title": "Titolo specifico dell'argomento estratto dal testo",
-          "difficulty": "Base"
-        }
-      ]
-    }
-  ]
-}`;
+      const syllabusUserPrompt = `Materia/Descrizione esame: "${examDescription || 'Materia principale'}".
+Numero di giorni disponibili per lo studio: ${numDays}.
+Livello di preparazione desiderato: ${prepLevel || 80}%.
+Stile di studio: ${languageStyle || 'automatico'}.
+Tipo di fonte: ${sourceType === 'my_materials' ? 'USA SOLO I MATERIALI ALLEGATI QUI SOTTO' : 'Ricerca nozioni online'}.
 
-      const syllabusUserPrompt = `Materia: "${examDescription || 'Materia di Studio'}". Giorni: ${numDays}. Obiettivo: ${prepLevel || 80}%.
-Fonti caricate dallo studente:
-${aggregatedFileText || `Materia: ${examDescription}`}
+${aggregatedFileText ? `TESTO ESTRATTO DAI DOCUMENTI DELL'UTENTE:\n${aggregatedFileText.slice(0, 70000)}` : 'Nessun file testuale estratto, basati sulla descrizione accademica.'}
 
-Genera il piano di studio JSON rigorosamente basato sulle fonti.`;
+Genera il piano di studio JSON rigorosamente aderente ai materiali forniti.`;
 
       const completion = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
@@ -117,7 +120,7 @@ Genera il piano di studio JSON rigorosamente basato sulle fonti.`;
           { role: 'system', content: syllabusSystemPrompt },
           { role: 'user', content: syllabusUserPrompt }
         ],
-        temperature: 0.2,
+        temperature: 0.3,
         response_format: { type: 'json_object' }
       });
 
@@ -125,12 +128,13 @@ Genera il piano di studio JSON rigorosamente basato sulle fonti.`;
       let parsed = {};
       try {
         parsed = JSON.parse(rawResponse);
+        // Normalizza struttura se wrappata in un campo tipo { "schedule": [...] } o { "days": [...] }
         if (parsed.schedule && Array.isArray(parsed.schedule)) parsed = parsed.schedule;
         else if (parsed.days && Array.isArray(parsed.days)) parsed = parsed.days;
         else if (Array.isArray(parsed)) parsed = parsed;
         else if (typeof parsed === 'object') {
-          const arr = Object.values(parsed).find(v => Array.isArray(v));
-          if (arr) parsed = arr;
+          const firstArray = Object.values(parsed).find(val => Array.isArray(val));
+          if (firstArray) parsed = firstArray;
         }
       } catch (err) {
         console.error("Errore parsing JSON syllabus:", err);
@@ -144,30 +148,30 @@ Genera il piano di studio JSON rigorosamente basato sulle fonti.`;
     }
 
     // -------------------------------------------------------------
-    // AZIONE 2: GENERAZIONE LEZIONE RIGOROSA
+    // AZIONE 2: GENERAZIONE LEZIONE RIGOROSA BASATA SULLE FONTI
     // -------------------------------------------------------------
     if (isLessonGeneration) {
       const isStrict = sourceType === 'my_materials';
       const lessonSystemPrompt = `Sei un docente universitario e tutor accademico di altissimo livello.
-Il tuo compito è spiegare in modo chiaro, approfondito e perfettamente strutturato l'argomento richiesto.
+Il tuo compito è generare una lezione/riassunto specialistico, chiaro, altamente logico e pedagogico sull'argomento richiesto.
 
-${isStrict ? `REGOLA INDEROGABILE:
-Devi basarti UNICAMENTE ed ESCLUSIVAMENTE sulle informazioni e spiegazioni PRESENTI NEI DOCUMENTI ALLEGATI.
-NON inventare e non aggiungere nozioni esterne da internet.
-Riorganizza il materiale, rendilo logico, chiaro e schematizzato.` : `Attingi alle migliori nozioni accademiche e scientifiche di riferimento.`}
+${isStrict ? `REGOLA ASSOLUTA E INDEROGABILE:
+Devi spiegare l'argomento basandoti UNICAMENTE ED ESCLUSIVAMENTE sulle informazioni, spiegazioni, definizioni e concetti PRESENTI NEI DOCUMENTI ALLEGATI.
+NON aggiungere nozioni esterne da internet o elementi non presenti nel materiale caricato dallo studente.
+Il tuo compito è rendere il materiale già esistente molto più chiaro, ordinato, logico, schematizzato e facile da apprendere, senza alterarne il contenuto o aggiungere informazioni inventate.` : `Attingi alle migliori nozioni scientifiche e accademiche di riferimento.`}
 
-FORMATTAZIONE:
-- Titoli in Markdown (##, ###).
-- Parole e concetti chiave in GRASSETTO (**parola**).
-- Elenchi puntati e tabelle comparative.
-- Formule matematiche, chimiche o scientifiche in notazione LaTeX ($formula$ o $$formula$$).`;
+FORMATTAZIONE E STRUTTURA:
+- Utilizza titoli e sottotitoli in Markdown (##, ###).
+- Evidenzia SEMPRE i termini chiave e i concetti fondamentali in GRASSETTO (**parola**).
+- Usa elenchi puntati strutturati, tabelle comparative e sintesi per punti.
+- Per qualsiasi formula scientifica, chimica, biologica, medica o statistica, USA LA NOTAZIONE LaTeX standard racchiusa tra $ (in linea) oppure $$ (blocco).`;
 
-      const lessonUserPrompt = `Argomento: "${topicTitle}". Materia: "${examDescription || ''}".
+      const lessonUserPrompt = `Argomento della lezione: "${topicTitle}".
+Dettagli esame: "${examDescription || ''}", Livello target: ${prepLevel || 80}%, Stile: ${languageStyle || 'automatico'}.
 
-FONTI DELLO STUDENTE:
-${aggregatedFileText || 'Nessun file testuale allegato.'}
+${aggregatedFileText ? `FONTI E DOCUMENTI DELLO STUDENTE:\n${aggregatedFileText.slice(0, 80000)}` : ''}
 
-Scrivi una lezione accademica chiara, dettagliata ed esaustiva.`;
+Redigi la lezione didattica in modo chiaro, schematizzato e rigorosamente fedele alle fonti fornite.`;
 
       const messagesList = [
         { role: 'system', content: lessonSystemPrompt }
@@ -206,7 +210,8 @@ Scrivi una lezione accademica chiara, dettagliata ed esaustiva.`;
     // AZIONE 3: CHAT STANDARD
     // -------------------------------------------------------------
     const standardSystemInstruction = `Sei un tutor universitario e assistente allo studio avanzato.
-Rispondi in modo chiaro, approfondito e pedagogico in formato Markdown con termini chiave in grassetto ed equazioni LaTeX in $ o $$ quando utili.`;
+Rispondi in modo chiaro, approfondito e pedagogico.
+Usa formattazione Markdown ricca con titoli (##), grassetto (**testo**) per i punti salienti, elenchi ed equazioni LaTeX in $ o $$ quando utili.`;
 
     const messages = [
       { role: 'system', content: standardSystemInstruction }
@@ -223,7 +228,7 @@ Rispondi in modo chiaro, approfondito e pedagogico in formato Markdown con termi
 
     let finalPromptText = prompt || '';
     if (aggregatedFileText) {
-      finalPromptText += `\n\n--- DOCUMENTI ALLEGATI ---\n${aggregatedFileText}`;
+      finalPromptText += `\n\n--- DOCUMENTI ALLEGATI DALL'UTENTE ---${aggregatedFileText}`;
     }
 
     if (imageParts.length > 0) {

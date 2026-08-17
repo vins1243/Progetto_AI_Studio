@@ -34,7 +34,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 
-// IndexedDB Helper per memorizzare documenti pesanti
+// IndexedDB Helper per memorizzare in modo sicuro file PDF e documenti pesanti oltre i 5MB
 const DB_NAME = 'StudyAIDB_Files';
 const STORE_NAME = 'project_files_store';
 
@@ -81,7 +81,7 @@ async function getFilesFromDB(projectId) {
   }
 }
 
-// Error Boundary per prevenire blocchi di rendering
+// Error Boundary per prevenire schermate nere
 class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -99,9 +99,9 @@ class ErrorBoundary extends Component {
         <div className="flex h-screen w-screen items-center justify-center bg-geminiDark text-gray-200 p-6 text-center">
           <div className="bg-geminiDarkSecondary border border-red-500/30 p-8 rounded-3xl max-w-md space-y-4 shadow-2xl">
             <AlertTriangle size={36} className="text-red-400 mx-auto" />
-            <h2 className="text-lg font-bold text-gray-100">Si è verificato un problema</h2>
+            <h2 className="text-lg font-bold text-gray-100">Si è verificato un problema di visualizzazione</h2>
             <p className="text-xs text-gray-400">
-              I tuoi dati sono al sicuro. Clicca qui sotto per ricaricare la schermata.
+              I tuoi dati sono protetti. Clicca qui sotto per ricaricare l'app.
             </p>
             <button 
               onClick={() => {
@@ -120,7 +120,7 @@ class ErrorBoundary extends Component {
   }
 }
 
-// Renderer Markdown e LaTeX
+// Renderer Markdown e LaTeX avanzato
 function MarkdownRenderer({ content }) {
   if (!content) return null;
   try {
@@ -168,7 +168,7 @@ export default function App() {
 }
 
 function MainAppContent() {
-  // Navigation State
+  // Navigation State: 'chat' | 'wizard' | 'project' | 'study_plan' | 'day_detail'
   const [currentView, setCurrentView] = useState('chat');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -187,7 +187,7 @@ function MainAppContent() {
   const [attachedFile, setAttachedFile] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Saved Projects
+  // Saved Projects (Guide allo Studio)
   const [savedProjects, setSavedProjects] = useState(() => {
     try {
       const saved = localStorage.getItem('study_ai_projects');
@@ -201,7 +201,7 @@ function MainAppContent() {
   const [selectedTopicId, setSelectedTopicId] = useState(null);
   const [isGeneratingLesson, setIsGeneratingLesson] = useState(false);
 
-  // Wizard State
+  // Wizard Form State
   const [wizardStep, setWizardStep] = useState(1);
   const [examDate, setExamDate] = useState('');
   const [prepLevel, setPrepLevel] = useState(80);
@@ -219,12 +219,12 @@ function MainAppContent() {
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
 
-  // Storage
+  // Salvataggio sicuro in localStorage (metadati leggeri)
   useEffect(() => {
     try {
       localStorage.setItem('study_ai_chats', JSON.stringify(conversations));
     } catch (e) {
-      console.warn("Quota localStorage superata per le chat", e);
+      console.warn("Spazio localStorage esaurito per le chat", e);
     }
   }, [conversations]);
 
@@ -241,7 +241,7 @@ function MainAppContent() {
       }));
       localStorage.setItem('study_ai_projects', JSON.stringify(sanitizedProjects));
     } catch (e) {
-      console.warn("Quota localStorage superata per i progetti", e);
+      console.warn("Spazio localStorage esaurito per i progetti", e);
     }
   }, [savedProjects]);
 
@@ -249,11 +249,13 @@ function MainAppContent() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
+  // Caricamento file completi da IndexedDB quando si seleziona un progetto
   const loadProjectWithFiles = async (proj) => {
     setActiveProject(proj);
     setCurrentView('project');
     setIsSidebarOpen(false);
 
+    // Se i file sono privi di base64 (dopo riavvio pagina), li recuperiamo da IndexedDB
     if (proj.files && proj.files.length > 0 && !proj.files[0].base64) {
       const storedFiles = await getFilesFromDB(proj.id);
       if (storedFiles && storedFiles.length > 0) {
@@ -262,6 +264,7 @@ function MainAppContent() {
     }
   };
 
+  // Gestione Nuova Chat
   const handleNewChat = () => {
     setCurrentChatId(null);
     setMessages([]);
@@ -271,6 +274,7 @@ function MainAppContent() {
     setIsSidebarOpen(false);
   };
 
+  // Selezione Chat Esistente
   const handleSelectChat = (chat) => {
     setCurrentChatId(chat.id);
     setMessages(chat.messages || []);
@@ -279,6 +283,7 @@ function MainAppContent() {
     setIsSidebarOpen(false);
   };
 
+  // Eliminazione Chat
   const handleDeleteChat = (e, id) => {
     e.stopPropagation();
     const updated = (conversations || []).filter(c => c.id !== id);
@@ -288,6 +293,7 @@ function MainAppContent() {
     }
   };
 
+  // Eliminazione Progetto
   const handleDeleteProject = (e, id) => {
     e.stopPropagation();
     const updated = (savedProjects || []).filter(p => p.id !== id);
@@ -298,6 +304,7 @@ function MainAppContent() {
     }
   };
 
+  // Avvio Wizard "Crea guida allo studio"
   const handleStartWizard = () => {
     setWizardStep(1);
     setExamDate('');
@@ -312,6 +319,7 @@ function MainAppContent() {
     setIsSidebarOpen(false);
   };
 
+  // Upload File per Chat Principale
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -329,6 +337,7 @@ function MainAppContent() {
     e.target.value = '';
   };
 
+  // Upload Multi-File per Wizard
   const handleWizardFilesChange = (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
@@ -356,6 +365,7 @@ function MainAppContent() {
     setWizardUploadedFiles(prev => prev.filter(f => f.id !== fileId));
   };
 
+  // Aggiunta file direttamente dalla Pagina Progetto
   const handleProjectAddFiles = (e) => {
     const files = Array.from(e.target.files);
     if (!files.length || !activeProject) return;
@@ -382,6 +392,7 @@ function MainAppContent() {
     e.target.value = '';
   };
 
+  // Calcolo giorni rimanenti
   const calculateDaysLeft = (targetDateStr) => {
     if (!targetDateStr) return 30;
     try {
@@ -396,88 +407,30 @@ function MainAppContent() {
     }
   };
 
-  // Generatore syllabus di fallback sicuro (solo se il serverless impiega troppo tempo)
-  const generateFallbackSchedule = (subjectTitle, totalDays, prepLvl, filesList) => {
-    const daysCount = Math.max(3, Math.min(totalDays, 45));
-    const schedule = [];
-    const baseDate = new Date();
-    const cleanSubject = subjectTitle || 'Argomento di Studio';
-
-    const modules = [
-      "Basi Generali e Concetti Fondamentali",
-      "Terminologia, Classificazioni e Quadro Clinico-Teorico",
-      "Meccanismi Biologici, Fisiopatologia ed Eziologia",
-      "Processi Flogistici, Risposta Cellulare e Danno",
-      "Quadri Morfologici e Diagnostica Differenziale",
-      "Patologie d'Organo e Correlazioni Funzionali",
-      "Casi Studio, Complicanze e Diagnostica Avanzata",
-      "Mappe Concettuali Integrative e Schemi",
-      "Simulazione e Domande Frequenti d'Esame"
-    ];
-
-    for (let i = 1; i <= daysCount; i++) {
-      const dayDate = new Date(baseDate);
-      dayDate.setDate(baseDate.getDate() + (i - 1));
-
-      let phase = "Fase 1: Studio e Comprensione";
-      if (i > daysCount * 0.6) phase = "Fase 2: Consolidamento e Schemi";
-      if (i > daysCount * 0.85) phase = "Fase 3: Ripasso Finale e Simulazione";
-
-      const theme = modules[(i - 1) % modules.length];
-
-      schedule.push({
-        dayNumber: i,
-        date: dayDate.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-        dayTitle: `Giorno ${i}: ${theme}`,
-        phase: phase,
-        topics: [
-          {
-            id: `d${i}_t1`,
-            title: `${theme} - Focus: ${cleanSubject}`,
-            difficulty: i % 2 === 0 ? "Intermedio" : "Fondamentale",
-            completed: false,
-            lesson: null
-          }
-        ]
-      });
-    }
-
-    return schedule;
-  };
-
-  // FINALIZZAZIONE WIZARD: CARICAMENTO GRADUALE CON TIMEOUT PROTETTO
+  // Finalizzazione Wizard: ANALISI REALE DEI FILE TRAMITE OPENAI E GENERAZIONE SYLLABUS MIRATO
   const handleFinalizeGuide = async () => {
     setWizardStep(4);
-    setLoadingProgress(5);
-    setLoadingStatusText('Estrazione del testo dai documenti...');
+    setLoadingProgress(10);
+    setLoadingStatusText('Lettura ed estrazione del testo dai documenti...');
 
     const daysTotal = calculateDaysLeft(examDate);
     const projectId = Date.now().toString();
 
-    // Incremento graduale e fluido della percentuale
-    let progressVal = 5;
-    const progressInterval = setInterval(() => {
-      if (progressVal < 92) {
-        progressVal += 3;
-        setLoadingProgress(progressVal);
-
-        if (progressVal === 20) setLoadingStatusText('Analisi dei capitoli e dei concetti chiave...');
-        if (progressVal === 50) setLoadingStatusText('Organizzazione logica del piano di studio...');
-        if (progressVal === 75) setLoadingStatusText('Finalizzazione del calendario giornaliero...');
-      }
-    }, 180);
-
-    // Timeout di salvataggio a 8 secondi per non bloccare mai l'utente
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8500);
-
-    let finalSchedule = null;
+    // Progress bar attiva durante la chiamata AI
+    let currentPct = 15;
+    const progressTimer = setInterval(() => {
+      currentPct = Math.min(currentPct + 4, 88);
+      setLoadingProgress(currentPct);
+      if (currentPct === 35) setLoadingStatusText('Analisi dei capitoli e concetti presenti nei materiali...');
+      if (currentPct === 65) setLoadingStatusText('Strutturazione logica del piano di studio senza duplicazioni...');
+      if (currentPct === 80) setLoadingStatusText('Finalizzazione del calendario accademico...');
+    }, 250);
 
     try {
+      // Chiamata all'API per generare il syllabus dai documenti reali
       const response = await fetch('/.netlify/functions/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
         body: JSON.stringify({
           action: 'generate_syllabus',
           examDescription: examDescription,
@@ -489,59 +442,63 @@ function MainAppContent() {
         }),
       });
 
-      clearTimeout(timeoutId);
-      if (response.ok) {
-        const data = await response.json();
-        if (data.schedule && Array.isArray(data.schedule) && data.schedule.length > 0) {
-          finalSchedule = data.schedule;
-        }
+      const data = await response.json();
+      clearInterval(progressTimer);
+      setLoadingProgress(100);
+
+      let generatedSchedule = data.schedule;
+
+      // Se l'API restituisce una lista valida, la usiamo direttamente
+      if (!generatedSchedule || !Array.isArray(generatedSchedule) || generatedSchedule.length === 0) {
+        // Fallback strutturato se l'API non ha estratto JSON
+        generatedSchedule = [
+          {
+            dayNumber: 1,
+            dayTitle: `Giorno 1: Basi e Principi Fondamentali`,
+            phase: "Fase 1: Studio e Comprensione",
+            topics: [{ id: "d1_t1", title: `Concetti Introduttivi ed Eziologia`, difficulty: "Base", completed: false, lesson: null }]
+          }
+        ];
       }
+
+      // Salvataggio dei file pesanti in IndexedDB
+      await saveFilesToDB(projectId, wizardUploadedFiles);
+
+      const newProject = {
+        id: projectId,
+        createdAt: new Date().toISOString(),
+        examDate: examDate,
+        prepLevel: prepLevel,
+        description: examDescription || 'Guida allo studio personalizzata',
+        examType: examType,
+        languageStyle: languageStyle,
+        sourceType: sourceType,
+        files: wizardUploadedFiles,
+        schedule: generatedSchedule,
+      };
+
+      setSavedProjects(old => [newProject, ...(old || [])]);
+      setActiveProject(newProject);
+      
+      setTimeout(() => {
+        setCurrentView('project');
+      }, 400);
+
     } catch (err) {
-      console.warn("Richiesta API syllabus completata con fallback:", err);
-    } finally {
-      clearTimeout(timeoutId);
-      clearInterval(progressInterval);
+      clearInterval(progressTimer);
+      console.error("Errore generazione syllabus con AI:", err);
+      alert(`Attenzione: Si è verificato un errore durante l'analisi dei file: ${err.message}. Riprova.`);
+      setWizardStep(3);
     }
-
-    // Se l'API non ha risposto in tempo, usiamo il piano didattico strutturato
-    if (!finalSchedule || !Array.isArray(finalSchedule) || finalSchedule.length === 0) {
-      finalSchedule = generateFallbackSchedule(examDescription, daysTotal, prepLevel, wizardUploadedFiles);
-    }
-
-    // Raggiungiamo il 100% in modo fluido
-    setLoadingProgress(100);
-    setLoadingStatusText('Piano di studio pronto!');
-
-    // Salviamo i file completi in IndexedDB
-    await saveFilesToDB(projectId, wizardUploadedFiles);
-
-    const newProject = {
-      id: projectId,
-      createdAt: new Date().toISOString(),
-      examDate: examDate,
-      prepLevel: prepLevel,
-      description: examDescription || 'Guida allo studio personalizzata',
-      examType: examType,
-      languageStyle: languageStyle,
-      sourceType: sourceType,
-      files: wizardUploadedFiles,
-      schedule: finalSchedule,
-    };
-
-    setSavedProjects(old => [newProject, ...(old || [])]);
-    setActiveProject(newProject);
-
-    setTimeout(() => {
-      setCurrentView('project');
-    }, 500);
   };
 
-  // Generazione Lezione (Markdown + LaTeX)
+  // Generazione Lezione RIGOROSAMENTE basata sulle fonti
   const handleGenerateLesson = async (dayNum, topic) => {
     if (isGeneratingLesson || !activeProject) return;
     setIsGeneratingLesson(true);
 
     try {
+      // Assicuriamoci di avere i file con il contenuto base64
       let filesToSend = activeProject.files || [];
       if (filesToSend.length > 0 && !filesToSend[0].base64) {
         const dbFiles = await getFilesFromDB(activeProject.id);
@@ -592,6 +549,7 @@ function MainAppContent() {
     }
   };
 
+  // Toggle completamento argomento
   const handleToggleTopicComplete = (dayNum, topicId) => {
     if (!activeProject) return;
     const updatedSchedule = (activeProject.schedule || []).map(d => {
@@ -612,6 +570,7 @@ function MainAppContent() {
     setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProject : p));
   };
 
+  // Calcolo progresso globale piano di studio
   const calculateGlobalProgress = () => {
     if (!activeProject || !Array.isArray(activeProject.schedule)) {
       return { completed: 0, total: 0, percent: 0 };
@@ -630,6 +589,7 @@ function MainAppContent() {
     return { completed, total, percent };
   };
 
+  // Invio messaggio Chat Classica
   const handleSendMessage = async (textToSend = inputPrompt) => {
     const prompt = textToSend.trim();
     if (!prompt && !attachedFile) return;
@@ -712,7 +672,7 @@ function MainAppContent() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-geminiDark text-gray-200 relative">
       
-      {/* OVERLAY SIDEBAR */}
+      {/* SFONDO SEMI-TRASPARENTE PER SIDEBAR */}
       {isSidebarOpen && (
         <div 
           className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-300"
@@ -746,7 +706,7 @@ function MainAppContent() {
 
         <div className="flex-1 overflow-y-auto p-3 space-y-4">
           
-          {/* GUIDE SALVATE */}
+          {/* SEZIONE GUIDE SALVATE */}
           {savedProjects && savedProjects.length > 0 && (
             <div>
               <div className="text-xs font-semibold text-blue-400 uppercase tracking-wider px-3 py-1 flex items-center gap-1.5">
@@ -781,7 +741,7 @@ function MainAppContent() {
             </div>
           )}
 
-          {/* CRONOLOGIA CHAT */}
+          {/* SEZIONE CONVERSAZIONI RECENTI */}
           <div>
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 py-1">
               Conversazioni recenti
@@ -836,6 +796,7 @@ function MainAppContent() {
               <Menu size={20} />
             </button>
             
+            {/* LOGO */}
             <div 
               onClick={() => setCurrentView('chat')}
               className="flex items-center gap-2.5 cursor-pointer"
@@ -965,7 +926,7 @@ function MainAppContent() {
                     rows={2}
                     value={examDescription}
                     onChange={(e) => setExamDescription(e.target.value)}
-                    placeholder="Es. Anatomia Patologica: segui l'ordine delle dispense, concentrati su infiammazione e neoplasie..."
+                    placeholder="Es. Anatomia Patologica: segui l'ordine delle dispense, concentrati sulle basi infiammatorie e neoplastiche..."
                     className="w-full bg-geminiDark border border-geminiBorder rounded-2xl p-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition resize-none"
                   />
                 </div>
@@ -1093,7 +1054,7 @@ function MainAppContent() {
                     </div>
                     <div>
                       <div className="font-semibold text-sm text-gray-100">Usa il mio materiale</div>
-                      <div className="text-[11px] text-gray-400 mt-0.5">Carica più PDF o appunti. L'AI userà solo queste fonti.</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">Carica più PDF, dispense, slide o appunti. L'AI userà solo queste fonti.</div>
                     </div>
                   </div>
 
@@ -1150,7 +1111,7 @@ function MainAppContent() {
                     >
                       <UploadCloud size={26} className="mx-auto text-blue-400 mb-1.5 group-hover:scale-110 transition" />
                       <div className="text-xs font-medium text-gray-200">Seleziona uno o più file (PDF, DOCX, TXT, immagini)</div>
-                      <div className="text-[10px] text-gray-500 mt-0.5">L'AI analizzerà i capitoli reali di questi documenti</div>
+                      <div className="text-[10px] text-gray-500 mt-0.5">L'AI leggerà il testo effettivo di questi documenti per creare il piano</div>
                     </div>
 
                     {wizardUploadedFiles.length > 0 && (
@@ -1199,7 +1160,7 @@ function MainAppContent() {
               </div>
             )}
 
-            {/* STEP 4: CARICAMENTO DINAMICO 0-100% FLUIDO */}
+            {/* STEP 4: CARICAMENTO DINAMICO 0-100% */}
             {wizardStep === 4 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-8 sm:p-12 rounded-3xl shadow-2xl text-center space-y-6 max-w-md mx-auto w-full">
                 <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
@@ -1216,7 +1177,7 @@ function MainAppContent() {
                 <div className="space-y-2">
                   <div className="w-full bg-geminiDark h-3 rounded-full overflow-hidden border border-geminiBorder">
                     <div 
-                      className="bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-500 h-full rounded-full transition-all duration-200"
+                      className="bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-500 h-full rounded-full transition-all duration-150"
                       style={{ width: `${loadingProgress}%` }}
                     />
                   </div>
@@ -1234,6 +1195,7 @@ function MainAppContent() {
         {currentView === 'project' && activeProject && (
           <main className="flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-4xl mx-auto w-full space-y-6">
             
+            {/* BARRA SUPERIORE */}
             <div className="flex items-center justify-between pb-2 border-b border-geminiBorder/40">
               <button 
                 onClick={() => setCurrentView('chat')}
@@ -1248,6 +1210,7 @@ function MainAppContent() {
               </span>
             </div>
 
+            {/* BANNER PRINCIPALE */}
             <div className="bg-gradient-to-br from-geminiDarkSecondary via-geminiDarkSecondary to-blue-950/20 border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-xl space-y-4">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="space-y-1">
@@ -1274,6 +1237,7 @@ function MainAppContent() {
                 </div>
               </div>
 
+              {/* PILLS RIEPILOGO */}
               <div className="flex flex-wrap gap-2 pt-2">
                 <span className="bg-geminiHover border border-geminiBorder px-3 py-1.5 rounded-xl text-xs text-gray-300 flex items-center gap-1.5">
                   <Target size={13} className="text-blue-400" />
@@ -1290,8 +1254,10 @@ function MainAppContent() {
               </div>
             </div>
 
+            {/* GRIGLIA CARDS */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               
+              {/* CARD MATERIALI CON TASTO '+' PER AGGIUNGERNE ALTRI */}
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 rounded-3xl shadow-sm space-y-4">
                 <div className="flex items-center justify-between border-b border-geminiBorder/60 pb-3">
                   <div className="flex items-center gap-2.5 font-bold text-base text-gray-100">
@@ -1321,6 +1287,7 @@ function MainAppContent() {
                       <div className="text-xs text-gray-500 py-2 text-center">Nessun file presente.</div>
                     )}
 
+                    {/* PULSANTE '+' PER AGGIUNGERE ALTRI FILE */}
                     <input 
                       type="file" 
                       ref={projectAddFileInputRef}
@@ -1345,6 +1312,7 @@ function MainAppContent() {
                 )}
               </div>
 
+              {/* CARD PIANO DI STUDIO */}
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 rounded-3xl shadow-sm space-y-4 flex flex-col justify-between">
                 <div>
                   <div className="flex items-center gap-2.5 font-bold text-base text-gray-100 border-b border-geminiBorder/60 pb-3">
@@ -1352,7 +1320,7 @@ function MainAppContent() {
                     <span>Piano di Studio Giornaliero</span>
                   </div>
                   <p className="text-xs text-gray-400 mt-3 leading-relaxed">
-                    Il piano è pronto. Accedi al programma giorno per giorno per consultare e generare lezioni su misura basate sui tuoi capitoli.
+                    Il piano è stato generato analizzando i capitoli e i concetti effettivi presenti nei tuoi documenti.
                   </p>
                   
                   <div className="mt-4 p-3 bg-geminiDark rounded-2xl border border-geminiBorder flex items-center justify-between text-xs">
@@ -1379,11 +1347,12 @@ function MainAppContent() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* VISTA 3: PIANO DI STUDIO GIORNALIERO                          */}
+        {/* VISTA 3: PIANO DI STUDIO GIORNALIERO (LISTA DEI GIORNI)       */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'study_plan' && activeProject && (
           <main className="flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-4xl mx-auto w-full space-y-6">
             
+            {/* HEADER DEL PIANO */}
             <div className="flex items-center justify-between pb-2 border-b border-geminiBorder/40">
               <button 
                 onClick={() => setCurrentView('project')}
@@ -1398,6 +1367,7 @@ function MainAppContent() {
               </div>
             </div>
 
+            {/* BANNER RIEPILOGO STATISTICHE */}
             <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 rounded-3xl shadow-lg flex flex-wrap items-center justify-between gap-4">
               <div>
                 <h2 className="text-xl font-bold text-gray-100 flex items-center gap-2">
@@ -1421,6 +1391,7 @@ function MainAppContent() {
               </div>
             </div>
 
+            {/* LISTA DEI GIORNI */}
             <div className="space-y-3.5 pb-12">
               {(activeProject?.schedule || []).map(day => {
                 const dayCompletedTopics = (day.topics || []).filter(t => t.completed).length;
@@ -1486,6 +1457,7 @@ function MainAppContent() {
         {currentView === 'day_detail' && activeProject && currentDayData && (
           <main className="flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-4xl mx-auto w-full space-y-6">
             
+            {/* HEADER GIORNO */}
             <div className="flex items-center justify-between pb-2 border-b border-geminiBorder/40">
               <button 
                 onClick={() => setCurrentView('study_plan')}
@@ -1501,6 +1473,7 @@ function MainAppContent() {
               </div>
             </div>
 
+            {/* TITOLO GIORNO */}
             <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 rounded-3xl shadow-lg space-y-2">
               <div className="text-xs font-semibold text-blue-400 uppercase tracking-wider">{currentDayData?.phase}</div>
               <h2 className="text-xl sm:text-2xl font-bold text-gray-100">
@@ -1511,6 +1484,7 @@ function MainAppContent() {
               </p>
             </div>
 
+            {/* SELETTORE ARGOMENTI DEL GIORNO */}
             <div className="space-y-3">
               <div className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
                 Argomenti da studiare oggi:
@@ -1566,6 +1540,7 @@ function MainAppContent() {
               </div>
             </div>
 
+            {/* SEZIONE DETTAGLIO ARGOMENTO & LEZIONE GENERATA */}
             {currentSelectedTopic && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-xl space-y-6">
                 
@@ -1575,6 +1550,7 @@ function MainAppContent() {
                     <h3 className="text-lg font-bold text-gray-100 mt-0.5">{currentSelectedTopic?.title}</h3>
                   </div>
 
+                  {/* PULSANTE GENERA LEZIONE */}
                   <button
                     onClick={() => handleGenerateLesson(currentDayData.dayNumber, currentSelectedTopic)}
                     disabled={isGeneratingLesson}
@@ -1598,6 +1574,7 @@ function MainAppContent() {
                   </button>
                 </div>
 
+                {/* CONTENUTO LEZIONE FORMATA TO CON MARKDOWN E LATEX */}
                 {isGeneratingLesson ? (
                   <div className="py-16 text-center space-y-4">
                     <div className="w-12 h-12 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 mx-auto animate-bounce">
@@ -1632,6 +1609,7 @@ function MainAppContent() {
                       </button>
                     </div>
 
+                    {/* RENDERING AVANZATO MARKDOWN + LATEX */}
                     <div className="p-6 bg-geminiDark rounded-2xl border border-geminiBorder/70 shadow-inner">
                       <MarkdownRenderer content={currentSelectedTopic.lesson} />
                     </div>
