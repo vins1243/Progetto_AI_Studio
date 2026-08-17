@@ -1,29 +1,18 @@
 import OpenAI from 'openai';
 
-// Helper per compattare intelligentemente i documenti ed evitare sforamenti del limite TPM (Tokens Per Minute)
-function createSmartFileDigest(rawText, maxChars) {
-  if (!rawText) return '';
-  const clean = rawText.replace(/\r\n/g, '\n').replace(/\s+/g, ' ').trim();
-  if (clean.length <= maxChars) return clean;
-
-  // Prende la parte iniziale (indice/primi capitoli) e le conclusioni/schemi finali
-  const headBudget = Math.floor(maxChars * 0.7);
-  const tailBudget = Math.floor(maxChars * 0.3);
-  const head = clean.slice(0, headBudget);
-  const tail = clean.slice(-tailBudget);
-  return `${head}\n[... SEZIONI E DETTAGLI INTERMEDI ...]\n${tail}`;
-}
-
-// Chiamata con fallback automatico anti-429 (Rate Limit) e anti-404 (Model Not Found)
+// Helper per eseguire chiamate con fallback automatico di sicurezza
 async function callOpenAIWithFallback(openai, primaryModel, params) {
-  // Catena di fallback: prova il modello richiesto, poi scala sempre su gpt-4o-mini che ha un limite altissimo (2.000.000 TPM)
-  const modelsToTry = [primaryModel];
-  if (primaryModel !== 'gpt-4o-mini') {
-    modelsToTry.push('gpt-4o-mini');
+  const fallbackChain = [primaryModel];
+  if (primaryModel.startsWith('gpt-5.6')) {
+    if (primaryModel === 'gpt-5.6-sol') fallbackChain.push('gpt-5.6-terra', 'gpt-4o');
+    else if (primaryModel === 'gpt-5.6-terra') fallbackChain.push('gpt-5.6-luna', 'gpt-4o-mini');
+    else fallbackChain.push('gpt-4o-mini');
+  } else {
+    fallbackChain.push('gpt-4o-mini');
   }
 
   let lastError = null;
-  for (const modelName of modelsToTry) {
+  for (const modelName of fallbackChain) {
     try {
       const response = await openai.chat.completions.create({
         ...params,
@@ -31,9 +20,8 @@ async function callOpenAIWithFallback(openai, primaryModel, params) {
       });
       return { response, modelUsed: modelName };
     } catch (err) {
-      console.warn(`Chiamata con ${modelName} fallita (${err.status || err.message}). Fallback...`);
+      console.warn(`Tentativo con modello ${modelName} fallito:`, err.message);
       lastError = err;
-      // Se l'errore è 429 (limite token superato) o 404 (modello non accessibile), prova immediatamente gpt-4o-mini
     }
   }
   throw lastError;
@@ -73,14 +61,10 @@ export const handler = async (event) => {
     const allFiles = Array.isArray(files) ? files : [];
 
     // -------------------------------------------------------------
-    // AZIONE 1: GENERAZIONE SYLLABUS CON BUDGET DI TOKEN OTTIMIZZATO
+    // AZIONE 1: GENERAZIONE SYLLABUS (MINIMO gpt-5.6-terra o gpt-5.6-sol)
     // -------------------------------------------------------------
     if (action === 'generate_syllabus') {
       const numDays = Math.max(3, Math.min(daysTotal || 30, 60));
-
-      // Budget totale di caratteri per rimanere SEMPRE sotto i 15.000 token (~60.000 caratteri totali)
-      const TOTAL_CHAR_BUDGET = 38000;
-      const budgetPerFile = Math.max(1200, Math.floor(TOTAL_CHAR_BUDGET / Math.max(1, allFiles.length)));
 
       let perFileSummary = '';
       let validFilesCount = 0;
@@ -89,10 +73,10 @@ export const handler = async (event) => {
         const fileName = f.name || `Documento ${idx + 1}`;
         const rawText = (f.text || f.extractedText || '').trim();
 
-        if (rawText && rawText.length > 5) {
+        if (rawText && rawText.length > 10) {
           validFilesCount++;
-          const fileDigest = createSmartFileDigest(rawText, budgetPerFile);
-          perFileSummary += `\n\n--- [FILE ${idx + 1} di ${allFiles.length}]: "${fileName}" ---\n${fileDigest}\n--- [FINE FILE ${idx + 1}] ---\n`;
+          const fileDigest = rawText.slice(0, 15000);
+          perFileSummary += `\n\n--- [FILE ${idx + 1} di ${allFiles.length}]: "${fileName}" (Parole: ${f.wordsCount || rawText.split(/\s+/).length}) ---\n${fileDigest}\n--- [FINE FILE ${idx + 1}: "${fileName}"] ---\n`;
         }
       });
 
@@ -106,8 +90,11 @@ export const handler = async (event) => {
         };
       }
 
-      const syllabusSystemPrompt = `Sei un professore universitario e pianificatore didattico di altissimo livello.
-Il tuo compito è analizzare TUTTI i ${validFilesCount} documenti caricati dallo studente e strutturare un piano di studio completo di esattamente ${numDays} giorni.
+      // Routing intelligente: Se il livello target è >= 85% o ci sono molti file, usa il modello top (Sol), altrimenti Terra
+      const targetModel = (prepLevel >= 85 || validFilesCount >= 4) ? 'gpt-5.6-sol' : 'gpt-5.6-terra';
+
+      const syllabusSystemPrompt = `Sei un professore universitario e pianificatore didattico di altissimo livello accademico.
+Il tuo compito è analizzare TUTTI i ${validFilesCount} documenti caricati dallo studente e strutturare un piano di studio completo e perfettamente bilanciato per esattamente ${numDays} giorni.
 
 REGOLE TASSATIVE:
 1. COPERTURA TOTALE (100%): Includi argomenti e capitoli da OGNI SINGOLO FILE caricato (dal File 1 all'ultimo File ${allFiles.length}). Nessun documento deve essere escluso.
@@ -133,18 +120,15 @@ REGOLE TASSATIVE:
 }`;
 
       const syllabusUserPrompt = `Materia/Note studente: "${examDescription || 'Programma di Studio'}".
-Giorni disponibili per lo studio: ${numDays}.
+Giorni disponibili: ${numDays}.
 Livello di preparazione desiderato: ${prepLevel || 80}%.
 Stile: ${languageStyle || 'automatico'}.
-Numero totale di documenti da includere obbligatoriamente: ${validFilesCount}.
+Numero totale di documenti da includere: ${validFilesCount}.
 
 FONTI E CONTENUTO ESTRATTO DA TUTTI I FILE DELLO STUDENTE:
 ${perFileSummary}
 
 Esegui la scansione completa di tutti i file e genera il piano di studio JSON che copre il 100% dei materiali allegati.`;
-
-      // Proviamo prima con modello avanzato, con fallback trasparente su gpt-4o-mini in caso di 429
-      const targetModel = (prepLevel >= 85) ? 'gpt-5.6-terra' : 'gpt-4o-mini';
 
       const { response: completion, modelUsed } = await callOpenAIWithFallback(openai, targetModel, {
         messages: [
@@ -182,19 +166,21 @@ Esegui la scansione completa di tutti i file e genera il piano di studio JSON ch
     }
 
     // -------------------------------------------------------------
-    // AZIONE 2: GENERAZIONE LEZIONI
+    // AZIONE 2: GENERAZIONE LEZIONI (MINIMO gpt-5.6-terra o gpt-5.6-sol)
     // -------------------------------------------------------------
     if (isLessonGeneration) {
       const isStrict = sourceType === 'my_materials';
       
-      let relevantSources = '';
+      let combinedSources = '';
       allFiles.forEach((f, idx) => {
         const text = (f.text || f.extractedText || '').trim();
         if (text) {
-          // Mantieni una porzione compatta (max 20.000 caratteri per file)
-          relevantSources += `\n\n=== DOCUMENTO: "${f.name || `File ${idx + 1}`}" ===\n${text.slice(0, 20000)}\n=== FINE DOCUMENTO ===\n`;
+          combinedSources += `\n\n=== DOCUMENTO: "${f.name || `File ${idx + 1}`}" ===\n${text}\n=== FINE DOCUMENTO ===\n`;
         }
       });
+
+      // Routing lezioni: Se livello target >= 85% o materia specialistica complessa usa Sol, altrimenti Terra
+      const targetModel = (prepLevel >= 85) ? 'gpt-5.6-sol' : 'gpt-5.6-terra';
 
       const lessonSystemPrompt = `Sei un docente universitario e tutor accademico di altissimo livello.
 Il tuo compito è redigere una lezione/riassunto specialistico, chiaro, altamente logico e approfondito sull'argomento richiesto.
@@ -213,11 +199,11 @@ FORMATTAZIONE:
       const lessonUserPrompt = `Argomento della lezione: "${topicTitle}".
 Materia: "${examDescription || ''}", Livello target: ${prepLevel || 80}%, Stile: ${languageStyle || 'automatico'}.
 
-${relevantSources ? `FONTI DELLO STUDENTE ESTRATTE DAI FILE CARICATI:\n${relevantSources.slice(0, 35000)}` : ''}
+${combinedSources ? `FONTI DELLO STUDENTE ESTRATTE DAI FILE CARICATI:\n${combinedSources.slice(0, 90000)}` : ''}
 
 Redigi la lezione didattica in modo chiaro, schematizzato e rigorosamente fedele alle fonti fornite.`;
 
-      const { response: completion, modelUsed } = await callOpenAIWithFallback(openai, 'gpt-4o-mini', {
+      const { response: completion, modelUsed } = await callOpenAIWithFallback(openai, targetModel, {
         messages: [
           { role: 'system', content: lessonSystemPrompt },
           { role: 'user', content: lessonUserPrompt }
@@ -234,21 +220,53 @@ Redigi la lezione didattica in modo chiaro, schematizzato e rigorosamente fedele
     }
 
     // -------------------------------------------------------------
-    // AZIONE 3: CHAT STANDARD
+    // AZIONE 3: CHAT CON SMART ROUTER (gpt-4o-mini valuta la complessità)
     // -------------------------------------------------------------
     let chatSources = '';
     allFiles.forEach(f => {
       const text = (f.text || f.extractedText || '').trim();
-      if (text) chatSources += `\n\n--- DOCUMENTO "${f.name}" ---\n${text.slice(0, 15000)}`;
+      if (text) chatSources += `\n\n--- DOCUMENTO "${f.name}" ---\n${text.slice(0, 20000)}`;
     });
 
     const userPrompt = prompt || '';
+
+    // Step di valutazione complessità eseguito da gpt-4o-mini (Router ultra-veloce ed economico)
+    let selectedChatModel = 'gpt-5.6-terra'; // default
+    try {
+      const routerEval = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `Sei un router di complessità. Valuta la complessità della richiesta dello studente e rispondi ESCLUSIVAMENTE con una sola parola tra:
+- "luna": per domande semplici, definizioni brevi, chiarimenti elementari o saluti.
+- "terra": per spiegazioni standard, riassunti di media complessità, schematizzazioni o quiz.
+- "sol": per problemi complessi, dimostrazioni approfondite, casi clinici complessi, analisi comparative multifattoriali o formule avanzate.`
+          },
+          {
+            role: 'user',
+            content: `Richiesta studente: "${userPrompt}"`
+          }
+        ],
+        max_tokens: 10,
+        temperature: 0.0,
+      });
+
+      const evaluation = (routerEval.choices[0]?.message?.content || '').toLowerCase().trim();
+      if (evaluation.includes('sol')) selectedChatModel = 'gpt-5.6-sol';
+      else if (evaluation.includes('luna')) selectedChatModel = 'gpt-5.6-luna';
+      else selectedChatModel = 'gpt-5.6-terra';
+    } catch (routerErr) {
+      console.warn("Router gpt-4o-mini fallito, fallback su terra:", routerErr);
+      selectedChatModel = 'gpt-5.6-terra';
+    }
+
     const standardSystemInstruction = `Sei un tutor universitario e assistente allo studio avanzato.
 Rispondi in modo chiaro, approfondito e pedagogico in formato Markdown con termini chiave in grassetto ed equazioni LaTeX in $ o $$ quando utili.`;
 
     let finalPromptText = userPrompt;
     if (chatSources) {
-      finalPromptText += `\n\n--- DOCUMENTI ALLEGATI DALL'UTENTE ---${chatSources.slice(0, 30000)}`;
+      finalPromptText += `\n\n--- DOCUMENTI ALLEGATI DALL'UTENTE ---${chatSources.slice(0, 60000)}`;
     }
 
     const messages = [
@@ -269,7 +287,7 @@ Rispondi in modo chiaro, approfondito e pedagogico in formato Markdown con termi
       content: finalPromptText,
     });
 
-    const { response: completion, modelUsed } = await callOpenAIWithFallback(openai, 'gpt-4o-mini', {
+    const { response: completion, modelUsed } = await callOpenAIWithFallback(openai, selectedChatModel, {
       messages: messages,
       temperature: 0.5,
     });
@@ -279,7 +297,7 @@ Rispondi in modo chiaro, approfondito e pedagogico in formato Markdown con termi
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reply, modelUsed }),
+      body: JSON.stringify({ reply, modelUsed, routerCategory: selectedChatModel }),
     };
   } catch (error) {
     console.error('Errore backend:', error);
