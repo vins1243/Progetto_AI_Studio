@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, Component } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -30,109 +30,53 @@ import {
   Square,
   BookMarked,
   RefreshCw,
-  ChevronRight,
-  AlertTriangle
+  ChevronRight
 } from 'lucide-react';
 
-// Error Boundary per prevenire schermate nere e isolare eventuali errori
-class ErrorBoundary extends Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-  static getDerivedStateFromError(error) {
-    return { hasError: true, error };
-  }
-  componentDidCatch(error, errorInfo) {
-    console.error("ErrorBoundary ha catturato un errore:", error, errorInfo);
-  }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="flex h-screen w-screen items-center justify-center bg-geminiDark text-gray-200 p-6 text-center">
-          <div className="bg-geminiDarkSecondary border border-red-500/30 p-8 rounded-3xl max-w-md space-y-4 shadow-2xl">
-            <AlertTriangle size={36} className="text-red-400 mx-auto" />
-            <h2 className="text-lg font-bold text-gray-100">Si è verificato un problema di visualizzazione</h2>
-            <p className="text-xs text-gray-400">
-              Abbiamo protetto i tuoi dati. Clicca qui sotto per ricaricare la pagina principale.
-            </p>
-            <button 
-              onClick={() => {
-                this.setState({ hasError: false });
-                window.location.reload();
-              }}
-              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-full text-xs font-semibold transition"
-            >
-              Ricarica applicazione
-            </button>
-          </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-// Componente per il rendering sicuro di Markdown e formule LaTeX
+// Componente per il rendering avanzato di Markdown e formule LaTeX
 function MarkdownRenderer({ content }) {
   if (!content) return null;
-  try {
-    return (
-      <div className="prose prose-invert max-w-none text-sm leading-relaxed text-gray-200">
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm, remarkMath]}
-          rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false }]]}
-          components={{
-            h1: ({node, ...props}) => <h1 className="text-xl font-bold text-gray-100 mt-5 mb-3 pb-1 border-b border-geminiBorder/60" {...props} />,
-            h2: ({node, ...props}) => <h2 className="text-lg font-bold text-blue-400 mt-5 mb-2.5 flex items-center gap-2" {...props} />,
-            h3: ({node, ...props}) => <h3 className="text-base font-semibold text-indigo-300 mt-4 mb-1.5" {...props} />,
-            p: ({node, ...props}) => <p className="mb-3 leading-relaxed text-gray-200" {...props} />,
-            ul: ({node, ...props}) => <ul className="list-disc list-outside ml-5 space-y-1.5 mb-3 text-gray-200" {...props} />,
-            ol: ({node, ...props}) => <ol className="list-decimal list-outside ml-5 space-y-1.5 mb-3 text-gray-200" {...props} />,
-            li: ({node, ...props}) => <li className="text-gray-200 leading-relaxed" {...props} />,
-            strong: ({node, ...props}) => <strong className="font-bold text-white bg-blue-500/15 text-blue-200 px-1 py-0.5 rounded border border-blue-500/30" {...props} />,
-            em: ({node, ...props}) => <em className="italic text-gray-300" {...props} />,
-            blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-blue-500 pl-4 py-2 my-3 bg-geminiDarkSecondary/60 rounded-r-xl italic text-gray-300" {...props} />,
-            code: ({node, inline, ...props}) => inline 
-              ? <code className="bg-geminiDarkSecondary px-1.5 py-0.5 rounded text-blue-300 font-mono text-xs border border-geminiBorder" {...props} />
-              : <pre className="bg-geminiDarkSecondary p-4 rounded-2xl overflow-x-auto text-xs font-mono text-gray-200 my-3 border border-geminiBorder"><code {...props} /></pre>,
-            table: ({node, ...props}) => <div className="overflow-x-auto my-4 rounded-xl border border-geminiBorder"><table className="min-w-full divide-y divide-geminiBorder text-xs text-left" {...props} /></div>,
-            thead: ({node, ...props}) => <thead className="bg-geminiDarkSecondary text-gray-300 font-bold uppercase" {...props} />,
-            tbody: ({node, ...props}) => <tbody className="divide-y divide-geminiBorder/50 bg-geminiDark/40" {...props} />,
-            th: ({node, ...props}) => <th className="px-4 py-2.5 text-xs font-bold text-gray-200" {...props} />,
-            td: ({node, ...props}) => <td className="px-4 py-2.5 text-xs text-gray-200" {...props} />,
-          }}
-        >
-          {content}
-        </ReactMarkdown>
-      </div>
-    );
-  } catch (err) {
-    return <div className="text-xs text-gray-300 whitespace-pre-wrap">{content}</div>;
-  }
-}
-
-export default function App() {
   return (
-    <ErrorBoundary>
-      <MainAppContent />
-    </ErrorBoundary>
+    <div className="prose prose-invert max-w-none text-sm leading-relaxed text-gray-200">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+        components={{
+          h1: ({node, ...props}) => <h1 className="text-xl font-bold text-gray-100 mt-5 mb-3 pb-1 border-b border-geminiBorder/60" {...props} />,
+          h2: ({node, ...props}) => <h2 className="text-lg font-bold text-blue-400 mt-5 mb-2.5 flex items-center gap-2" {...props} />,
+          h3: ({node, ...props}) => <h3 className="text-base font-semibold text-indigo-300 mt-4 mb-1.5" {...props} />,
+          p: ({node, ...props}) => <p className="mb-3 leading-relaxed text-gray-200" {...props} />,
+          ul: ({node, ...props}) => <ul className="list-disc list-outside ml-5 space-y-1.5 mb-3 text-gray-200" {...props} />,
+          ol: ({node, ...props}) => <ol className="list-decimal list-outside ml-5 space-y-1.5 mb-3 text-gray-200" {...props} />,
+          li: ({node, ...props}) => <li className="text-gray-200 leading-relaxed" {...props} />,
+          strong: ({node, ...props}) => <strong className="font-bold text-white bg-blue-500/15 text-blue-200 px-1 py-0.5 rounded border border-blue-500/30" {...props} />,
+          em: ({node, ...props}) => <em className="italic text-gray-300" {...props} />,
+          blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-blue-500 pl-4 py-2 my-3 bg-geminiDarkSecondary/60 rounded-r-xl italic text-gray-300" {...props} />,
+          code: ({node, inline, ...props}) => inline 
+            ? <code className="bg-geminiDarkSecondary px-1.5 py-0.5 rounded text-blue-300 font-mono text-xs border border-geminiBorder" {...props} />
+            : <pre className="bg-geminiDarkSecondary p-4 rounded-2xl overflow-x-auto text-xs font-mono text-gray-200 my-3 border border-geminiBorder"><code {...props} /></pre>,
+          table: ({node, ...props}) => <div className="overflow-x-auto my-4 rounded-xl border border-geminiBorder"><table className="min-w-full divide-y divide-geminiBorder text-xs text-left" {...props} /></div>,
+          thead: ({node, ...props}) => <thead className="bg-geminiDarkSecondary text-gray-300 font-bold uppercase" {...props} />,
+          tbody: ({node, ...props}) => <tbody className="divide-y divide-geminiBorder/50 bg-geminiDark/40" {...props} />,
+          th: ({node, ...props}) => <th className="px-4 py-2.5 text-xs font-bold text-gray-200" {...props} />,
+          td: ({node, ...props}) => <td className="px-4 py-2.5 text-xs text-gray-200" {...props} />,
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
   );
 }
 
-function MainAppContent() {
+export default function App() {
   // Navigation State: 'chat' | 'wizard' | 'project' | 'study_plan' | 'day_detail'
   const [currentView, setCurrentView] = useState('chat');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Chat State
   const [conversations, setConversations] = useState(() => {
-    try {
-      const saved = localStorage.getItem('study_ai_chats');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
+    const saved = localStorage.getItem('study_ai_chats');
+    return saved ? JSON.parse(saved) : [];
   });
   const [currentChatId, setCurrentChatId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -142,12 +86,8 @@ function MainAppContent() {
 
   // Saved Projects (Guide allo Studio)
   const [savedProjects, setSavedProjects] = useState(() => {
-    try {
-      const saved = localStorage.getItem('study_ai_projects');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
+    const saved = localStorage.getItem('study_ai_projects');
+    return saved ? JSON.parse(saved) : [];
   });
   const [activeProject, setActiveProject] = useState(null);
   const [selectedDayNumber, setSelectedDayNumber] = useState(1);
@@ -172,32 +112,13 @@ function MainAppContent() {
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
 
-  // Salvataggio sicuro in localStorage (SENZA stringhe base64 pesanti che superano la quota del browser)
+  // Salvataggio localStorage
   useEffect(() => {
-    try {
-      localStorage.setItem('study_ai_chats', JSON.stringify(conversations));
-    } catch (e) {
-      console.warn("Spazio localStorage esaurito per le chat", e);
-    }
+    localStorage.setItem('study_ai_chats', JSON.stringify(conversations));
   }, [conversations]);
 
   useEffect(() => {
-    try {
-      // Memorizziamo solo i metadati dei file per evitare QuotaExceededError (schermo nero)
-      const sanitizedProjects = (savedProjects || []).map(p => ({
-        ...p,
-        files: (p.files || []).map(f => ({
-          id: f.id,
-          name: f.name,
-          size: f.size,
-          mimeType: f.mimeType,
-          // Omesso base64 in storage per proteggere il limite di 5MB del browser
-        }))
-      }));
-      localStorage.setItem('study_ai_projects', JSON.stringify(sanitizedProjects));
-    } catch (e) {
-      console.warn("Spazio localStorage esaurito per i progetti", e);
-    }
+    localStorage.setItem('study_ai_projects', JSON.stringify(savedProjects));
   }, [savedProjects]);
 
   useEffect(() => {
@@ -277,7 +198,7 @@ function MainAppContent() {
     e.target.value = '';
   };
 
-  // Upload Multi-File per Wizard
+  // Upload Multi-File per Wizard (Supporta selezione multipla e aggiunte successive)
   const handleWizardFilesChange = (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
@@ -334,26 +255,22 @@ function MainAppContent() {
   // Calcolo giorni rimanenti
   const calculateDaysLeft = (targetDateStr) => {
     if (!targetDateStr) return 30;
-    try {
-      const target = new Date(targetDateStr);
-      if (isNaN(target.getTime())) return 30;
-      const now = new Date();
-      const diffTime = target.getTime() - now.getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      return diffDays > 0 ? diffDays : 1;
-    } catch {
-      return 30;
-    }
+    const target = new Date(targetDateStr);
+    const now = new Date();
+    const diffTime = target - now;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays > 0 ? diffDays : 1;
   };
 
-  // Generatore Syllabus Distinto e Non Ripetitivo
+  // GENERATORE INTELLIGENTE DEL PIANO DI STUDIO (Argomenti unici, distinti e strutturati)
   const generateDailySchedule = (subjectTitle, totalDays, prepLvl, filesList, typeExam) => {
     const daysCount = Math.max(3, Math.min(totalDays, 60));
     const schedule = [];
     const baseDate = new Date();
 
-    const textQuery = ((subjectTitle || '') + ' ' + (filesList || []).map(f => f.name).join(' ')).toLowerCase();
+    const textQuery = (subjectTitle + ' ' + filesList.map(f => f.name).join(' ')).toLowerCase();
 
+    // Pool accademico strutturato per Anatomia Patologica / Medicina
     const pathologyTopicsPool = [
       { theme: "Adattamenti e Danno Cellulare", topics: ["Adattamenti Cellulari: Ipertrofia, Iperplasia, Atrofia e Metaplasia", "Meccanismi Molecolari del Danno Cellulare Reversibile ed Irreversibile"] },
       { theme: "Morte Cellulare e Fisiopatologia", topics: ["Necrosi: Tipologie (Coagulativa, Colliquativa, Caseosa, Fibrinoide)", "Apoptosi: Via Intrinseca, Via Estrinseca ed Autofagia"] },
@@ -377,13 +294,14 @@ function MainAppContent() {
       { theme: "Ripasso Finale e Simulazione d'Esame", topics: ["Simulazione Generale d'Esame: Domande Scritte e Orali con Valutazione"] }
     ];
 
+    // Pool generico per altre discipline universitarie
     const genericAcademicPool = [
       { theme: "Principi Fondamentali e Quadro Generale", topics: ["Introduzione, Teorie Fondanti e Definizioni Chiave", "Metodologia e Modelli Concettuali di Riferimento"] },
-      { theme: "Strutture e Meccanismi Principali", topics: ["Analisi degli Elementi Costitutivi e Dinamiche del Sistema", "Classificazioni ed Interazioni"] },
-      { theme: "Processi e Modelli Applicativi", topics: ["Evoluzione dei Processi ed Equazioni Fondamentali", "Fattori Critici e Risoluzione dei Problemi"] },
-      { theme: "Analisi Specialistica e Casi Studio", topics: ["Approfondimento dei Modelli Teorici e Pratici", "Analisi di Scenario ed Esercitazioni"] },
-      { theme: "Quadro Normativo o Sperimentale", topics: ["Standard di Riferimento e Tecniche di Analisi", "Interpretazione dei Risultati e Discussione Critica"] },
-      { theme: "Sintesi, Schemi e Correlazioni", topics: ["Schematizzazione per Punti Chiave e Tavole Sinottiche", "Preparazione del Discorso d'Esame"] },
+      { theme: "Strutture e Meccanismi Principali", topics: ["Analisi degli Elementi Costitutivi e Fisiologia del Sistema", "Classificazioni ed Interazioni Dinamiche"] },
+      { theme: "Processi Dinamici e Dinamiche Operative", topics: ["Evoluzione dei Processi, Variabili ed Equazioni Fondamentali", "Fattori di Rischio, Vincoli e Risoluzione dei Problemi"] },
+      { theme: "Analisi Avanzata e Applicazioni", topics: ["Approfondimento Specialistico e Modelli Quantitativi/Qualitativi", "Casi Studio Pratici e Analisi di Scenario"] },
+      { theme: "Quadro Normativo o Sperimentale", topics: ["Standard di Riferimento, Protocolli e Tecniche di Misura", "Interpretazione dei Risultati e Discussione Critica"] },
+      { theme: "Sintesi, Correlazioni e Schemi", topics: ["Schematizzazione per Punti Chiave e Tavole Sinottiche", "Integrazione delle Fonti e Preparazione del Discorso d'Esame"] },
       { theme: "Simulazione e Ripasso Generale", topics: ["Ripasso Completo delle Nozioni e Verifica Finale"] }
     ];
 
@@ -401,10 +319,12 @@ function MainAppContent() {
       const poolIndex = (i - 1) % selectedPool.length;
       const currentModule = selectedPool[poolIndex];
 
+      // Determina il numero di argomenti per il giorno (1, 2, o 3 distinti)
       let topicsForToday = currentModule.topics;
       if (prepLvl < 50 && topicsForToday.length > 1) {
         topicsForToday = [topicsForToday[0]];
       } else if (prepLvl >= 90 && i % 4 === 0) {
+        // Aggiungi un focus specifico approfondito
         topicsForToday = [...topicsForToday, `Focus Specialistico & Dettagli Avanzati su: ${currentModule.theme}`];
       }
 
@@ -428,7 +348,7 @@ function MainAppContent() {
     return schedule;
   };
 
-  // Finalizzazione Wizard
+  // Finalizzazione Wizard e Scansione Materiale
   const handleFinalizeGuide = () => {
     setWizardStep(4);
     setLoadingProgress(0);
@@ -467,11 +387,10 @@ function MainAppContent() {
               })),
               schedule: initialSchedule,
             };
-
-            setSavedProjects(old => [newProject, ...(old || [])]);
+            setSavedProjects(old => [newProject, ...old]);
             setActiveProject(newProject);
             setCurrentView('project');
-          }, 300);
+          }, 400);
           return 100;
         }
         if (prev === 25) setLoadingStatusText('Analisi dei capitoli e strutturazione dei singoli argomenti...');
@@ -479,10 +398,10 @@ function MainAppContent() {
         if (prev === 85) setLoadingStatusText('Finalizzazione del piano di studio personalizzato...');
         return prev + 3;
       });
-    }, 45);
+    }, 50);
   };
 
-  // Generazione Lezione (Markdown + LaTeX)
+  // Generazione Lezione per un argomento specifico (Markdown + LaTeX)
   const handleGenerateLesson = async (dayNum, topic) => {
     if (isGeneratingLesson || !activeProject) return;
     setIsGeneratingLesson(true);
@@ -495,7 +414,7 @@ function MainAppContent() {
           isLessonGeneration: true,
           topicTitle: topic.title,
           sourceType: activeProject.sourceType,
-          files: activeProject.sourceType === 'my_materials' ? (activeProject.files || []) : [],
+          files: activeProject.sourceType === 'my_materials' ? activeProject.files : [],
           prompt: `Genera una lezione specialistica, strutturata e approfondita per l'argomento: "${topic.title}".
 Materia: ${activeProject.description}, Livello di preparazione richiesto: ${activeProject.prepLevel}%, Stile: ${activeProject.languageStyle}.
 ${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Devi basarti rigorosamente ed esclusivamente sulle fonti fornite nei file allegati. Non inventare o aggiungere nozioni esterne.' : 'Usa fonti accademiche e scientifiche online.'}
@@ -503,7 +422,7 @@ REGOLE DI FORMATTAZIONE:
 - Usa titoli chiari in Markdown (##, ###).
 - Evidenzia SEMPRE i termini tecnici e i concetti fondamentali in GRASSETTO (**parola**).
 - Usa elenchi puntati strutturati e tabelle di confronto se utili.
-- Se sono presenti formule, equazioni o stime statistiche, formattale in notazione LaTeX ($formula$ o $$formula$$).`
+- Se sono presenti formule, equazioni, reazioni chimiche o stime statistiche, formattale in notazione LaTeX ($formula$ o $$formula$$).`
         }),
       });
 
@@ -512,9 +431,9 @@ REGOLE DI FORMATTAZIONE:
 
       const lessonContent = data.reply;
 
-      const updatedSchedule = (activeProject.schedule || []).map(d => {
+      const updatedSchedule = activeProject.schedule.map(d => {
         if (d.dayNumber === dayNum) {
-          const updatedTopics = (d.topics || []).map(t => {
+          const updatedTopics = d.topics.map(t => {
             if (t.id === topic.id) {
               return { ...t, lesson: lessonContent };
             }
@@ -527,7 +446,7 @@ REGOLE DI FORMATTAZIONE:
 
       const updatedProject = { ...activeProject, schedule: updatedSchedule };
       setActiveProject(updatedProject);
-      setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProject : p));
+      setSavedProjects(prev => prev.map(p => p.id === activeProject.id ? updatedProject : p));
     } catch (err) {
       alert(`Errore: ${err.message}`);
     } finally {
@@ -538,9 +457,9 @@ REGOLE DI FORMATTAZIONE:
   // Toggle completamento argomento
   const handleToggleTopicComplete = (dayNum, topicId) => {
     if (!activeProject) return;
-    const updatedSchedule = (activeProject.schedule || []).map(d => {
+    const updatedSchedule = activeProject.schedule.map(d => {
       if (d.dayNumber === dayNum) {
-        const updatedTopics = (d.topics || []).map(t => {
+        const updatedTopics = d.topics.map(t => {
           if (t.id === topicId) {
             return { ...t, completed: !t.completed };
           }
@@ -553,23 +472,19 @@ REGOLE DI FORMATTAZIONE:
 
     const updatedProject = { ...activeProject, schedule: updatedSchedule };
     setActiveProject(updatedProject);
-    setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProject : p));
+    setSavedProjects(prev => prev.map(p => p.id === activeProject.id ? updatedProject : p));
   };
 
   // Calcolo progresso globale piano di studio
   const calculateGlobalProgress = () => {
-    if (!activeProject || !Array.isArray(activeProject.schedule)) {
-      return { completed: 0, total: 0, percent: 0 };
-    }
+    if (!activeProject?.schedule) return { completed: 0, total: 0, percent: 0 };
     let total = 0;
     let completed = 0;
     activeProject.schedule.forEach(d => {
-      if (d && Array.isArray(d.topics)) {
-        d.topics.forEach(t => {
-          total++;
-          if (t && t.completed) completed++;
-        });
-      }
+      d.topics.forEach(t => {
+        total++;
+        if (t.completed) completed++;
+      });
     });
     const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
     return { completed, total, percent };
@@ -621,9 +536,9 @@ REGOLE DI FORMATTAZIONE:
         chatId = Date.now().toString();
         setCurrentChatId(chatId);
         const title = prompt ? (prompt.slice(0, 28) + (prompt.length > 28 ? '...' : '')) : (filePayload?.name || 'Nuova sessione');
-        setConversations([{ id: chatId, title, messages: updatedMessages }, ...(conversations || [])]);
+        setConversations([{ id: chatId, title, messages: updatedMessages }, ...conversations]);
       } else {
-        setConversations((conversations || []).map(c => c.id === chatId ? { ...c, messages: updatedMessages } : c));
+        setConversations(conversations.map(c => c.id === chatId ? { ...c, messages: updatedMessages } : c));
       }
     } catch (err) {
       setMessages([...newMessages, { role: 'assistant', text: `Si è verificato un errore: ${err.message}` }]);
@@ -652,7 +567,7 @@ REGOLE DI FORMATTAZIONE:
     return 'Padronanza totale & Dettagli (30 e Lode)';
   };
 
-  const currentDayData = activeProject?.schedule?.find(d => d.dayNumber === selectedDayNumber) || activeProject?.schedule?.[0];
+  const currentDayData = activeProject?.schedule?.find(d => d.dayNumber === selectedDayNumber);
   const currentSelectedTopic = currentDayData?.topics?.find(t => t.id === selectedTopicId) || currentDayData?.topics?.[0];
 
   return (
@@ -693,7 +608,7 @@ REGOLE DI FORMATTAZIONE:
         <div className="flex-1 overflow-y-auto p-3 space-y-4">
           
           {/* SEZIONE GUIDE SALVATE */}
-          {savedProjects && savedProjects.length > 0 && (
+          {savedProjects.length > 0 && (
             <div>
               <div className="text-xs font-semibold text-blue-400 uppercase tracking-wider px-3 py-1 flex items-center gap-1.5">
                 <FolderKanban size={13} />
@@ -737,7 +652,7 @@ REGOLE DI FORMATTAZIONE:
               Conversazioni recenti
             </div>
             <div className="mt-1 space-y-1">
-              {!conversations || conversations.length === 0 ? (
+              {conversations.length === 0 ? (
                 <div className="text-xs text-gray-500 px-3 py-3 text-center">
                   Nessuna conversazione salvata
                 </div>
@@ -1208,23 +1123,19 @@ REGOLE DI FORMATTAZIONE:
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">Progetto di Studio</span>
                     <span className="text-gray-500">•</span>
-                    <span className="text-xs text-gray-400">
-                      Creato il {activeProject?.createdAt ? new Date(activeProject.createdAt).toLocaleDateString('it-IT') : new Date().toLocaleDateString('it-IT')}
-                    </span>
+                    <span className="text-xs text-gray-400">Creato il {new Date(activeProject.createdAt).toLocaleDateString('it-IT')}</span>
                   </div>
                   <h1 className="text-2xl sm:text-3xl font-bold text-gray-100">
-                    {activeProject?.description || 'Esame di Studio'}
+                    {activeProject.description}
                   </h1>
                 </div>
 
                 <div className="bg-geminiDark border border-geminiBorder px-4 py-2.5 rounded-2xl text-center shadow-md">
                   <div className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Mancano</div>
                   <div className="text-xl font-extrabold text-blue-400">
-                    {calculateDaysLeft(activeProject?.examDate)} <span className="text-xs font-normal text-gray-300">giorni</span>
+                    {calculateDaysLeft(activeProject.examDate)} <span className="text-xs font-normal text-gray-300">giorni</span>
                   </div>
-                  <div className="text-[10px] text-gray-500">
-                    {activeProject?.examDate ? new Date(activeProject.examDate).toLocaleDateString('it-IT') : ''}
-                  </div>
+                  <div className="text-[10px] text-gray-500">{new Date(activeProject.examDate).toLocaleDateString('it-IT')}</div>
                 </div>
               </div>
 
@@ -1232,15 +1143,15 @@ REGOLE DI FORMATTAZIONE:
               <div className="flex flex-wrap gap-2 pt-2">
                 <span className="bg-geminiHover border border-geminiBorder px-3 py-1.5 rounded-xl text-xs text-gray-300 flex items-center gap-1.5">
                   <Target size={13} className="text-blue-400" />
-                  <span>Obiettivo: <strong>{activeProject?.prepLevel || 80}%</strong> ({getPrepLabel(activeProject?.prepLevel || 80).split('(')[0].trim()})</span>
+                  <span>Obiettivo: <strong>{activeProject.prepLevel}%</strong> ({getPrepLabel(activeProject.prepLevel).split('(')[0].trim()})</span>
                 </span>
                 <span className="bg-geminiHover border border-geminiBorder px-3 py-1.5 rounded-xl text-xs text-gray-300 flex items-center gap-1.5">
                   <GraduationCap size={13} className="text-indigo-400" />
-                  <span>Prova: <strong className="capitalize">{activeProject?.examType ? activeProject.examType.replace('_', ' + ') : 'Orale'}</strong></span>
+                  <span>Prova: <strong className="capitalize">{activeProject.examType.replace('_', ' + ')}</strong></span>
                 </span>
                 <span className="bg-geminiHover border border-geminiBorder px-3 py-1.5 rounded-xl text-xs text-gray-300 flex items-center gap-1.5">
                   <Sliders size={13} className="text-purple-400" />
-                  <span>Stile: <strong className="capitalize">{activeProject?.languageStyle || 'Automatico'}</strong></span>
+                  <span>Stile: <strong className="capitalize">{activeProject.languageStyle}</strong></span>
                 </span>
               </div>
             </div>
@@ -1256,16 +1167,16 @@ REGOLE DI FORMATTAZIONE:
                     <span>Materiali e Fonti</span>
                   </div>
                   <span className="text-xs text-gray-400">
-                    {activeProject?.sourceType === 'my_materials' ? `${activeProject?.files?.length || 0} file` : 'Online'}
+                    {activeProject.sourceType === 'my_materials' ? `${activeProject.files?.length || 0} file` : 'Online'}
                   </span>
                 </div>
 
-                {activeProject?.sourceType === 'my_materials' ? (
+                {activeProject.sourceType === 'my_materials' ? (
                   <div className="space-y-3">
-                    {activeProject?.files && activeProject.files.length > 0 ? (
+                    {activeProject.files && activeProject.files.length > 0 ? (
                       <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                         {activeProject.files.map((f, i) => (
-                          <div key={f.id || i} className="flex items-center justify-between p-2.5 rounded-xl bg-geminiDark border border-geminiBorder text-xs">
+                          <div key={i} className="flex items-center justify-between p-2.5 rounded-xl bg-geminiDark border border-geminiBorder text-xs">
                             <div className="flex items-center gap-2 truncate">
                               <FileCheck size={14} className="text-emerald-400 shrink-0" />
                               <span className="font-medium truncate">{f.name}</span>
@@ -1311,7 +1222,7 @@ REGOLE DI FORMATTAZIONE:
                     <span>Piano di Studio Giornaliero</span>
                   </div>
                   <p className="text-xs text-gray-400 mt-3 leading-relaxed">
-                    Il piano ha suddiviso la preparazione di <strong>{activeProject?.description}</strong> in base alla difficoltà e al materiale. Accedi al programma giorno per giorno e genera lezioni su misura.
+                    Il piano ha suddiviso la preparazione di <strong>{activeProject.description}</strong> in base alla difficoltà e al materiale. Accedi al programma giorno per giorno e genera lezioni su misura.
                   </p>
                   
                   <div className="mt-4 p-3 bg-geminiDark rounded-2xl border border-geminiBorder flex items-center justify-between text-xs">
@@ -1354,7 +1265,7 @@ REGOLE DI FORMATTAZIONE:
               </button>
               
               <div className="text-xs text-gray-400">
-                Materia: <strong className="text-gray-200">{activeProject?.description}</strong>
+                Materia: <strong className="text-gray-200">{activeProject.description}</strong>
               </div>
             </div>
 
@@ -1373,7 +1284,7 @@ REGOLE DI FORMATTAZIONE:
               <div className="flex items-center gap-4">
                 <div className="bg-geminiDark px-4 py-2.5 rounded-2xl border border-geminiBorder text-center">
                   <div className="text-[10px] text-gray-400 uppercase font-bold">Giorni Totali</div>
-                  <div className="text-lg font-bold text-blue-400">{activeProject?.schedule?.length || 0}</div>
+                  <div className="text-lg font-bold text-blue-400">{activeProject.schedule?.length || 0}</div>
                 </div>
                 <div className="bg-geminiDark px-4 py-2.5 rounded-2xl border border-geminiBorder text-center">
                   <div className="text-[10px] text-gray-400 uppercase font-bold">Completamento</div>
@@ -1384,16 +1295,16 @@ REGOLE DI FORMATTAZIONE:
 
             {/* LISTA DEI GIORNI */}
             <div className="space-y-3.5 pb-12">
-              {(activeProject?.schedule || []).map(day => {
-                const dayCompletedTopics = (day.topics || []).filter(t => t.completed).length;
-                const isDayAllDone = dayCompletedTopics === (day.topics?.length || 0) && (day.topics?.length || 0) > 0;
+              {activeProject.schedule?.map(day => {
+                const dayCompletedTopics = day.topics.filter(t => t.completed).length;
+                const isDayAllDone = dayCompletedTopics === day.topics.length && day.topics.length > 0;
 
                 return (
                   <div 
                     key={day.dayNumber}
                     onClick={() => {
                       setSelectedDayNumber(day.dayNumber);
-                      setSelectedTopicId(day.topics?.[0]?.id || null);
+                      setSelectedTopicId(day.topics[0]?.id || null);
                       setCurrentView('day_detail');
                     }}
                     className={`p-4 sm:p-5 rounded-2xl border cursor-pointer transition flex items-center justify-between group ${
@@ -1421,7 +1332,7 @@ REGOLE DI FORMATTAZIONE:
                           {day.dayTitle}
                         </h3>
                         <div className="text-xs text-gray-400 mt-0.5">
-                          {day.topics?.length || 0} argomenti previsti ({dayCompletedTopics} completati)
+                          {day.topics.length} argomenti previsti ({dayCompletedTopics} completati)
                         </div>
                       </div>
                     </div>
@@ -1460,18 +1371,18 @@ REGOLE DI FORMATTAZIONE:
               
               <div className="flex items-center gap-2 text-xs text-gray-400">
                 <CalendarIcon size={14} className="text-blue-400" />
-                <span>{currentDayData?.date}</span>
+                <span>{currentDayData.date}</span>
               </div>
             </div>
 
             {/* TITOLO GIORNO */}
             <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 rounded-3xl shadow-lg space-y-2">
-              <div className="text-xs font-semibold text-blue-400 uppercase tracking-wider">{currentDayData?.phase}</div>
+              <div className="text-xs font-semibold text-blue-400 uppercase tracking-wider">{currentDayData.phase}</div>
               <h2 className="text-xl sm:text-2xl font-bold text-gray-100">
-                {currentDayData?.dayTitle}
+                {currentDayData.dayTitle}
               </h2>
               <p className="text-xs text-gray-400">
-                Seleziona un argomento per generare o consultare la lezione didattica {activeProject?.sourceType === 'my_materials' ? 'basata esclusivamente sui tuoi materiali' : 'basata sulle fonti accademiche online'}.
+                Seleziona un argomento per generare o consultare la lezione didattica {activeProject.sourceType === 'my_materials' ? 'basata esclusivamente sui tuoi materiali' : 'basata sulle fonti accademiche online'}.
               </p>
             </div>
 
@@ -1482,7 +1393,7 @@ REGOLE DI FORMATTAZIONE:
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {(currentDayData?.topics || []).map(topic => (
+                {currentDayData.topics.map(topic => (
                   <div
                     key={topic.id}
                     onClick={() => setSelectedTopicId(topic.id)}
@@ -1531,14 +1442,14 @@ REGOLE DI FORMATTAZIONE:
               </div>
             </div>
 
-            {/* SEZIONE DETTAGLIO ARGOMENTO & LEZIONE GENERATA */}
+            {/* SEZIONE DETTAGLIO ARGOMENTO & LEZIONE GENERATA (RICCA DI FORMATAZIONE) */}
             {currentSelectedTopic && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-xl space-y-6">
                 
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-geminiBorder/60 pb-4">
                   <div>
                     <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">Lezione Didattica</span>
-                    <h3 className="text-lg font-bold text-gray-100 mt-0.5">{currentSelectedTopic?.title}</h3>
+                    <h3 className="text-lg font-bold text-gray-100 mt-0.5">{currentSelectedTopic.title}</h3>
                   </div>
 
                   {/* PULSANTE GENERA LEZIONE */}
@@ -1559,7 +1470,7 @@ REGOLE DI FORMATTAZIONE:
                     ) : (
                       <>
                         <Sparkles size={15} />
-                        <span>{currentSelectedTopic?.lesson ? 'Rigenera lezione' : 'Genera lezione'}</span>
+                        <span>{currentSelectedTopic.lesson ? 'Rigenera lezione' : 'Genera lezione'}</span>
                       </>
                     )}
                   </button>
@@ -1574,18 +1485,18 @@ REGOLE DI FORMATTAZIONE:
                     <div className="space-y-1">
                       <div className="text-sm font-semibold text-gray-200">Elaborazione della lezione personalizzata...</div>
                       <div className="text-xs text-gray-400">
-                        {activeProject?.sourceType === 'my_materials' 
+                        {activeProject.sourceType === 'my_materials' 
                           ? 'Estrazione accurata dei concetti dai file caricati con formattazione e formule.' 
                           : 'Elaborazione pedagogica con nozioni e formule scientifiche.'}
                       </div>
                     </div>
                   </div>
-                ) : currentSelectedTopic?.lesson ? (
+                ) : currentSelectedTopic.lesson ? (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between text-xs text-gray-400 bg-geminiDark p-3 rounded-2xl border border-geminiBorder">
                       <div className="flex items-center gap-2">
                         <BookOpen size={15} className="text-blue-400" />
-                        <span>Fonte: <strong>{activeProject?.sourceType === 'my_materials' ? 'Esclusivamente dai tuoi file caricati' : 'Ricerca accademica online'}</strong></span>
+                        <span>Fonte: <strong>{activeProject.sourceType === 'my_materials' ? 'Esclusivamente dai tuoi file caricati' : 'Ricerca accademica online'}</strong></span>
                       </div>
                       <button
                         onClick={() => handleToggleTopicComplete(currentDayData.dayNumber, currentSelectedTopic.id)}
@@ -1610,7 +1521,7 @@ REGOLE DI FORMATTAZIONE:
                     <BookOpen size={28} className="mx-auto text-gray-500" />
                     <div className="text-xs text-gray-300 font-medium">Nessuna lezione generata per questo argomento</div>
                     <p className="text-[11px] text-gray-500 max-w-sm mx-auto">
-                      Clicca su <strong>"Genera lezione"</strong> in alto per ricevere una sintesi didattica basata {activeProject?.sourceType === 'my_materials' ? 'sui tuoi file' : 'sulle fonti online'}.
+                      Clicca su <strong>"Genera lezione"</strong> in alto per ricevere una sintesi didattica basata {activeProject.sourceType === 'my_materials' ? 'sui tuoi file' : 'sulle fonti online'}.
                     </p>
                   </div>
                 )}
