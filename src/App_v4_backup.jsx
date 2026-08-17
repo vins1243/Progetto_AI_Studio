@@ -1,8 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
 import { 
   Menu, 
   X, 
@@ -30,43 +26,10 @@ import {
   Square,
   BookMarked,
   RefreshCw,
-  ChevronRight
+  Layers,
+  ChevronRight,
+  HelpCircle
 } from 'lucide-react';
-
-// Componente per il rendering avanzato di Markdown e formule LaTeX
-function MarkdownRenderer({ content }) {
-  if (!content) return null;
-  return (
-    <div className="prose prose-invert max-w-none text-sm leading-relaxed text-gray-200">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex]}
-        components={{
-          h1: ({node, ...props}) => <h1 className="text-xl font-bold text-gray-100 mt-5 mb-3 pb-1 border-b border-geminiBorder/60" {...props} />,
-          h2: ({node, ...props}) => <h2 className="text-lg font-bold text-blue-400 mt-5 mb-2.5 flex items-center gap-2" {...props} />,
-          h3: ({node, ...props}) => <h3 className="text-base font-semibold text-indigo-300 mt-4 mb-1.5" {...props} />,
-          p: ({node, ...props}) => <p className="mb-3 leading-relaxed text-gray-200" {...props} />,
-          ul: ({node, ...props}) => <ul className="list-disc list-outside ml-5 space-y-1.5 mb-3 text-gray-200" {...props} />,
-          ol: ({node, ...props}) => <ol className="list-decimal list-outside ml-5 space-y-1.5 mb-3 text-gray-200" {...props} />,
-          li: ({node, ...props}) => <li className="text-gray-200 leading-relaxed" {...props} />,
-          strong: ({node, ...props}) => <strong className="font-bold text-white bg-blue-500/15 text-blue-200 px-1 py-0.5 rounded border border-blue-500/30" {...props} />,
-          em: ({node, ...props}) => <em className="italic text-gray-300" {...props} />,
-          blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-blue-500 pl-4 py-2 my-3 bg-geminiDarkSecondary/60 rounded-r-xl italic text-gray-300" {...props} />,
-          code: ({node, inline, ...props}) => inline 
-            ? <code className="bg-geminiDarkSecondary px-1.5 py-0.5 rounded text-blue-300 font-mono text-xs border border-geminiBorder" {...props} />
-            : <pre className="bg-geminiDarkSecondary p-4 rounded-2xl overflow-x-auto text-xs font-mono text-gray-200 my-3 border border-geminiBorder"><code {...props} /></pre>,
-          table: ({node, ...props}) => <div className="overflow-x-auto my-4 rounded-xl border border-geminiBorder"><table className="min-w-full divide-y divide-geminiBorder text-xs text-left" {...props} /></div>,
-          thead: ({node, ...props}) => <thead className="bg-geminiDarkSecondary text-gray-300 font-bold uppercase" {...props} />,
-          tbody: ({node, ...props}) => <tbody className="divide-y divide-geminiBorder/50 bg-geminiDark/40" {...props} />,
-          th: ({node, ...props}) => <th className="px-4 py-2.5 text-xs font-bold text-gray-200" {...props} />,
-          td: ({node, ...props}) => <td className="px-4 py-2.5 text-xs text-gray-200" {...props} />,
-        }}
-      >
-        {content}
-      </ReactMarkdown>
-    </div>
-  );
-}
 
 export default function App() {
   // Navigation State: 'chat' | 'wizard' | 'project' | 'study_plan' | 'day_detail'
@@ -252,7 +215,7 @@ export default function App() {
     e.target.value = '';
   };
 
-  // Calcolo giorni rimanenti
+  // Helper calcolo giorni mancanti all'esame
   const calculateDaysLeft = (targetDateStr) => {
     if (!targetDateStr) return 30;
     const target = new Date(targetDateStr);
@@ -262,84 +225,58 @@ export default function App() {
     return diffDays > 0 ? diffDays : 1;
   };
 
-  // GENERATORE INTELLIGENTE DEL PIANO DI STUDIO (Argomenti unici, distinti e strutturati)
+  // Helper generatore Piano Giornaliero Intelligente
   const generateDailySchedule = (subjectTitle, totalDays, prepLvl, filesList, typeExam) => {
-    const daysCount = Math.max(3, Math.min(totalDays, 60));
+    const daysCount = Math.max(3, Math.min(totalDays, 60)); // limitiamo a un range realistico (3-60 giorni)
     const schedule = [];
     const baseDate = new Date();
 
-    const textQuery = (subjectTitle + ' ' + filesList.map(f => f.name).join(' ')).toLowerCase();
-
-    // Pool accademico strutturato per Anatomia Patologica / Medicina
-    const pathologyTopicsPool = [
-      { theme: "Adattamenti e Danno Cellulare", topics: ["Adattamenti Cellulari: Ipertrofia, Iperplasia, Atrofia e Metaplasia", "Meccanismi Molecolari del Danno Cellulare Reversibile ed Irreversibile"] },
-      { theme: "Morte Cellulare e Fisiopatologia", topics: ["Necrosi: Tipologie (Coagulativa, Colliquativa, Caseosa, Fibrinoide)", "Apoptosi: Via Intrinseca, Via Estrinseca ed Autofagia"] },
-      { theme: "Infiammazione Acuta ed Emodinamica", topics: ["Eventi Vascolari, Modificazioni del Calibro e Permeabilità", "Reclutamento ed Attivazione Leucocitaria ed Essudato"] },
-      { theme: "Mediatori Chimici della Flogosi", topics: ["Citochine, Chemochine, Sistema del Complemento e Metaboliti dell'Acido Arachidonico"] },
-      { theme: "Infiammazione Cronica e Granulomi", topics: ["Cellule Effettrici (Macrofagi, Linfociti) ed Infiammazione Granulomatosa", "Eziologia e Struttura del Granuloma Tubercolare e da Corpo Estraneo"] },
-      { theme: "Riparazione e Cicatrizzazione", topics: ["Angiogenesi, Formazione del Tessuto di Granulazione e Fibrosi", "Fattori di Crescita (VEGF, TGF-beta) e Guarigione delle Ferite"] },
-      { theme: "Disordini Emodinamici e Trombosi", topics: ["Fisiopatologia dell'Edema, Iperemia e Congestione", "Triade di Virchow, Trombosi Arteriosa e Venosa ed Embolia"] },
-      { theme: "Infarto e Sindromi da Shock", topics: ["Quadri Morfologici dell'Infarto Rosso e Bianco", "Fisiopatologia e Fasi dello Shock (Cardiogeno, Ipovolemico, Settico)"] },
-      { theme: "Neoplasie: Basi Generali e Nomenclatura", topics: ["Caratteristiche dei Tumori Benigni e Maligni: Anaplasia e Differenziazione", "Nomenclatura Istogenetica ed Epidemiologia dei Tumori"] },
-      { theme: "Basi Molecolari della Cancerogenesi", topics: ["Oncogeni e Geni Oncosoppressori (TP53, RB1, APC)", "Meccanismi di Riparazione del DNA e Instabilità Genomica"] },
-      { theme: "Biologia e Progressione Tumorale", topics: ["Angiogenesi Tumorale, Transizione Epitelio-Mesenchimatosa (EMT)", "Invasione della Matrice Extracellulare e Disseminazione Metastatica"] },
-      { theme: "Immunità Tumorale e Grading", topics: ["Microambiente Tumorale, Infiltrato Linfocitario ed Immune Checkpoints", "Grading Istologico e Stadiazione Clinica TNM"] },
-      { theme: "Patologia dell'Apparato Cardiovascolare", topics: ["Aterosclerosi: Morfogenesi della Placca ed Evoluzione delle Lesioni", "Cardiopatia Ischemica, Infarto Miocardico Acuto e Complicanze"] },
-      { theme: "Patologia dell'Apparato Respiratorio", topics: ["BPCO, Enfisema Polmonare, Asma e Bronchiectasie", "Polmoniti Tipiche e Atipiche, ARDS e Carcinomi Polmonari"] },
-      { theme: "Patologia Gastrointestinale", topics: ["Gastriti Acute e Croniche (Helicobacter pylori), Ulcera Peptica", "Malattie Infiammatorie Croniche Intestinali (Crohn vs Rettocolite Ulcerosa)"] },
-      { theme: "Patologia Epatica e Biliare", topics: ["Epatiti Virali, Steatosi Epatica e Steatoepatite (NASH)", "Cirrosi Epatica, Ipertensione Portale ed Epatocarcinoma"] },
-      { theme: "Patologia Renale", topics: ["Sindrome Nefrosica vs Sindrome Nefritica", "Glomerulonefriti Primarie e Secondarie, Insufficienza Renale"] },
-      { theme: "Patologia Endocrina e Metabolica", topics: ["Diabete Mellito Tipo 1 e Tipo 2: Quadri d'Organo e Vasculopatia", "Patologie Tiroidee: Tiroiditi, Gozzo e Neoplasie Tiroidee"] },
-      { theme: "Consolidamento e Correlazioni Cliniche", topics: ["Mappe Concettuali Integrative Anatomo-Cliniche", "Analisi di Casi Clinici Tipici e Quesiti d'Esame ad Alta Frequenza"] },
-      { theme: "Ripasso Finale e Simulazione d'Esame", topics: ["Simulazione Generale d'Esame: Domande Scritte e Orali con Valutazione"] }
+    // Moduli tematici tipici per la materia o dedotti dai file
+    const sampleTopics = [
+      "Basi e Principi Generali della Materia",
+      "Terminologia, Classificazioni e Concetti Chiave",
+      "Meccanismi Fondamentali ed Eziologia",
+      "Processi Cellulari, Danno e Risposta Infiammatoria",
+      "Quadri Clinici Principali e Morfologia",
+      "Patologie Sistemiche ed Esempi di Rilievo",
+      "Diagnostica, Biomarcatori e Tecniche d'Indagine",
+      "Correlazioni Anatomo-Cliniche e Fisiopatologiche",
+      "Complicanze, Prognosi ed Evoluzione",
+      "Casi di Studio, Domande Frequenti d'Esame",
+      "Integrazione delle Fonti e Mappe Concettuali",
+      "Ripasso Generale e Simulazione di Verifica"
     ];
 
-    // Pool generico per altre discipline universitarie
-    const genericAcademicPool = [
-      { theme: "Principi Fondamentali e Quadro Generale", topics: ["Introduzione, Teorie Fondanti e Definizioni Chiave", "Metodologia e Modelli Concettuali di Riferimento"] },
-      { theme: "Strutture e Meccanismi Principali", topics: ["Analisi degli Elementi Costitutivi e Fisiologia del Sistema", "Classificazioni ed Interazioni Dinamiche"] },
-      { theme: "Processi Dinamici e Dinamiche Operative", topics: ["Evoluzione dei Processi, Variabili ed Equazioni Fondamentali", "Fattori di Rischio, Vincoli e Risoluzione dei Problemi"] },
-      { theme: "Analisi Avanzata e Applicazioni", topics: ["Approfondimento Specialistico e Modelli Quantitativi/Qualitativi", "Casi Studio Pratici e Analisi di Scenario"] },
-      { theme: "Quadro Normativo o Sperimentale", topics: ["Standard di Riferimento, Protocolli e Tecniche di Misura", "Interpretazione dei Risultati e Discussione Critica"] },
-      { theme: "Sintesi, Correlazioni e Schemi", topics: ["Schematizzazione per Punti Chiave e Tavole Sinottiche", "Integrazione delle Fonti e Preparazione del Discorso d'Esame"] },
-      { theme: "Simulazione e Ripasso Generale", topics: ["Ripasso Completo delle Nozioni e Verifica Finale"] }
-    ];
-
-    const isMedicalOrBio = textQuery.includes('patolog') || textQuery.includes('anatom') || textQuery.includes('medicin') || textQuery.includes('biolog') || textQuery.includes('curcio');
-    const selectedPool = isMedicalOrBio ? pathologyTopicsPool : genericAcademicPool;
+    const topicsPerDay = prepLvl >= 85 ? 3 : 2;
 
     for (let i = 1; i <= daysCount; i++) {
       const dayDate = new Date(baseDate);
       dayDate.setDate(baseDate.getDate() + (i - 1));
 
+      // Assegna fase
       let phase = "Fase 1: Studio e Comprensione";
       if (i > daysCount * 0.6) phase = "Fase 2: Consolidamento e Schemi";
       if (i > daysCount * 0.85) phase = "Fase 3: Ripasso Finale e Simulazione";
 
-      const poolIndex = (i - 1) % selectedPool.length;
-      const currentModule = selectedPool[poolIndex];
+      // Argomenti del giorno
+      const topicIndex = (i - 1) % sampleTopics.length;
+      const mainTheme = sampleTopics[topicIndex];
 
-      // Determina il numero di argomenti per il giorno (1, 2, o 3 distinti)
-      let topicsForToday = currentModule.topics;
-      if (prepLvl < 50 && topicsForToday.length > 1) {
-        topicsForToday = [topicsForToday[0]];
-      } else if (prepLvl >= 90 && i % 4 === 0) {
-        // Aggiungi un focus specifico approfondito
-        topicsForToday = [...topicsForToday, `Focus Specialistico & Dettagli Avanzati su: ${currentModule.theme}`];
+      const dayTopics = [];
+      for (let t = 1; t <= topicsPerDay; t++) {
+        dayTopics.push({
+          id: `d${i}_t${t}`,
+          title: `${mainTheme} - Parte ${t}: Focus su ${subjectTitle || 'argomento principale'}`,
+          difficulty: i % 3 === 0 ? 'Avanzato' : (i % 2 === 0 ? 'Intermedio' : 'Base'),
+          completed: false,
+          lesson: null,
+        });
       }
-
-      const dayTopics = topicsForToday.map((title, idx) => ({
-        id: `d${i}_t${idx + 1}`,
-        title: title,
-        difficulty: idx === 0 ? 'Fondamentale' : (idx === 1 ? 'Intermedio' : 'Avanzato'),
-        completed: false,
-        lesson: null,
-      }));
 
       schedule.push({
         dayNumber: i,
         date: dayDate.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-        dayTitle: `Giorno ${i}: ${currentModule.theme}`,
+        dayTitle: `Giorno ${i}: ${mainTheme}`,
         phase: phase,
         topics: dayTopics,
       });
@@ -348,11 +285,11 @@ export default function App() {
     return schedule;
   };
 
-  // Finalizzazione Wizard e Scansione Materiale
+  // Transizione al Loading e creazione progetto con Piano Giornaliero
   const handleFinalizeGuide = () => {
     setWizardStep(4);
     setLoadingProgress(0);
-    setLoadingStatusText('Scansione dei file e valutazione della complessità...');
+    setLoadingStatusText('Scansione dei file e valutazione della loro lunghezza...');
 
     const daysTotal = calculateDaysLeft(examDate);
 
@@ -393,15 +330,15 @@ export default function App() {
           }, 400);
           return 100;
         }
-        if (prev === 25) setLoadingStatusText('Analisi dei capitoli e strutturazione dei singoli argomenti...');
-        if (prev === 60) setLoadingStatusText('Distribuzione non ripetitiva degli argomenti nel calendario...');
+        if (prev === 20) setLoadingStatusText('Calcolo della difficoltà degli argomenti e del carico giornaliero...');
+        if (prev === 55) setLoadingStatusText('Assegnazione degli argomenti specifici per ogni singolo giorno...');
         if (prev === 85) setLoadingStatusText('Finalizzazione del piano di studio personalizzato...');
         return prev + 3;
       });
-    }, 50);
+    }, 55);
   };
 
-  // Generazione Lezione per un argomento specifico (Markdown + LaTeX)
+  // Generazione Lezione per un argomento specifico
   const handleGenerateLesson = async (dayNum, topic) => {
     if (isGeneratingLesson || !activeProject) return;
     setIsGeneratingLesson(true);
@@ -415,14 +352,9 @@ export default function App() {
           topicTitle: topic.title,
           sourceType: activeProject.sourceType,
           files: activeProject.sourceType === 'my_materials' ? activeProject.files : [],
-          prompt: `Genera una lezione specialistica, strutturata e approfondita per l'argomento: "${topic.title}".
-Materia: ${activeProject.description}, Livello di preparazione richiesto: ${activeProject.prepLevel}%, Stile: ${activeProject.languageStyle}.
-${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Devi basarti rigorosamente ed esclusivamente sulle fonti fornite nei file allegati. Non inventare o aggiungere nozioni esterne.' : 'Usa fonti accademiche e scientifiche online.'}
-REGOLE DI FORMATTAZIONE:
-- Usa titoli chiari in Markdown (##, ###).
-- Evidenzia SEMPRE i termini tecnici e i concetti fondamentali in GRASSETTO (**parola**).
-- Usa elenchi puntati strutturati e tabelle di confronto se utili.
-- Se sono presenti formule, equazioni, reazioni chimiche o stime statistiche, formattale in notazione LaTeX ($formula$ o $$formula$$).`
+          prompt: `Genera una lezione/riassunto strutturato e approfondito per l'argomento: "${topic.title}".
+Dettagli esame: ${activeProject.description}, livello target: ${activeProject.prepLevel}%, stile: ${activeProject.languageStyle}.
+${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Usa solo ed esclusivamente le fonti fornite nei file allegati. Non inventare o aggiungere nozioni esterne.' : 'Usa le migliori nozioni accademiche e scientifiche online.'}`
         }),
       });
 
@@ -431,6 +363,7 @@ REGOLE DI FORMATTAZIONE:
 
       const lessonContent = data.reply;
 
+      // Aggiorna il piano di studio con la lezione generata
       const updatedSchedule = activeProject.schedule.map(d => {
         if (d.dayNumber === dayNum) {
           const updatedTopics = d.topics.map(t => {
@@ -581,7 +514,7 @@ REGOLE DI FORMATTAZIONE:
         />
       )}
 
-      {/* SIDEBAR RETRATTILE */}
+      {/* SIDEBAR RETRATTILE A SCOMPARSA */}
       <aside 
         className={`fixed inset-y-0 left-0 z-50 flex flex-col w-80 max-w-[85vw] bg-geminiDarkSecondary border-r border-geminiBorder shadow-2xl transition-transform duration-300 ease-in-out overflow-hidden ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -1214,7 +1147,7 @@ REGOLE DI FORMATTAZIONE:
                 )}
               </div>
 
-              {/* CARD PIANO DI STUDIO */}
+              {/* CARD PIANO DI STUDIO (PORTA ALLA PAGINA GIORNALIERA) */}
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 rounded-3xl shadow-sm space-y-4 flex flex-col justify-between">
                 <div>
                   <div className="flex items-center gap-2.5 font-bold text-base text-gray-100 border-b border-geminiBorder/60 pb-3">
@@ -1225,6 +1158,7 @@ REGOLE DI FORMATTAZIONE:
                     Il piano ha suddiviso la preparazione di <strong>{activeProject.description}</strong> in base alla difficoltà e al materiale. Accedi al programma giorno per giorno e genera lezioni su misura.
                   </p>
                   
+                  {/* STATISTICHE RAPIDE */}
                   <div className="mt-4 p-3 bg-geminiDark rounded-2xl border border-geminiBorder flex items-center justify-between text-xs">
                     <span className="text-gray-400">Progresso piano:</span>
                     <span className="font-bold text-emerald-400">
@@ -1233,6 +1167,7 @@ REGOLE DI FORMATTAZIONE:
                   </div>
                 </div>
 
+                {/* PULSANTE "AVVIA STUDIO CON IL TUTOR AI" -> APRE IL PIANO GIORNALIERO */}
                 <button 
                   onClick={() => setCurrentView('study_plan')}
                   className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-lg shadow-blue-600/30 transition transform active:scale-98"
@@ -1354,7 +1289,7 @@ REGOLE DI FORMATTAZIONE:
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* VISTA 4: DETTAGLIO GIORNO & GENERATORE LEZIONE (MARKDOWN + LATEX) */}
+        {/* VISTA 4: DETTAGLIO GIORNO & GENERATORE LEZIONE SU MISURA      */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'day_detail' && activeProject && currentDayData && (
           <main className="flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-4xl mx-auto w-full space-y-6">
@@ -1382,7 +1317,7 @@ REGOLE DI FORMATTAZIONE:
                 {currentDayData.dayTitle}
               </h2>
               <p className="text-xs text-gray-400">
-                Seleziona un argomento per generare o consultare la lezione didattica {activeProject.sourceType === 'my_materials' ? 'basata esclusivamente sui tuoi materiali' : 'basata sulle fonti accademiche online'}.
+                Seleziona un argomento dall'elenco sottostante per generare la lezione basata {activeProject.sourceType === 'my_materials' ? 'esclusivamente sulle tue fonti' : 'sulle nozioni accademiche online'}.
               </p>
             </div>
 
@@ -1442,13 +1377,13 @@ REGOLE DI FORMATTAZIONE:
               </div>
             </div>
 
-            {/* SEZIONE DETTAGLIO ARGOMENTO & LEZIONE GENERATA (RICCA DI FORMATAZIONE) */}
+            {/* SEZIONE DETTAGLIO ARGOMENTO & LEZIONE GENERATA */}
             {currentSelectedTopic && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-xl space-y-6">
                 
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-geminiBorder/60 pb-4">
                   <div>
-                    <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">Lezione Didattica</span>
+                    <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">Dettaglio Studio</span>
                     <h3 className="text-lg font-bold text-gray-100 mt-0.5">{currentSelectedTopic.title}</h3>
                   </div>
 
@@ -1476,7 +1411,7 @@ REGOLE DI FORMATTAZIONE:
                   </button>
                 </div>
 
-                {/* CONTENUTO LEZIONE FORMATA TO CON MARKDOWN E LATEX */}
+                {/* VISUALIZZAZIONE CONTENUTO LEZIONE */}
                 {isGeneratingLesson ? (
                   <div className="py-16 text-center space-y-4">
                     <div className="w-12 h-12 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 mx-auto animate-bounce">
@@ -1486,8 +1421,8 @@ REGOLE DI FORMATTAZIONE:
                       <div className="text-sm font-semibold text-gray-200">Elaborazione della lezione personalizzata...</div>
                       <div className="text-xs text-gray-400">
                         {activeProject.sourceType === 'my_materials' 
-                          ? 'Estrazione accurata dei concetti dai file caricati con formattazione e formule.' 
-                          : 'Elaborazione pedagogica con nozioni e formule scientifiche.'}
+                          ? 'Estrazione dei concetti chiave esclusivamente dai file caricati.' 
+                          : 'Ricerche accademiche e strutturazione pedagogica.'}
                       </div>
                     </div>
                   </div>
@@ -1496,24 +1431,23 @@ REGOLE DI FORMATTAZIONE:
                     <div className="flex items-center justify-between text-xs text-gray-400 bg-geminiDark p-3 rounded-2xl border border-geminiBorder">
                       <div className="flex items-center gap-2">
                         <BookOpen size={15} className="text-blue-400" />
-                        <span>Fonte: <strong>{activeProject.sourceType === 'my_materials' ? 'Esclusivamente dai tuoi file caricati' : 'Ricerca accademica online'}</strong></span>
+                        <span>Fonte: <strong>{activeProject.sourceType === 'my_materials' ? 'Esclusivamente dai file caricati' : 'Ricerca accademica online'}</strong></span>
                       </div>
                       <button
                         onClick={() => handleToggleTopicComplete(currentDayData.dayNumber, currentSelectedTopic.id)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                        className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition ${
                           currentSelectedTopic.completed 
                             ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
                             : 'bg-geminiHover text-gray-300 hover:text-white border border-geminiBorder'
                         }`}
                       >
-                        {currentSelectedTopic.completed ? <CheckCircle2 size={14} /> : <CheckSquare size={14} />}
+                        {currentSelectedTopic.completed ? <CheckCircle2 size={13} /> : <CheckSquare size={13} />}
                         <span>{currentSelectedTopic.completed ? 'Studiato' : 'Segna come studiato'}</span>
                       </button>
                     </div>
 
-                    {/* RENDERING AVANZATO MARKDOWN + LATEX */}
-                    <div className="p-6 bg-geminiDark rounded-2xl border border-geminiBorder/70 shadow-inner">
-                      <MarkdownRenderer content={currentSelectedTopic.lesson} />
+                    <div className="p-5 bg-geminiDark rounded-2xl border border-geminiBorder/70 text-sm leading-relaxed text-gray-200 whitespace-pre-wrap">
+                      {currentSelectedTopic.lesson}
                     </div>
                   </div>
                 ) : (
@@ -1586,7 +1520,7 @@ REGOLE DI FORMATTAZIONE:
 
                       <div className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                         msg.role === 'user' 
-                          ? 'bg-blue-600 text-white rounded-br-sm shadow-md whitespace-pre-wrap' 
+                          ? 'bg-blue-600 text-white rounded-br-sm shadow-md' 
                           : 'bg-geminiDarkSecondary border border-geminiBorder text-gray-200 rounded-tl-sm shadow-sm'
                       }`}>
                         {msg.file && (
@@ -1597,11 +1531,7 @@ REGOLE DI FORMATTAZIONE:
                           </div>
                         )}
                         
-                        {msg.role === 'assistant' ? (
-                          <MarkdownRenderer content={msg.text} />
-                        ) : (
-                          msg.text
-                        )}
+                        <div className="whitespace-pre-wrap">{msg.text}</div>
                       </div>
                     </div>
                   ))}
