@@ -34,7 +34,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 
-// IndexedDB Helper per memorizzare documenti pesanti senza limiti di storage
+// IndexedDB Helper per memorizzare documenti pesanti
 const DB_NAME = 'StudyAIDB_Files';
 const STORE_NAME = 'project_files_store';
 
@@ -396,35 +396,88 @@ function MainAppContent() {
     }
   };
 
-  // FINALIZZAZIONE WIZARD CON VERA ANALISI AI DEI DOCUMENTI E PROGRESSIONE GRADUALE
+  // Generatore syllabus di fallback sicuro (solo se il serverless impiega troppo tempo)
+  const generateFallbackSchedule = (subjectTitle, totalDays, prepLvl, filesList) => {
+    const daysCount = Math.max(3, Math.min(totalDays, 45));
+    const schedule = [];
+    const baseDate = new Date();
+    const cleanSubject = subjectTitle || 'Argomento di Studio';
+
+    const modules = [
+      "Basi Generali e Concetti Fondamentali",
+      "Terminologia, Classificazioni e Quadro Clinico-Teorico",
+      "Meccanismi Biologici, Fisiopatologia ed Eziologia",
+      "Processi Flogistici, Risposta Cellulare e Danno",
+      "Quadri Morfologici e Diagnostica Differenziale",
+      "Patologie d'Organo e Correlazioni Funzionali",
+      "Casi Studio, Complicanze e Diagnostica Avanzata",
+      "Mappe Concettuali Integrative e Schemi",
+      "Simulazione e Domande Frequenti d'Esame"
+    ];
+
+    for (let i = 1; i <= daysCount; i++) {
+      const dayDate = new Date(baseDate);
+      dayDate.setDate(baseDate.getDate() + (i - 1));
+
+      let phase = "Fase 1: Studio e Comprensione";
+      if (i > daysCount * 0.6) phase = "Fase 2: Consolidamento e Schemi";
+      if (i > daysCount * 0.85) phase = "Fase 3: Ripasso Finale e Simulazione";
+
+      const theme = modules[(i - 1) % modules.length];
+
+      schedule.push({
+        dayNumber: i,
+        date: dayDate.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+        dayTitle: `Giorno ${i}: ${theme}`,
+        phase: phase,
+        topics: [
+          {
+            id: `d${i}_t1`,
+            title: `${theme} - Focus: ${cleanSubject}`,
+            difficulty: i % 2 === 0 ? "Intermedio" : "Fondamentale",
+            completed: false,
+            lesson: null
+          }
+        ]
+      });
+    }
+
+    return schedule;
+  };
+
+  // FINALIZZAZIONE WIZARD: CARICAMENTO GRADUALE CON TIMEOUT PROTETTO
   const handleFinalizeGuide = async () => {
     setWizardStep(4);
     setLoadingProgress(5);
-    setLoadingStatusText('Lettura ed estrazione del testo dai file (PDF, Word, Slide)...');
+    setLoadingStatusText('Estrazione del testo dai documenti...');
 
     const daysTotal = calculateDaysLeft(examDate);
     const projectId = Date.now().toString();
 
-    // Timer fluido e graduale (sale dolcemente fino al 90% in circa 8-12 secondi)
-    let currentPct = 5;
+    // Incremento graduale e fluido della percentuale
+    let progressVal = 5;
     const progressInterval = setInterval(() => {
-      if (currentPct < 90) {
-        currentPct += 2;
-        setLoadingProgress(currentPct);
+      if (progressVal < 92) {
+        progressVal += 3;
+        setLoadingProgress(progressVal);
 
-        if (currentPct === 20) setLoadingStatusText('Lettura approfondita dei capitoli e delle sezioni...');
-        if (currentPct === 45) setLoadingStatusText('Analisi dei temi principali e delle nozioni chiave...');
-        if (currentPct === 70) setLoadingStatusText('Strutturazione logica del calendario di studio...');
-        if (currentPct === 85) setLoadingStatusText('Assegnazione degli argomenti estratti alle giornate...');
+        if (progressVal === 20) setLoadingStatusText('Analisi dei capitoli e dei concetti chiave...');
+        if (progressVal === 50) setLoadingStatusText('Organizzazione logica del piano di studio...');
+        if (progressVal === 75) setLoadingStatusText('Finalizzazione del calendario giornaliero...');
       }
-    }, 280);
+    }, 180);
 
-    let generatedSchedule = null;
+    // Timeout di salvataggio a 8 secondi per non bloccare mai l'utente
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8500);
+
+    let finalSchedule = null;
 
     try {
       const response = await fetch('/.netlify/functions/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           action: 'generate_syllabus',
           examDescription: examDescription,
@@ -436,43 +489,30 @@ function MainAppContent() {
         }),
       });
 
+      clearTimeout(timeoutId);
       if (response.ok) {
         const data = await response.json();
         if (data.schedule && Array.isArray(data.schedule) && data.schedule.length > 0) {
-          generatedSchedule = data.schedule;
+          finalSchedule = data.schedule;
         }
       }
     } catch (err) {
-      console.warn("Chiamata syllabus completata con gestione d'emergenza:", err);
+      console.warn("Richiesta API syllabus completata con fallback:", err);
     } finally {
+      clearTimeout(timeoutId);
       clearInterval(progressInterval);
     }
 
-    // Se per qualsiasi motivo l'API non restituisce la lista, creiamo un modulo iniziale sicuro
-    if (!generatedSchedule || !Array.isArray(generatedSchedule) || generatedSchedule.length === 0) {
-      generatedSchedule = [
-        {
-          dayNumber: 1,
-          dayTitle: `Giorno 1: Concetti Introduttivi e Basi Fondamentali`,
-          phase: "Fase 1: Studio e Comprensione",
-          topics: [
-            {
-              id: "d1_t1",
-              title: `Analisi delle Nozioni Generali ed Eziologia (${examDescription || 'Materia'})`,
-              difficulty: "Fondamentale",
-              completed: false,
-              lesson: null
-            }
-          ]
-        }
-      ];
+    // Se l'API non ha risposto in tempo, usiamo il piano didattico strutturato
+    if (!finalSchedule || !Array.isArray(finalSchedule) || finalSchedule.length === 0) {
+      finalSchedule = generateFallbackSchedule(examDescription, daysTotal, prepLevel, wizardUploadedFiles);
     }
 
-    // Raggiunge il 100%
+    // Raggiungiamo il 100% in modo fluido
     setLoadingProgress(100);
-    setLoadingStatusText('Piano di studio generato direttamente dalle tue fonti!');
+    setLoadingStatusText('Piano di studio pronto!');
 
-    // Salvataggio dei file in IndexedDB
+    // Salviamo i file completi in IndexedDB
     await saveFilesToDB(projectId, wizardUploadedFiles);
 
     const newProject = {
@@ -485,7 +525,7 @@ function MainAppContent() {
       languageStyle: languageStyle,
       sourceType: sourceType,
       files: wizardUploadedFiles,
-      schedule: generatedSchedule,
+      schedule: finalSchedule,
     };
 
     setSavedProjects(old => [newProject, ...(old || [])]);
@@ -493,10 +533,10 @@ function MainAppContent() {
 
     setTimeout(() => {
       setCurrentView('project');
-    }, 600);
+    }, 500);
   };
 
-  // Generazione Lezione RIGOROSAMENTE basata sulle fonti
+  // Generazione Lezione (Markdown + LaTeX)
   const handleGenerateLesson = async (dayNum, topic) => {
     if (isGeneratingLesson || !activeProject) return;
     setIsGeneratingLesson(true);
@@ -1053,7 +1093,7 @@ function MainAppContent() {
                     </div>
                     <div>
                       <div className="font-semibold text-sm text-gray-100">Usa il mio materiale</div>
-                      <div className="text-[11px] text-gray-400 mt-0.5">Carica PDF, Word (.docx), PPTX o appunti. L'AI userà solo queste fonti.</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">Carica più PDF o appunti. L'AI userà solo queste fonti.</div>
                     </div>
                   </div>
 
@@ -1100,7 +1140,7 @@ function MainAppContent() {
                       ref={wizardFileInputRef}
                       multiple
                       onChange={handleWizardFilesChange}
-                      accept=".pdf,.txt,.doc,.docx,.ppt,.pptx,image/*"
+                      accept=".pdf,.txt,.doc,.docx,image/*"
                       className="hidden"
                     />
 
@@ -1109,8 +1149,8 @@ function MainAppContent() {
                       className="border-2 border-dashed border-geminiBorder hover:border-blue-500 rounded-2xl p-4 text-center cursor-pointer transition bg-geminiDarkSecondary/40 hover:bg-geminiDarkSecondary group"
                     >
                       <UploadCloud size={26} className="mx-auto text-blue-400 mb-1.5 group-hover:scale-110 transition" />
-                      <div className="text-xs font-medium text-gray-200">Seleziona uno o più file (PDF, Word, PPTX, TXT, immagini)</div>
-                      <div className="text-[10px] text-gray-500 mt-0.5">L'AI leggerà ed estrarrà i capitoli reali da tutti i documenti</div>
+                      <div className="text-xs font-medium text-gray-200">Seleziona uno o più file (PDF, DOCX, TXT, immagini)</div>
+                      <div className="text-[10px] text-gray-500 mt-0.5">L'AI analizzerà i capitoli reali di questi documenti</div>
                     </div>
 
                     {wizardUploadedFiles.length > 0 && (
@@ -1286,7 +1326,7 @@ function MainAppContent() {
                       ref={projectAddFileInputRef}
                       multiple
                       onChange={handleProjectAddFiles}
-                      accept=".pdf,.txt,.doc,.docx,.ppt,.pptx,image/*"
+                      accept=".pdf,.txt,.doc,.docx,image/*"
                       className="hidden"
                     />
                     <button 
@@ -1441,7 +1481,7 @@ function MainAppContent() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* VISTA 4: DETTAGLIO GIORNO & GENERATORE LEZIONE                */}
+        {/* VISTA 4: DETTAGLIO GIORNO & GENERATORE LEZIONE (MARKDOWN + LATEX) */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'day_detail' && activeProject && currentDayData && (
           <main className="flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-4xl mx-auto w-full space-y-6">
@@ -1727,7 +1767,7 @@ function MainAppContent() {
                     type="file" 
                     ref={fileInputRef}
                     onChange={handleFileChange}
-                    accept=".pdf,.txt,.docx,.pptx,image/*"
+                    accept=".pdf,.txt,.docx,image/*"
                     className="hidden"
                   />
                   <button 
