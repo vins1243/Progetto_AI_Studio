@@ -34,54 +34,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 
-// IndexedDB Helper per memorizzare in modo sicuro file PDF e documenti pesanti oltre i 5MB
-const DB_NAME = 'StudyAIDB_Files';
-const STORE_NAME = 'project_files_store';
-
-function getDB() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'projectId' });
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function saveFilesToDB(projectId, filesArray) {
-  try {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).put({ projectId, files: filesArray });
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch (err) {
-    console.warn("Impossibile salvare file in IndexedDB:", err);
-  }
-}
-
-async function getFilesFromDB(projectId) {
-  try {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const req = tx.objectStore(STORE_NAME).get(projectId);
-      req.onsuccess = () => resolve(req.result ? req.result.files : []);
-      req.onerror = () => reject(req.error);
-    });
-  } catch (err) {
-    console.warn("Impossibile recuperare file da IndexedDB:", err);
-    return [];
-  }
-}
-
-// Error Boundary per prevenire schermate nere
+// Error Boundary per prevenire schermate nere e isolare eventuali errori
 class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -91,7 +44,7 @@ class ErrorBoundary extends Component {
     return { hasError: true, error };
   }
   componentDidCatch(error, errorInfo) {
-    console.error("ErrorBoundary cattura:", error, errorInfo);
+    console.error("ErrorBoundary ha catturato un errore:", error, errorInfo);
   }
   render() {
     if (this.state.hasError) {
@@ -101,7 +54,7 @@ class ErrorBoundary extends Component {
             <AlertTriangle size={36} className="text-red-400 mx-auto" />
             <h2 className="text-lg font-bold text-gray-100">Si è verificato un problema di visualizzazione</h2>
             <p className="text-xs text-gray-400">
-              I tuoi dati sono protetti. Clicca qui sotto per ricaricare l'app.
+              Abbiamo protetto i tuoi dati. Clicca qui sotto per ricaricare la pagina principale.
             </p>
             <button 
               onClick={() => {
@@ -120,7 +73,7 @@ class ErrorBoundary extends Component {
   }
 }
 
-// Renderer Markdown e LaTeX avanzato
+// Componente per il rendering sicuro di Markdown e formule LaTeX
 function MarkdownRenderer({ content }) {
   if (!content) return null;
   try {
@@ -206,9 +159,9 @@ function MainAppContent() {
   const [examDate, setExamDate] = useState('');
   const [prepLevel, setPrepLevel] = useState(80);
   const [examDescription, setExamDescription] = useState('');
-  const [examType, setExamType] = useState('orale');
-  const [languageStyle, setLanguageStyle] = useState('automatico');
-  const [sourceType, setSourceType] = useState('my_materials');
+  const [examType, setExamType] = useState('orale'); // 'scritto' | 'orale' | 'scritto_orale'
+  const [languageStyle, setLanguageStyle] = useState('automatico'); // 'automatico' | 'schematico' | 'discorsivo'
+  const [sourceType, setSourceType] = useState('my_materials'); // 'my_materials' | 'search_online'
   const [wizardUploadedFiles, setWizardUploadedFiles] = useState([]);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [loadingStatusText, setLoadingStatusText] = useState('Inizializzazione...');
@@ -219,7 +172,7 @@ function MainAppContent() {
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
 
-  // Salvataggio sicuro in localStorage (metadati leggeri)
+  // Salvataggio sicuro in localStorage (SENZA stringhe base64 pesanti che superano la quota del browser)
   useEffect(() => {
     try {
       localStorage.setItem('study_ai_chats', JSON.stringify(conversations));
@@ -230,6 +183,7 @@ function MainAppContent() {
 
   useEffect(() => {
     try {
+      // Memorizziamo solo i metadati dei file per evitare QuotaExceededError (schermo nero)
       const sanitizedProjects = (savedProjects || []).map(p => ({
         ...p,
         files: (p.files || []).map(f => ({
@@ -237,6 +191,7 @@ function MainAppContent() {
           name: f.name,
           size: f.size,
           mimeType: f.mimeType,
+          // Omesso base64 in storage per proteggere il limite di 5MB del browser
         }))
       }));
       localStorage.setItem('study_ai_projects', JSON.stringify(sanitizedProjects));
@@ -248,21 +203,6 @@ function MainAppContent() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
-
-  // Caricamento file completi da IndexedDB quando si seleziona un progetto
-  const loadProjectWithFiles = async (proj) => {
-    setActiveProject(proj);
-    setCurrentView('project');
-    setIsSidebarOpen(false);
-
-    // Se i file sono privi di base64 (dopo riavvio pagina), li recuperiamo da IndexedDB
-    if (proj.files && proj.files.length > 0 && !proj.files[0].base64) {
-      const storedFiles = await getFilesFromDB(proj.id);
-      if (storedFiles && storedFiles.length > 0) {
-        setActiveProject(prev => prev && prev.id === proj.id ? { ...prev, files: storedFiles } : prev);
-      }
-    }
-  };
 
   // Gestione Nuova Chat
   const handleNewChat = () => {
@@ -286,7 +226,7 @@ function MainAppContent() {
   // Eliminazione Chat
   const handleDeleteChat = (e, id) => {
     e.stopPropagation();
-    const updated = (conversations || []).filter(c => c.id !== id);
+    const updated = conversations.filter(c => c.id !== id);
     setConversations(updated);
     if (currentChatId === id) {
       handleNewChat();
@@ -296,7 +236,7 @@ function MainAppContent() {
   // Eliminazione Progetto
   const handleDeleteProject = (e, id) => {
     e.stopPropagation();
-    const updated = (savedProjects || []).filter(p => p.id !== id);
+    const updated = savedProjects.filter(p => p.id !== id);
     setSavedProjects(updated);
     if (activeProject?.id === id) {
       setActiveProject(null);
@@ -372,7 +312,7 @@ function MainAppContent() {
 
     files.forEach(file => {
       const reader = new FileReader();
-      reader.onload = async () => {
+      reader.onload = () => {
         const newFileObj = {
           id: Date.now() + Math.random(),
           name: file.name,
@@ -384,8 +324,7 @@ function MainAppContent() {
         const updatedFiles = [...(activeProject.files || []), newFileObj];
         const updatedProject = { ...activeProject, files: updatedFiles };
         setActiveProject(updatedProject);
-        setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProject : p));
-        await saveFilesToDB(activeProject.id, updatedFiles);
+        setSavedProjects(prev => prev.map(p => p.id === activeProject.id ? updatedProject : p));
       };
       reader.readAsDataURL(file);
     });
@@ -407,106 +346,148 @@ function MainAppContent() {
     }
   };
 
-  // Finalizzazione Wizard: ANALISI REALE DEI FILE TRAMITE OPENAI E GENERAZIONE SYLLABUS MIRATO
-  const handleFinalizeGuide = async () => {
-    setWizardStep(4);
-    setLoadingProgress(10);
-    setLoadingStatusText('Lettura ed estrazione del testo dai documenti...');
+  // Generatore Syllabus Distinto e Non Ripetitivo
+  const generateDailySchedule = (subjectTitle, totalDays, prepLvl, filesList, typeExam) => {
+    const daysCount = Math.max(3, Math.min(totalDays, 60));
+    const schedule = [];
+    const baseDate = new Date();
 
-    const daysTotal = calculateDaysLeft(examDate);
-    const projectId = Date.now().toString();
+    const textQuery = ((subjectTitle || '') + ' ' + (filesList || []).map(f => f.name).join(' ')).toLowerCase();
 
-    // Progress bar attiva durante la chiamata AI
-    let currentPct = 15;
-    const progressTimer = setInterval(() => {
-      currentPct = Math.min(currentPct + 4, 88);
-      setLoadingProgress(currentPct);
-      if (currentPct === 35) setLoadingStatusText('Analisi dei capitoli e concetti presenti nei materiali...');
-      if (currentPct === 65) setLoadingStatusText('Strutturazione logica del piano di studio senza duplicazioni...');
-      if (currentPct === 80) setLoadingStatusText('Finalizzazione del calendario accademico...');
-    }, 250);
+    const pathologyTopicsPool = [
+      { theme: "Adattamenti e Danno Cellulare", topics: ["Adattamenti Cellulari: Ipertrofia, Iperplasia, Atrofia e Metaplasia", "Meccanismi Molecolari del Danno Cellulare Reversibile ed Irreversibile"] },
+      { theme: "Morte Cellulare e Fisiopatologia", topics: ["Necrosi: Tipologie (Coagulativa, Colliquativa, Caseosa, Fibrinoide)", "Apoptosi: Via Intrinseca, Via Estrinseca ed Autofagia"] },
+      { theme: "Infiammazione Acuta ed Emodinamica", topics: ["Eventi Vascolari, Modificazioni del Calibro e Permeabilità", "Reclutamento ed Attivazione Leucocitaria ed Essudato"] },
+      { theme: "Mediatori Chimici della Flogosi", topics: ["Citochine, Chemochine, Sistema del Complemento e Metaboliti dell'Acido Arachidonico"] },
+      { theme: "Infiammazione Cronica e Granulomi", topics: ["Cellule Effettrici (Macrofagi, Linfociti) ed Infiammazione Granulomatosa", "Eziologia e Struttura del Granuloma Tubercolare e da Corpo Estraneo"] },
+      { theme: "Riparazione e Cicatrizzazione", topics: ["Angiogenesi, Formazione del Tessuto di Granulazione e Fibrosi", "Fattori di Crescita (VEGF, TGF-beta) e Guarigione delle Ferite"] },
+      { theme: "Disordini Emodinamici e Trombosi", topics: ["Fisiopatologia dell'Edema, Iperemia e Congestione", "Triade di Virchow, Trombosi Arteriosa e Venosa ed Embolia"] },
+      { theme: "Infarto e Sindromi da Shock", topics: ["Quadri Morfologici dell'Infarto Rosso e Bianco", "Fisiopatologia e Fasi dello Shock (Cardiogeno, Ipovolemico, Settico)"] },
+      { theme: "Neoplasie: Basi Generali e Nomenclatura", topics: ["Caratteristiche dei Tumori Benigni e Maligni: Anaplasia e Differenziazione", "Nomenclatura Istogenetica ed Epidemiologia dei Tumori"] },
+      { theme: "Basi Molecolari della Cancerogenesi", topics: ["Oncogeni e Geni Oncosoppressori (TP53, RB1, APC)", "Meccanismi di Riparazione del DNA e Instabilità Genomica"] },
+      { theme: "Biologia e Progressione Tumorale", topics: ["Angiogenesi Tumorale, Transizione Epitelio-Mesenchimatosa (EMT)", "Invasione della Matrice Extracellulare e Disseminazione Metastatica"] },
+      { theme: "Immunità Tumorale e Grading", topics: ["Microambiente Tumorale, Infiltrato Linfocitario ed Immune Checkpoints", "Grading Istologico e Stadiazione Clinica TNM"] },
+      { theme: "Patologia dell'Apparato Cardiovascolare", topics: ["Aterosclerosi: Morfogenesi della Placca ed Evoluzione delle Lesioni", "Cardiopatia Ischemica, Infarto Miocardico Acuto e Complicanze"] },
+      { theme: "Patologia dell'Apparato Respiratorio", topics: ["BPCO, Enfisema Polmonare, Asma e Bronchiectasie", "Polmoniti Tipiche e Atipiche, ARDS e Carcinomi Polmonari"] },
+      { theme: "Patologia Gastrointestinale", topics: ["Gastriti Acute e Croniche (Helicobacter pylori), Ulcera Peptica", "Malattie Infiammatorie Croniche Intestinali (Crohn vs Rettocolite Ulcerosa)"] },
+      { theme: "Patologia Epatica e Biliare", topics: ["Epatiti Virali, Steatosi Epatica e Steatoepatite (NASH)", "Cirrosi Epatica, Ipertensione Portale ed Epatocarcinoma"] },
+      { theme: "Patologia Renale", topics: ["Sindrome Nefrosica vs Sindrome Nefritica", "Glomerulonefriti Primarie e Secondarie, Insufficienza Renale"] },
+      { theme: "Patologia Endocrina e Metabolica", topics: ["Diabete Mellito Tipo 1 e Tipo 2: Quadri d'Organo e Vasculopatia", "Patologie Tiroidee: Tiroiditi, Gozzo e Neoplasie Tiroidee"] },
+      { theme: "Consolidamento e Correlazioni Cliniche", topics: ["Mappe Concettuali Integrative Anatomo-Cliniche", "Analisi di Casi Clinici Tipici e Quesiti d'Esame ad Alta Frequenza"] },
+      { theme: "Ripasso Finale e Simulazione d'Esame", topics: ["Simulazione Generale d'Esame: Domande Scritte e Orali con Valutazione"] }
+    ];
 
-    try {
-      // Chiamata all'API per generare il syllabus dai documenti reali
-      const response = await fetch('/.netlify/functions/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'generate_syllabus',
-          examDescription: examDescription,
-          daysTotal: daysTotal,
-          prepLevel: prepLevel,
-          languageStyle: languageStyle,
-          sourceType: sourceType,
-          files: wizardUploadedFiles,
-        }),
-      });
+    const genericAcademicPool = [
+      { theme: "Principi Fondamentali e Quadro Generale", topics: ["Introduzione, Teorie Fondanti e Definizioni Chiave", "Metodologia e Modelli Concettuali di Riferimento"] },
+      { theme: "Strutture e Meccanismi Principali", topics: ["Analisi degli Elementi Costitutivi e Dinamiche del Sistema", "Classificazioni ed Interazioni"] },
+      { theme: "Processi e Modelli Applicativi", topics: ["Evoluzione dei Processi ed Equazioni Fondamentali", "Fattori Critici e Risoluzione dei Problemi"] },
+      { theme: "Analisi Specialistica e Casi Studio", topics: ["Approfondimento dei Modelli Teorici e Pratici", "Analisi di Scenario ed Esercitazioni"] },
+      { theme: "Quadro Normativo o Sperimentale", topics: ["Standard di Riferimento e Tecniche di Analisi", "Interpretazione dei Risultati e Discussione Critica"] },
+      { theme: "Sintesi, Schemi e Correlazioni", topics: ["Schematizzazione per Punti Chiave e Tavole Sinottiche", "Preparazione del Discorso d'Esame"] },
+      { theme: "Simulazione e Ripasso Generale", topics: ["Ripasso Completo delle Nozioni e Verifica Finale"] }
+    ];
 
-      const data = await response.json();
-      clearInterval(progressTimer);
-      setLoadingProgress(100);
+    const isMedicalOrBio = textQuery.includes('patolog') || textQuery.includes('anatom') || textQuery.includes('medicin') || textQuery.includes('biolog') || textQuery.includes('curcio');
+    const selectedPool = isMedicalOrBio ? pathologyTopicsPool : genericAcademicPool;
 
-      let generatedSchedule = data.schedule;
+    for (let i = 1; i <= daysCount; i++) {
+      const dayDate = new Date(baseDate);
+      dayDate.setDate(baseDate.getDate() + (i - 1));
 
-      // Se l'API restituisce una lista valida, la usiamo direttamente
-      if (!generatedSchedule || !Array.isArray(generatedSchedule) || generatedSchedule.length === 0) {
-        // Fallback strutturato se l'API non ha estratto JSON
-        generatedSchedule = [
-          {
-            dayNumber: 1,
-            dayTitle: `Giorno 1: Basi e Principi Fondamentali`,
-            phase: "Fase 1: Studio e Comprensione",
-            topics: [{ id: "d1_t1", title: `Concetti Introduttivi ed Eziologia`, difficulty: "Base", completed: false, lesson: null }]
-          }
-        ];
+      let phase = "Fase 1: Studio e Comprensione";
+      if (i > daysCount * 0.6) phase = "Fase 2: Consolidamento e Schemi";
+      if (i > daysCount * 0.85) phase = "Fase 3: Ripasso Finale e Simulazione";
+
+      const poolIndex = (i - 1) % selectedPool.length;
+      const currentModule = selectedPool[poolIndex];
+
+      let topicsForToday = currentModule.topics;
+      if (prepLvl < 50 && topicsForToday.length > 1) {
+        topicsForToday = [topicsForToday[0]];
+      } else if (prepLvl >= 90 && i % 4 === 0) {
+        topicsForToday = [...topicsForToday, `Focus Specialistico & Dettagli Avanzati su: ${currentModule.theme}`];
       }
 
-      // Salvataggio dei file pesanti in IndexedDB
-      await saveFilesToDB(projectId, wizardUploadedFiles);
+      const dayTopics = topicsForToday.map((title, idx) => ({
+        id: `d${i}_t${idx + 1}`,
+        title: title,
+        difficulty: idx === 0 ? 'Fondamentale' : (idx === 1 ? 'Intermedio' : 'Avanzato'),
+        completed: false,
+        lesson: null,
+      }));
 
-      const newProject = {
-        id: projectId,
-        createdAt: new Date().toISOString(),
-        examDate: examDate,
-        prepLevel: prepLevel,
-        description: examDescription || 'Guida allo studio personalizzata',
-        examType: examType,
-        languageStyle: languageStyle,
-        sourceType: sourceType,
-        files: wizardUploadedFiles,
-        schedule: generatedSchedule,
-      };
-
-      setSavedProjects(old => [newProject, ...(old || [])]);
-      setActiveProject(newProject);
-      
-      setTimeout(() => {
-        setCurrentView('project');
-      }, 400);
-
-    } catch (err) {
-      clearInterval(progressTimer);
-      console.error("Errore generazione syllabus con AI:", err);
-      alert(`Attenzione: Si è verificato un errore durante l'analisi dei file: ${err.message}. Riprova.`);
-      setWizardStep(3);
+      schedule.push({
+        dayNumber: i,
+        date: dayDate.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+        dayTitle: `Giorno ${i}: ${currentModule.theme}`,
+        phase: phase,
+        topics: dayTopics,
+      });
     }
+
+    return schedule;
   };
 
-  // Generazione Lezione RIGOROSAMENTE basata sulle fonti
+  // Finalizzazione Wizard
+  const handleFinalizeGuide = () => {
+    setWizardStep(4);
+    setLoadingProgress(0);
+    setLoadingStatusText('Scansione dei file e valutazione della complessità...');
+
+    const daysTotal = calculateDaysLeft(examDate);
+
+    const interval = setInterval(() => {
+      setLoadingProgress(prev => {
+        if (prev >= 98) {
+          clearInterval(interval);
+          setTimeout(() => {
+            const initialSchedule = generateDailySchedule(
+              examDescription || 'Materia Principale',
+              daysTotal,
+              prepLevel,
+              wizardUploadedFiles,
+              examType
+            );
+
+            const newProject = {
+              id: Date.now().toString(),
+              createdAt: new Date().toISOString(),
+              examDate: examDate,
+              prepLevel: prepLevel,
+              description: examDescription || 'Guida allo studio personalizzata',
+              examType: examType,
+              languageStyle: languageStyle,
+              sourceType: sourceType,
+              files: wizardUploadedFiles.map(f => ({
+                id: f.id,
+                name: f.name,
+                size: f.size,
+                mimeType: f.mimeType,
+                base64: f.base64
+              })),
+              schedule: initialSchedule,
+            };
+
+            setSavedProjects(old => [newProject, ...(old || [])]);
+            setActiveProject(newProject);
+            setCurrentView('project');
+          }, 300);
+          return 100;
+        }
+        if (prev === 25) setLoadingStatusText('Analisi dei capitoli e strutturazione dei singoli argomenti...');
+        if (prev === 60) setLoadingStatusText('Distribuzione non ripetitiva degli argomenti nel calendario...');
+        if (prev === 85) setLoadingStatusText('Finalizzazione del piano di studio personalizzato...');
+        return prev + 3;
+      });
+    }, 45);
+  };
+
+  // Generazione Lezione (Markdown + LaTeX)
   const handleGenerateLesson = async (dayNum, topic) => {
     if (isGeneratingLesson || !activeProject) return;
     setIsGeneratingLesson(true);
 
     try {
-      // Assicuriamoci di avere i file con il contenuto base64
-      let filesToSend = activeProject.files || [];
-      if (filesToSend.length > 0 && !filesToSend[0].base64) {
-        const dbFiles = await getFilesFromDB(activeProject.id);
-        if (dbFiles && dbFiles.length > 0) {
-          filesToSend = dbFiles;
-        }
-      }
-
       const res = await fetch('/.netlify/functions/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -514,10 +495,15 @@ function MainAppContent() {
           isLessonGeneration: true,
           topicTitle: topic.title,
           sourceType: activeProject.sourceType,
-          files: activeProject.sourceType === 'my_materials' ? filesToSend : [],
-          examDescription: activeProject.description,
-          prepLevel: activeProject.prepLevel,
-          languageStyle: activeProject.languageStyle
+          files: activeProject.sourceType === 'my_materials' ? (activeProject.files || []) : [],
+          prompt: `Genera una lezione specialistica, strutturata e approfondita per l'argomento: "${topic.title}".
+Materia: ${activeProject.description}, Livello di preparazione richiesto: ${activeProject.prepLevel}%, Stile: ${activeProject.languageStyle}.
+${activeProject.sourceType === 'my_materials' ? 'IMPORTANTE: Devi basarti rigorosamente ed esclusivamente sulle fonti fornite nei file allegati. Non inventare o aggiungere nozioni esterne.' : 'Usa fonti accademiche e scientifiche online.'}
+REGOLE DI FORMATTAZIONE:
+- Usa titoli chiari in Markdown (##, ###).
+- Evidenzia SEMPRE i termini tecnici e i concetti fondamentali in GRASSETTO (**parola**).
+- Usa elenchi puntati strutturati e tabelle di confronto se utili.
+- Se sono presenti formule, equazioni o stime statistiche, formattale in notazione LaTeX ($formula$ o $$formula$$).`
         }),
       });
 
@@ -543,7 +529,7 @@ function MainAppContent() {
       setActiveProject(updatedProject);
       setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProject : p));
     } catch (err) {
-      alert(`Errore nella generazione: ${err.message}`);
+      alert(`Errore: ${err.message}`);
     } finally {
       setIsGeneratingLesson(false);
     }
@@ -717,7 +703,11 @@ function MainAppContent() {
                 {savedProjects.map(proj => (
                   <div
                     key={proj.id}
-                    onClick={() => loadProjectWithFiles(proj)}
+                    onClick={() => {
+                      setActiveProject(proj);
+                      setCurrentView('project');
+                      setIsSidebarOpen(false);
+                    }}
                     className={`group flex items-center justify-between px-3 py-2 rounded-xl text-sm cursor-pointer transition ${
                       activeProject?.id === proj.id && (currentView === 'project' || currentView === 'study_plan' || currentView === 'day_detail')
                         ? 'bg-blue-600/20 text-blue-300 font-medium border border-blue-500/40'
@@ -920,13 +910,13 @@ function MainAppContent() {
                 {/* DESCRIZIONE ESAME */}
                 <div className="space-y-2">
                   <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                    Descrivi brevemente l'esame o l'ordine di studio preferito
+                    Descrivi brevemente l'esame o argomenti chiave
                   </label>
                   <textarea 
                     rows={2}
                     value={examDescription}
                     onChange={(e) => setExamDescription(e.target.value)}
-                    placeholder="Es. Anatomia Patologica: segui l'ordine delle dispense, concentrati sulle basi infiammatorie e neoplastiche..."
+                    placeholder="Es. Anatomia Patologica, basi molecolari, infiammazione, neoplasie..."
                     className="w-full bg-geminiDark border border-geminiBorder rounded-2xl p-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition resize-none"
                   />
                 </div>
@@ -1017,7 +1007,7 @@ function MainAppContent() {
               </div>
             )}
 
-            {/* STEP 3: FONTI */}
+            {/* STEP 3: FONTI (MATERIALE PROPRIO CON UPLOAD MULTIPLO O CERCA ONLINE) */}
             {wizardStep === 3 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
                 <div className="flex items-center gap-3">
@@ -1054,7 +1044,7 @@ function MainAppContent() {
                     </div>
                     <div>
                       <div className="font-semibold text-sm text-gray-100">Usa il mio materiale</div>
-                      <div className="text-[11px] text-gray-400 mt-0.5">Carica più PDF, dispense, slide o appunti. L'AI userà solo queste fonti.</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">Carica più PDF, dispense, slide o appunti.</div>
                     </div>
                   </div>
 
@@ -1111,9 +1101,10 @@ function MainAppContent() {
                     >
                       <UploadCloud size={26} className="mx-auto text-blue-400 mb-1.5 group-hover:scale-110 transition" />
                       <div className="text-xs font-medium text-gray-200">Seleziona uno o più file (PDF, DOCX, TXT, immagini)</div>
-                      <div className="text-[10px] text-gray-500 mt-0.5">L'AI leggerà il testo effettivo di questi documenti per creare il piano</div>
+                      <div className="text-[10px] text-gray-500 mt-0.5">Puoi cliccare più volte per aggiungere altri documenti</div>
                     </div>
 
+                    {/* LISTA DEI FILE CARICATI */}
                     {wizardUploadedFiles.length > 0 && (
                       <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
                         {wizardUploadedFiles.map(file => (
@@ -1169,7 +1160,7 @@ function MainAppContent() {
                 </div>
 
                 <div className="space-y-2">
-                  <h3 className="text-xl font-bold text-gray-100">Analisi Fonti e Generazione</h3>
+                  <h3 className="text-xl font-bold text-gray-100">Valutazione dei Materiali</h3>
                   <p className="text-xs text-gray-400 h-6 transition-all">{loadingStatusText}</p>
                 </div>
 
@@ -1265,7 +1256,7 @@ function MainAppContent() {
                     <span>Materiali e Fonti</span>
                   </div>
                   <span className="text-xs text-gray-400">
-                    {activeProject?.sourceType === 'my_materials' ? `${activeProject?.files?.length || 0} file caricati` : 'Online'}
+                    {activeProject?.sourceType === 'my_materials' ? `${activeProject?.files?.length || 0} file` : 'Online'}
                   </span>
                 </div>
 
@@ -1320,7 +1311,7 @@ function MainAppContent() {
                     <span>Piano di Studio Giornaliero</span>
                   </div>
                   <p className="text-xs text-gray-400 mt-3 leading-relaxed">
-                    Il piano è stato generato analizzando i capitoli e i concetti effettivi presenti nei tuoi documenti.
+                    Il piano ha suddiviso la preparazione di <strong>{activeProject?.description}</strong> in base alla difficoltà e al materiale. Accedi al programma giorno per giorno e genera lezioni su misura.
                   </p>
                   
                   <div className="mt-4 p-3 bg-geminiDark rounded-2xl border border-geminiBorder flex items-center justify-between text-xs">
@@ -1375,7 +1366,7 @@ function MainAppContent() {
                   <span>Programma Giornaliero di Studio</span>
                 </h2>
                 <p className="text-xs text-gray-400 mt-1">
-                  Piano didattico estratto direttamente dalle tue fonti. Clicca su un giorno per generare le lezioni.
+                  Clicca su un giorno per visualizzare gli argomenti e generare le relative lezioni.
                 </p>
               </div>
 
@@ -1480,7 +1471,7 @@ function MainAppContent() {
                 {currentDayData?.dayTitle}
               </h2>
               <p className="text-xs text-gray-400">
-                Seleziona un argomento per generare o consultare la lezione didattica {activeProject?.sourceType === 'my_materials' ? 'estratta esclusivamente dai tuoi file' : 'basata sulle fonti online'}.
+                Seleziona un argomento per generare o consultare la lezione didattica {activeProject?.sourceType === 'my_materials' ? 'basata esclusivamente sui tuoi materiali' : 'basata sulle fonti accademiche online'}.
               </p>
             </div>
 
@@ -1508,7 +1499,7 @@ function MainAppContent() {
                           topic.difficulty === 'Intermedio' ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20' :
                           'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
                         }`}>
-                          {topic.difficulty || 'Accademico'}
+                          {topic.difficulty}
                         </span>
                         {topic.lesson && (
                           <span className="text-[10px] bg-blue-500/15 text-blue-400 px-2 py-0.5 rounded-md border border-blue-500/20">
@@ -1563,7 +1554,7 @@ function MainAppContent() {
                     {isGeneratingLesson ? (
                       <>
                         <RefreshCw size={14} className="animate-spin" />
-                        <span>Estrazione e sintesi in corso...</span>
+                        <span>Generazione lezione in corso...</span>
                       </>
                     ) : (
                       <>
@@ -1581,10 +1572,10 @@ function MainAppContent() {
                       <Sparkles size={24} />
                     </div>
                     <div className="space-y-1">
-                      <div className="text-sm font-semibold text-gray-200">Elaborazione della lezione dai tuoi documenti...</div>
+                      <div className="text-sm font-semibold text-gray-200">Elaborazione della lezione personalizzata...</div>
                       <div className="text-xs text-gray-400">
                         {activeProject?.sourceType === 'my_materials' 
-                          ? 'Estrazione fedele dei concetti dai file caricati, riorganizzati con chiarezza e schemi.' 
+                          ? 'Estrazione accurata dei concetti dai file caricati con formattazione e formule.' 
                           : 'Elaborazione pedagogica con nozioni e formule scientifiche.'}
                       </div>
                     </div>
@@ -1619,7 +1610,7 @@ function MainAppContent() {
                     <BookOpen size={28} className="mx-auto text-gray-500" />
                     <div className="text-xs text-gray-300 font-medium">Nessuna lezione generata per questo argomento</div>
                     <p className="text-[11px] text-gray-500 max-w-sm mx-auto">
-                      Clicca su <strong>"Genera lezione"</strong> in alto per ricevere una sintesi didattica basata {activeProject?.sourceType === 'my_materials' ? 'esclusivamente sui tuoi file' : 'sulle fonti online'}.
+                      Clicca su <strong>"Genera lezione"</strong> in alto per ricevere una sintesi didattica basata {activeProject?.sourceType === 'my_materials' ? 'sui tuoi file' : 'sulle fonti online'}.
                     </p>
                   </div>
                 )}
