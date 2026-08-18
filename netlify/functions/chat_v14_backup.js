@@ -90,7 +90,7 @@ export const handler = async (event) => {
     // AZIONE 1: GENERAZIONE VERIFICA COMPETENZE (QUIZ MULTI-TIPOLOGIA)
     // -------------------------------------------------------------
     if (action === 'generate_quiz') {
-      const targetCount = Math.max(3, Math.min(Number(numQuestions) || 10, 80));
+      const targetCount = Math.max(5, Math.min(Number(numQuestions) || 10, 80));
       const types = Array.isArray(questionTypes) && questionTypes.length > 0 
         ? questionTypes 
         : ['scelta_multipla', 'completamento', 'accoppiamento', 'aperta'];
@@ -107,8 +107,8 @@ export const handler = async (event) => {
         }
       });
 
-      const quizSystemPrompt = `Sei un professore universitario e tutor accademico esperto ed empatico.
-Il tuo compito è formulare una prova di verifica delle competenze composta da esattamente ${targetCount} domande.
+      const quizSystemPrompt = `Sei un professore universitario esaminatore e autore di test accademici ufficiali.
+Il tuo compito è generare una prova di verifica delle competenze rigorosa, impeccabile e perfettamente bilanciata composta da esattamente ${targetCount} domande.
 
 TIPOLOGIE RICHIESTE: ${types.join(', ')}
 LIVELLO DI DIFFICOLTÀ: ${difficulty || 'automatico'}
@@ -122,16 +122,15 @@ FORMATO DI RISPOSTA OBBLIGATORIO (JSON con chiave "questions"):
       "id": "q1",
       "type": "scelta_multipla" | "completamento" | "accoppiamento" | "aperta",
       "question": "Testo chiaro, specifico e accademico della domanda...",
-      "options": ["Opzione A...", "Opzione B...", "Opzione C...", "Opzione D..."], // Solo se type === 'scelta_multipla'
-      "correctAnswer": "Termine o risposta corretta sintetica", // Per completamento o scelta multipla
-      "alternativeAnswers": ["bicarbonato", "HCO3-", "concentrazione bicarbonato"], // Varianti sinonime accettate per completamento
+      "options": ["Opzione A...", "Opzione B...", "Opzione C...", "Opzione D..."], // Solo se type === 'scelta_multipla' (4 opzioni chiare, 1 sola corretta)
+      "correctAnswer": "Testo esatto dell'opzione corretta (oppure parola/frase esatta per il completamento)",
       "matchingPairs": [
         { "left": "Concetto 1", "right": "Definizione/Associazione 1" },
         { "left": "Concetto 2", "right": "Definizione/Associazione 2" },
         { "left": "Concetto 3", "right": "Definizione/Associazione 3" }
-      ], // Solo se type === 'accoppiamento'
-      "idealAnswerCriteria": "Punti chiave che una risposta aperta deve argomentare", // Solo se type === 'aperta'
-      "explanation": "Spiegazione didattica, chiara e incoraggiante",
+      ], // Solo se type === 'accoppiamento' (3 o 4 coppie logiche)
+      "idealAnswerCriteria": "Criteri precisi, definizioni, passaggi e nozioni che una risposta aperta perfetta deve contenere", // Solo se type === 'aperta'
+      "explanation": "Spiegazione didattica approfondita che illustra perché la risposta è corretta e chiarisce i dettagli tecnici/scientifici",
       "topicTitle": "Titolo argomento specifico",
       "difficulty": "Facile" | "Intermedia" | "Difficile"
     }
@@ -139,9 +138,10 @@ FORMATO DI RISPOSTA OBBLIGATORIO (JSON con chiave "questions"):
 }
 
 REGOLE ESSENZIALI:
-1. Per i completamenti, formula la domanda con una frase dove la parola mancante sia un termine chiave preciso (es. "bicarbonato", "insulina", "mitocondrio"). Includi sempre varianti e sinonimi in "alternativeAnswers".
-2. Distribuisci le domande equamente tra gli argomenti indicati.
-3. Restituisci ESCLUSIVAMENTE il JSON valido.`;
+1. DISTRIBUISCI le domande in modo bilanciato tra tutti gli argomenti indicati.
+2. Varia le tipologie includendo quelle richieste (${types.join(', ')}).
+3. Per le formule scientifiche/matematiche usa la notazione LaTeX ($...$ o $$...$$).
+4. Restituisci ESCLUSIVAMENTE il JSON valido.`;
 
       const quizUserPrompt = `Genera la prova di verifica di ${targetCount} domande per gli argomenti selezionati:
 ${topics.map((t, i) => `${i + 1}. ${t}`).join('\n')}
@@ -180,43 +180,41 @@ ${sourcesContext ? `FONTI DELLO STUDENTE:\n${sourcesContext.slice(0, 25000)}` : 
     }
 
     // -------------------------------------------------------------
-    // AZIONE 2: VALUTAZIONE MODULARE, COSTRUTTIVA E INCORAGGIANTE DI UNA RISPOSTA APERTA
+    // AZIONE 2: VALUTAZIONE RIGOROSA DI UNA RISPOSTA APERTA
     // -------------------------------------------------------------
     if (action === 'evaluate_open_answer') {
-      const evaluationSystemPrompt = `Sei un tutor accademico e mentore didattico empatico, costruttivo e incoraggiante.
-Il tuo obiettivo è aiutare lo studente a consolidare la sua preparazione universitaria, valorizzando ciò che ha compreso e spiegando con gentilezza e chiarezza cosa andrebbe integrato o corretto.
+      const evaluationSystemPrompt = `Sei un professore universitario esaminatore inflessibile ed esperto.
+Il tuo compito è valutare con estremo rigore accademico la risposta aperta fornita da uno studente universitario a una domanda d'esame.
 
-REGOLE FONDAMENTALI DI TONO E VALUTAZIONE:
-1. TONO: Gentile, costruttivo, motivante e pedagogico. Non usare MAI toni duri, offensivi, svalutanti o severi. Lo studente sta imparando!
-2. VALUTAZIONE MODULARE IN TRENTESIMI (da 0 a 30):
-   - 28-30: Risposta eccellente, ricca e ben argomentata.
-   - 24-27: Risposta molto buona (i concetti principali ci sono, manca solo qualche dettaglio o approfondimento).
-   - 18-23: Risposta sufficiente (ha centrato l'argomento di base o parte dei meccanismi, con alcune lacune).
-   - 10-17: Risposta parziale (ha toccato concetti correlati o parziali, utile come punto di partenza ma incompleta per la domanda).
-   - 0-9: Risposta non attinente o lasciata vuota.
-3. VALORIZZA I CONCETTI CHIAVE: Se lo studente menziona termini o principi giusti, assegna un punteggio parziale adeguato senza bocciare a 0/30.
-4. "isCorrect": imposta su true se score >= 18, altrimenti false.
+VALUTAZIONE:
+1. Analizza la correttezza concettuale, l'uso della corretta terminologia specialistica, la presenza di passaggi logici e la completezza rispetto ai criteri ideali.
+2. Assegna un voto in trentesimi (da 0 a 30):
+   - 28-30: Risposta eccellente, completa, precisa e rigorosa.
+   - 24-27: Buona risposta, concetti corretti con lievi omissioni o imprecisioni minori.
+   - 18-23: Risposta sufficiente ma lacunosa o poco approfondita.
+   - < 18: Risposta insufficiente, errata o gravemente incompleta.
+3. Fornisci un feedback analitico e costruttivo evidenziando sia i punti centrati sia le lacune.
 
-FORMATO JSON OBBLIGATORIO:
+FORMATO RISPOSTA OBBLIGATORIO (JSON):
 {
-  "score": 24, // Intero da 0 a 30
+  "score": 28, // Intero da 0 a 30
   "maxScore": 30,
-  "isCorrect": true | false,
-  "feedback": "Spiegazione chiara, incoraggiante e didattica sul perché della valutazione...",
-  "strengths": ["Cosa hai individuato correttamente o espresso bene"],
-  "missedPoints": ["Suggerimenti per completare o arricchire la risposta"]
+  "isCorrect": true | false, // true se score >= 18
+  "feedback": "Giudizio analitico dettagliato e spiegazione del voto...",
+  "strengths": ["Concetto centrato 1", "Buona terminologia su X"],
+  "missedPoints": ["Mancava la spiegazione di Y", "Omessa la classificazione Z"]
 }`;
 
       const evaluationUserPrompt = `DOMANDA D'ESAME: "${question}"
 ARGOMENTO: "${topicTitle || ''}"
 CRITERI DI CORRETTEZZA ATTESI: "${idealAnswerCriteria || ''}"
 
-RISPOSTA FORNITA DALLO STUDENTE:
+RISPOSTA DELLO STUDENTE:
 """
-${studentAnswer || '[Nessuna risposta]'}
+${studentAnswer || '[Nessuna risposta fornita]'}
 """
 
-Fornisci la valutazione didattica e incoraggiante nel formato JSON.`;
+Valuta la risposta dello studente e restituisci il JSON.`;
 
       const { response: completion } = await callOpenAIWithFallback(openai, 'gpt-4o-mini', {
         messages: [
@@ -377,7 +375,7 @@ FORMATO RISPOSTA OBBLIGATORIO JSON:
     }
 
     // -------------------------------------------------------------
-    // AZIONE 5: GENERAZIONE SYLLABUS
+    // AZIONE 5: GENERAZIONE SYLLABUS (CON SUPPORTO "CERCA ONLINE")
     // -------------------------------------------------------------
     if (action === 'generate_syllabus') {
       const numDays = Math.max(3, Math.min(daysTotal || 30, 60));

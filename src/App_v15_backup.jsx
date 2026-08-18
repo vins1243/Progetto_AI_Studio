@@ -52,13 +52,11 @@ import {
   HelpCircle,
   CheckCircle,
   XCircle,
-  ChevronDown,
-  TrendingUp,
-  Activity
+  ChevronDown
 } from 'lucide-react';
 
 // IndexedDB Helper
-const DB_NAME = 'StudyAIDB_V8';
+const DB_NAME = 'StudyAIDB_V7';
 const STORE_NAME = 'project_data_store';
 
 function getDB() {
@@ -158,7 +156,7 @@ async function extractTextFromPptx(arrayBuffer) {
   return { text: text.trim(), pagesCount: slideFiles.length };
 }
 
-// RENDERING AUTOMATICO MARKDOWN + LATEX KATEX VERSO HTML WYSIWYG
+// RENDERING MARKDOWN + LATEX KATEX VERSO HTML WYSIWYG
 function renderMarkdownAndLatexToHtml(md) {
   if (!md) return '';
   let html = md;
@@ -312,19 +310,19 @@ function MainAppContent() {
 
   // MODULO VERIFICA COMPETENZE (STATI)
   const [isQuizModalOpen, setIsQuizModalOpen] = useState(false);
-  const [quizStep, setQuizStep] = useState(1);
+  const [quizStep, setQuizStep] = useState(1); // 1: Seleziona lezioni, 2: Configura, 3: Generazione, 4: Svolgimento, 5: Report
   const [selectedTopicsForQuiz, setSelectedTopicsForQuiz] = useState([]);
   const [quizQuestionTypes, setQuizQuestionTypes] = useState(['scelta_multipla', 'completamento', 'accoppiamento', 'aperta']);
   const [quizNumQuestions, setQuizNumQuestions] = useState(10);
   const [quizDifficulty, setQuizDifficulty] = useState('automatico');
-  const [quizFeedbackMode, setQuizFeedbackMode] = useState('immediato');
+  const [quizFeedbackMode, setQuizFeedbackMode] = useState('immediato'); // 'immediato' | 'finale'
   const [quizQuestions, setQuizQuestions] = useState([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [userAnswers, setUserAnswers] = useState({});
-  const [matchingSelections, setMatchingSelections] = useState({});
-  const [immediateEvaluations, setImmediateEvaluations] = useState({});
+  const [userAnswers, setUserAnswers] = useState({}); // { [qId]: answer }
+  const [matchingSelections, setMatchingSelections] = useState({}); // { [qId]: { [leftIndex]: rightText } }
+  const [immediateEvaluations, setImmediateEvaluations] = useState({}); // { [qId]: evaluationResult }
   const [isEvaluatingOpen, setIsEvaluatingOpen] = useState(false);
-  const [isSingleLessonQuiz, setIsSingleLessonQuiz] = useState(false);
+  const [quizHistory, setQuizHistory] = useState([]);
 
   // Wizard State
   const [wizardStep, setWizardStep] = useState(1);
@@ -713,7 +711,6 @@ function MainAppContent() {
           pagesCount: f.pagesCount,
         })),
         schedule: data.schedule,
-        quizHistory: []
       };
 
       setSavedProjects(old => [newProject, ...(old || [])]);
@@ -797,7 +794,7 @@ function MainAppContent() {
     updateTopicLessonContent(currentDayData.dayNumber, currentSelectedTopic.id, rawText);
   };
 
-  // COMANDI FORMATTAZIONE TESTO
+  // COMANDI DI FORMATTAZIONE SULLA SELEZIONE ESATTA
   const applyFormattingCommand = (command, value = null) => {
     if (typeof document !== 'undefined') {
       document.execCommand('styleWithCSS', false, true);
@@ -809,7 +806,7 @@ function MainAppContent() {
     }
   };
 
-  // DIMENSIONE TESTO (DA 4 A 32 PX)
+  // DIMENSIONE TESTO (DA 4 A 32 PX) SUL TESTO SELEZIONATO
   const applyCustomFontSize = (sizePx) => {
     setSelectedFontSize(sizePx);
     const selection = window.getSelection();
@@ -828,11 +825,11 @@ function MainAppContent() {
       selection.addRange(newRange);
       handleEditorInput();
     } catch (e) {
-      console.warn("Font size error:", e);
+      console.warn("Font size apply error:", e);
     }
   };
 
-  // CARATTERE TESTO (FONT FAMILY)
+  // CARATTERE TESTO (FONT FAMILY) SUL TESTO SELEZIONATO
   const applyCustomFontFamily = (fontName) => {
     setSelectedFontFamily(fontName);
     const selection = window.getSelection();
@@ -851,11 +848,11 @@ function MainAppContent() {
       selection.addRange(newRange);
       handleEditorInput();
     } catch (e) {
-      console.warn("Font family error:", e);
+      console.warn("Font family apply error:", e);
     }
   };
 
-  // ALLINEAMENTO TESTO
+  // ALLINEAMENTO TESTO (SINISTRA, CENTRO, DESTRA, GIUSTIFICATO)
   const applyAlignment = (alignType) => {
     document.execCommand('styleWithCSS', false, true);
     if (alignType === 'left') document.execCommand('justifyLeft', false, null);
@@ -911,7 +908,7 @@ function MainAppContent() {
     }
   };
 
-  // CHATBOT LEZIONE: MODIFICA DIRETTA
+  // CHATBOT LEZIONE: MODIFICA DIRETTA DEL TESTO
   const handleSendLessonChatMessage = async (preset = null) => {
     const promptText = (preset || lessonChatInput).trim();
     if (!promptText || isLessonChatLoading || !currentSelectedTopic?.lesson) return;
@@ -961,6 +958,7 @@ function MainAppContent() {
     }
   };
 
+  // Annulla ultima modifica del chatbot
   const handleUndoChatbotChange = () => {
     if (previousLessonBackup && currentDayData && currentSelectedTopic) {
       updateTopicLessonContent(currentDayData.dayNumber, currentSelectedTopic.id, previousLessonBackup);
@@ -973,7 +971,7 @@ function MainAppContent() {
   };
 
   // -----------------------------------------------------------------
-  // LOGICA VERIFICA COMPETENZE & GRADO DI PREPARAZIONE
+  // LOGICA MODULO "VERIFICA COMPETENZE"
   // -----------------------------------------------------------------
   const getAllProjectTopics = () => {
     if (!activeProject || !Array.isArray(activeProject.schedule)) return [];
@@ -986,8 +984,7 @@ function MainAppContent() {
             title: t.title,
             dayNumber: d.dayNumber,
             dayTitle: d.dayTitle,
-            hasLesson: Boolean(t.lesson),
-            quizScore: t.quizScore || null
+            hasLesson: Boolean(t.lesson)
           });
         });
       }
@@ -995,26 +992,11 @@ function MainAppContent() {
     return list;
   };
 
-  // Apertura Verifica Generale dalla pagina Progetto
-  const handleOpenGeneralQuizModal = () => {
+  const handleOpenQuizModal = () => {
     const allTopics = getAllProjectTopics();
+    // Di default seleziona tutte le lezioni
     setSelectedTopicsForQuiz(allTopics.map(t => t.title));
-    setIsSingleLessonQuiz(false);
     setQuizStep(1);
-    setIsQuizModalOpen(true);
-    setQuizQuestions([]);
-    setUserAnswers({});
-    setMatchingSelections({});
-    setImmediateEvaluations({});
-  };
-
-  // Apertura Verifica Specifica dalla singola Lezione (bypassa Step 1)
-  const handleOpenSingleLessonQuizModal = () => {
-    if (!currentSelectedTopic) return;
-    setSelectedTopicsForQuiz([currentSelectedTopic.title]);
-    setIsSingleLessonQuiz(true);
-    setQuizNumQuestions(5); // Default 5 domande per singola lezione
-    setQuizStep(2); // Va direttamente alla configurazione
     setIsQuizModalOpen(true);
     setQuizQuestions([]);
     setUserAnswers({});
@@ -1086,66 +1068,14 @@ function MainAppContent() {
       setUserAnswers({});
       setMatchingSelections({});
       setImmediateEvaluations({});
-      setQuizStep(4);
+      setQuizStep(4); // Inizio svolgimento quiz
     } catch (err) {
       alert(`Errore generazione verifica: ${err.message}`);
       setQuizStep(2);
     }
   };
 
-  // VALUTAZIONE INTELLIGENTE E MODULARE DEI COMPLETAMENTI (NON BINARIA 0/30)
-  const evaluateCompletionIntelligently = (userAns, correctAns, altAnswers = [], explanation = '') => {
-    if (!userAns || !userAns.trim()) {
-      return { 
-        isCorrect: false, 
-        score: 0, 
-        feedback: `Non hai inserito alcuna risposta. Il termine corretto atteso era: "${correctAns}".` 
-      };
-    }
-
-    const cleanUser = userAns.trim().toLowerCase();
-    const cleanCorrect = (correctAns || '').trim().toLowerCase();
-    
-    // 1. Corrispondenza esatta
-    if (cleanUser === cleanCorrect) {
-      return { 
-        isCorrect: true, 
-        score: 30, 
-        feedback: `Perfetto! Risposta corretta (30/30). ${explanation}` 
-      };
-    }
-
-    // 2. Corrispondenza con risposte alternative/sinonimi
-    if (Array.isArray(altAnswers) && altAnswers.some(alt => alt.trim().toLowerCase() === cleanUser)) {
-      return { 
-        isCorrect: true, 
-        score: 30, 
-        feedback: `Ottimo! La risposta "${userAns}" è corretta (30/30). ${explanation}` 
-      };
-    }
-
-    // 3. Sovrapposizione termini chiave (es. "bicarbonato" dentro "concentrazione di bicarbonato")
-    const userWords = cleanUser.split(/\s+/).filter(w => w.length > 2);
-    const correctWords = cleanCorrect.split(/\s+/).filter(w => w.length > 2);
-    const hasOverlap = userWords.some(w => cleanCorrect.includes(w)) || correctWords.some(w => cleanUser.includes(w));
-
-    if (hasOverlap) {
-      return {
-        isCorrect: true,
-        score: 27, // Punteggio alto: concetto chiave centrato!
-        feedback: `Molto bene! Hai individuato il concetto fondamentale ("${userAns}"). La dicitura specialistica più precisa è "${correctAns}". ${explanation}`
-      };
-    }
-
-    // 4. Risposta parziale o non coincidente
-    return {
-      isCorrect: false,
-      score: 10,
-      feedback: `Il termine specifico richiesto dalla domanda era "${correctAns}". ${explanation}`
-    };
-  };
-
-  // Gestione valutazione risposta aperta con AI (tono costruttivo e voto /30)
+  // Gestione risposta domanda aperta con valutazione AI
   const handleEvaluateCurrentOpenAnswer = async (q) => {
     const studentAnswer = (userAnswers[q.id] || '').trim();
     if (!studentAnswer) {
@@ -1181,25 +1111,21 @@ function MainAppContent() {
     }
   };
 
-  // Verifica immediata
+  // Verifica immediata per scelta multipla o completamento
   const handleCheckImmediateAnswer = (q) => {
     if (q.type === 'aperta') {
       handleEvaluateCurrentOpenAnswer(q);
       return;
     }
 
-    let evaluation = { isCorrect: false, score: 0, feedback: '' };
+    let isCorrect = false;
     const userAns = userAnswers[q.id];
 
     if (q.type === 'scelta_multipla') {
-      const isCorrect = (userAns || '').trim().toLowerCase() === (q.correctAnswer || '').trim().toLowerCase();
-      evaluation = {
-        isCorrect,
-        score: isCorrect ? 30 : 0,
-        feedback: isCorrect ? `Risposta esatta! ${q.explanation || ''}` : `Risposta non corretta. Quella esatta è: "${q.correctAnswer}". ${q.explanation || ''}`
-      };
+      isCorrect = (userAns || '').trim().toLowerCase() === (q.correctAnswer || '').trim().toLowerCase();
     } else if (q.type === 'completamento') {
-      evaluation = evaluateCompletionIntelligently(userAns, q.correctAnswer, q.alternativeAnswers, q.explanation);
+      isCorrect = (userAns || '').trim().toLowerCase() === (q.correctAnswer || '').trim().toLowerCase() ||
+                  (userAns || '').length > 2 && (q.correctAnswer || '').toLowerCase().includes((userAns || '').toLowerCase());
     } else if (q.type === 'accoppiamento') {
       const userPairs = matchingSelections[q.id] || {};
       const totalPairs = q.matchingPairs?.length || 0;
@@ -1207,24 +1133,20 @@ function MainAppContent() {
       (q.matchingPairs || []).forEach((pair, idx) => {
         if (userPairs[idx] === pair.right) matchedCount++;
       });
-      const isCorrect = matchedCount === totalPairs && totalPairs > 0;
-      const score = Math.round((matchedCount / Math.max(1, totalPairs)) * 30);
-      evaluation = {
-        isCorrect: score >= 18,
-        score: score,
-        feedback: isCorrect 
-          ? `Tutte le associazioni sono corrette! (30/30)` 
-          : `Hai associato correttamente ${matchedCount} su ${totalPairs} elementi. (${score}/30). ${q.explanation || ''}`
-      };
+      isCorrect = matchedCount === totalPairs && totalPairs > 0;
     }
 
     setImmediateEvaluations(prev => ({
       ...prev,
-      [q.id]: evaluation
+      [q.id]: {
+        isCorrect,
+        score: isCorrect ? 30 : 0,
+        feedback: q.explanation || (isCorrect ? 'Risposta corretta!' : 'Risposta errata.'),
+      }
     }));
   };
 
-  // Calcolo Punteggio Finale e Registrazione nei dati di progetto
+  // Calcolo risultati finali
   const calculateFinalQuizScore = () => {
     if (!quizQuestions.length) return { total: 0, correct: 0, percentage: 0, averageScore: 0 };
     let correctCount = 0;
@@ -1234,12 +1156,15 @@ function MainAppContent() {
       const ev = immediateEvaluations[q.id];
       if (ev) {
         if (ev.isCorrect) correctCount++;
-        totalScore += (ev.score !== undefined ? ev.score : (ev.isCorrect ? 30 : 0));
+        totalScore += (ev.score || (ev.isCorrect ? 30 : 0));
       } else {
+        // Calcola per chiusura in modalità 'finale'
         const userAns = userAnswers[q.id];
-        if (q.type === 'scelta_multipla' && (userAns || '').trim().toLowerCase() === (q.correctAnswer || '').trim().toLowerCase()) {
-          correctCount++;
-          totalScore += 30;
+        if (q.type === 'scelta_multipla') {
+          if ((userAns || '').trim().toLowerCase() === (q.correctAnswer || '').trim().toLowerCase()) {
+            correctCount++;
+            totalScore += 30;
+          }
         }
       }
     });
@@ -1250,92 +1175,13 @@ function MainAppContent() {
   };
 
   const handleFinishQuiz = () => {
+    // Valuta tutte le domande rimanenti se in modalità finale
     quizQuestions.forEach(q => {
       if (!immediateEvaluations[q.id]) {
         handleCheckImmediateAnswer(q);
       }
     });
-
-    const results = calculateFinalQuizScore();
-
-    // Salva il punteggio nello storico del progetto
-    if (activeProject) {
-      const newHistoryEntry = {
-        date: new Date().toISOString(),
-        score: results.averageScore,
-        percentage: results.percentage,
-        topics: selectedTopicsForQuiz,
-        numQuestions: quizQuestions.length
-      };
-
-      const updatedHistory = [newHistoryEntry, ...(activeProject.quizHistory || [])];
-
-      // Se era un quiz di una singola lezione, aggiorna il punteggio di quella lezione
-      let updatedSchedule = activeProject.schedule;
-      if (isSingleLessonQuiz && currentSelectedTopic && currentDayData) {
-        updatedSchedule = (activeProject.schedule || []).map(d => {
-          if (d.dayNumber === currentDayData.dayNumber) {
-            const updatedTopics = (d.topics || []).map(t => {
-              if (t.id === currentSelectedTopic.id) {
-                return { ...t, quizScore: results.averageScore };
-              }
-              return t;
-            });
-            return { ...d, topics: updatedTopics };
-          }
-          return d;
-        });
-      }
-
-      const updatedProj = { ...activeProject, quizHistory: updatedHistory, schedule: updatedSchedule };
-      setActiveProject(updatedProj);
-      setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProj : p));
-    }
-
-    setQuizStep(5);
-  };
-
-  // CALCOLO GRADO DI PREPARAZIONE GENERALE (Mix Lezioni Studiate + Risultati Verifiche)
-  const calculateOverallReadiness = () => {
-    if (!activeProject) return { percentage: 0, label: 'Inizio percorso', averageQuizScore: 0, testsCount: 0 };
-
-    const globalProg = calculateGlobalProgress();
-    const studiedPercent = globalProg.percent; // 0 - 100%
-
-    const history = activeProject.quizHistory || [];
-    const testsCount = history.length;
-
-    let avgQuizScore = 0;
-    if (testsCount > 0) {
-      const sum = history.reduce((acc, h) => acc + (h.score || 0), 0);
-      avgQuizScore = Math.round(sum / testsCount); // in /30
-    }
-
-    const quizScorePercentage = Math.round((avgQuizScore / 30) * 100);
-
-    let finalReadiness = 0;
-    if (testsCount === 0) {
-      // Se non ha ancora fatto verifiche, il grado si basa principalmente sulle lezioni studiate
-      finalReadiness = Math.round(studiedPercent * 0.7);
-    } else {
-      // Ponderazione: 40% lezioni studiate + 60% esiti delle verifiche
-      finalReadiness = Math.round((studiedPercent * 0.4) + (quizScorePercentage * 0.6));
-    }
-
-    finalReadiness = Math.max(0, Math.min(100, finalReadiness));
-
-    let label = 'Basi in costruzione';
-    if (finalReadiness >= 90) label = 'Padronanza Eccellente (Livello 30 e Lode)';
-    else if (finalReadiness >= 75) label = 'Padronanza Approfondita (Voto Alto)';
-    else if (finalReadiness >= 55) label = 'Buona Preparazione Generale';
-    else if (finalReadiness >= 30) label = 'Conoscenza di Base';
-
-    return {
-      percentage: finalReadiness,
-      label,
-      averageQuizScore: avgQuizScore,
-      testsCount
-    };
+    setQuizStep(5); // Schermata Report
   };
 
   const handleToggleTopicComplete = (dayNum, topicId) => {
@@ -1460,7 +1306,6 @@ function MainAppContent() {
   const fontSizes = [4, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 26, 28, 30, 32];
   const allProjectTopics = getAllProjectTopics();
   const currentQuizQ = quizQuestions[currentQuestionIndex];
-  const readiness = calculateOverallReadiness();
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-geminiDark text-gray-200 relative font-sans">
@@ -1522,10 +1367,8 @@ function MainAppContent() {
                   <GraduationCap size={18} />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-gray-100">
-                    {isSingleLessonQuiz ? `Verifica: ${selectedTopicsForQuiz[0]}` : "Verifica Competenze"}
-                  </h3>
-                  <p className="text-[11px] text-gray-400">Valutazione didattica e consolidamento della preparazione</p>
+                  <h3 className="text-base font-bold text-gray-100">Verifica Competenze</h3>
+                  <p className="text-[11px] text-gray-400">Valutazione e test accademico su misura</p>
                 </div>
               </div>
               <button 
@@ -1536,16 +1379,16 @@ function MainAppContent() {
               </button>
             </div>
 
-            {/* Contenuto Modal */}
+            {/* Contenuto Modal in base allo Step */}
             <div className="flex-1 overflow-y-auto p-6 space-y-5">
               
-              {/* STEP 1: SELEZIONE LEZIONI (mostrato solo in modalità generale) */}
+              {/* STEP 1: SELEZIONE LEZIONI */}
               {quizStep === 1 && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
                       <h4 className="text-sm font-bold text-gray-100">1. Scegli le lezioni da verificare</h4>
-                      <p className="text-xs text-gray-400 mt-0.5">Seleziona gli argomenti che faranno parte della prova.</p>
+                      <p className="text-xs text-gray-400 mt-0.5">Seleziona gli argomenti che faranno parte della prova d'esame.</p>
                     </div>
                     <button
                       onClick={handleToggleSelectAllTopics}
@@ -1572,7 +1415,7 @@ function MainAppContent() {
                             <input 
                               type="checkbox"
                               checked={isChecked}
-                              onChange={() => {}}
+                              onChange={() => {}} // Gestito da onClick padre
                               className="accent-blue-500 w-4 h-4 rounded"
                             />
                             <div className="truncate">
@@ -1580,9 +1423,9 @@ function MainAppContent() {
                               <span className="text-xs font-medium text-gray-200 truncate">{topic.title}</span>
                             </div>
                           </div>
-                          {topic.quizScore && (
-                            <span className="text-[10px] bg-amber-500/15 text-amber-300 px-2 py-0.5 rounded-md border border-amber-500/20 shrink-0 font-bold">
-                              Ultimo voto: {topic.quizScore}/30
+                          {topic.hasLesson && (
+                            <span className="text-[10px] bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded-md border border-emerald-500/20 shrink-0">
+                              Lezione pronta
                             </span>
                           )}
                         </div>
@@ -1614,12 +1457,8 @@ function MainAppContent() {
               {quizStep === 2 && (
                 <div className="space-y-5">
                   <div>
-                    <h4 className="text-sm font-bold text-gray-100">
-                      {isSingleLessonQuiz ? "Configura la verifica di questa lezione" : "2. Configura le preferenze della verifica"}
-                    </h4>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      Argomento/i: <strong>{selectedTopicsForQuiz.length === 1 ? selectedTopicsForQuiz[0] : `${selectedTopicsForQuiz.length} lezioni selezionate`}</strong>
-                    </p>
+                    <h4 className="text-sm font-bold text-gray-100">2. Configura le preferenze della verifica</h4>
+                    <p className="text-xs text-gray-400 mt-0.5">Personalizza tipologia di domande, difficoltà e modalità di feedback.</p>
                   </div>
 
                   {/* Tipologia di domande */}
@@ -1658,17 +1497,17 @@ function MainAppContent() {
                     </div>
                   </div>
 
-                  {/* Numero di domande */}
+                  {/* Numero di domande (5 a 80) */}
                   <div className="space-y-2">
                     <div className="flex justify-between items-center text-xs">
-                      <span className="font-semibold text-gray-300 uppercase tracking-wider">Numero di domande (Min 3 - Max 80)</span>
+                      <span className="font-semibold text-gray-300 uppercase tracking-wider">Numero di domande (Min 5 - Max 80)</span>
                       <span className="font-bold text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-lg border border-amber-500/20 text-sm">
                         {quizNumQuestions} domande
                       </span>
                     </div>
                     <input 
                       type="range"
-                      min="3"
+                      min="5"
                       max="80"
                       step="1"
                       value={quizNumQuestions}
@@ -1677,7 +1516,7 @@ function MainAppContent() {
                     />
                   </div>
 
-                  {/* Difficoltà */}
+                  {/* Grado di difficoltà */}
                   <div className="space-y-2">
                     <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
                       Grado di difficoltà
@@ -1718,11 +1557,11 @@ function MainAppContent() {
                             : 'bg-geminiDark border-geminiBorder text-gray-400'
                         }`}
                       >
-                        <div className="text-xs font-bold text-gray-100">
-                          ⚡ Subito dopo ogni risposta
+                        <div className="text-xs font-bold text-gray-100 flex items-center gap-1.5">
+                          <span>⚡ Subito dopo ogni risposta</span>
                         </div>
                         <p className="text-[10px] text-gray-400 leading-relaxed">
-                          Spiegazione didattica immediata dopo ogni quesito.
+                          Visualizza immediatamente spiegazione ed esito per ciascuna domanda.
                         </p>
                       </div>
 
@@ -1734,11 +1573,11 @@ function MainAppContent() {
                             : 'bg-geminiDark border-geminiBorder text-gray-400'
                         }`}
                       >
-                        <div className="text-xs font-bold text-gray-100">
-                          📋 Solo alla fine (Simulazione esame)
+                        <div className="text-xs font-bold text-gray-100 flex items-center gap-1.5">
+                          <span>📋 Solo alla fine (Simulazione esame)</span>
                         </div>
                         <p className="text-[10px] text-gray-400 leading-relaxed">
-                          Report complessivo con voto al termine della prova.
+                          Svolgi l'intera prova senza interruzioni e ricevi il voto complessivo e l'analisi al termine.
                         </p>
                       </div>
                     </div>
@@ -1746,16 +1585,13 @@ function MainAppContent() {
 
                   {/* Navigazione */}
                   <div className="flex items-center justify-between pt-4 border-t border-geminiBorder/60">
-                    {!isSingleLessonQuiz ? (
-                      <button
-                        onClick={() => setQuizStep(1)}
-                        className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition"
-                      >
-                        <ArrowLeft size={14} />
-                        <span>Indietro</span>
-                      </button>
-                    ) : <div />}
-                    
+                    <button
+                      onClick={() => setQuizStep(1)}
+                      className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition"
+                    >
+                      <ArrowLeft size={14} />
+                      <span>Indietro</span>
+                    </button>
                     <button
                       onClick={handleGenerateQuizSession}
                       className="flex items-center gap-2 px-6 py-2.5 rounded-full text-xs font-bold bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white shadow-lg shadow-amber-600/30 transition"
@@ -1767,16 +1603,16 @@ function MainAppContent() {
                 </div>
               )}
 
-              {/* STEP 3: LOADING */}
+              {/* STEP 3: CARICAMENTO/GENERAZIONE QUIZ */}
               {quizStep === 3 && (
                 <div className="py-16 text-center space-y-4">
                   <div className="w-14 h-14 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 mx-auto animate-bounce">
                     <Sparkles size={28} />
                   </div>
                   <div className="space-y-1">
-                    <h4 className="text-base font-bold text-gray-100">Formulazione delle domande...</h4>
+                    <h4 className="text-base font-bold text-gray-100">Creazione della Verifica in corso...</h4>
                     <p className="text-xs text-gray-400 max-w-sm mx-auto">
-                      L'AI sta strutturando {quizNumQuestions} quesiti con terminologia specialistica e chiarezza didattica.
+                      L'AI sta formulando {quizNumQuestions} quesiti accademici specifici sulle lezioni selezionate.
                     </p>
                   </div>
                 </div>
@@ -1786,6 +1622,7 @@ function MainAppContent() {
               {quizStep === 4 && currentQuizQ && (
                 <div className="space-y-5">
                   
+                  {/* Barra avanzamento domande */}
                   <div className="flex items-center justify-between pb-2 border-b border-geminiBorder/40 text-xs">
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-amber-400">Domanda {currentQuestionIndex + 1} di {quizQuestions.length}</span>
@@ -1799,13 +1636,16 @@ function MainAppContent() {
                     </span>
                   </div>
 
+                  {/* Testo Domanda */}
                   <div className="bg-geminiDark p-4 rounded-2xl border border-geminiBorder">
                     <h4 className="text-sm font-semibold text-gray-100 leading-relaxed">
                       {currentQuizQ.question}
                     </h4>
                   </div>
 
-                  {/* SCELTA MULTIPLA */}
+                  {/* RENDERING IN BASE ALLA TIPOLOGIA */}
+                  
+                  {/* 1. SCELTA MULTIPLA */}
                   {currentQuizQ.type === 'scelta_multipla' && (
                     <div className="space-y-2">
                       {(currentQuizQ.options || []).map((opt, oIdx) => {
@@ -1834,21 +1674,21 @@ function MainAppContent() {
                     </div>
                   )}
 
-                  {/* COMPLETAMENTO */}
+                  {/* 2. COMPLETAMENTO */}
                   {currentQuizQ.type === 'completamento' && (
                     <div className="space-y-2">
-                      <label className="block text-xs font-semibold text-gray-300">Inserisci il termine o concetto mancante:</label>
+                      <label className="block text-xs font-semibold text-gray-300">Inserisci il termine o la frase mancante:</label>
                       <input 
                         type="text"
                         value={userAnswers[currentQuizQ.id] || ''}
                         onChange={(e) => setUserAnswers(prev => ({ ...prev, [currentQuizQ.id]: e.target.value }))}
-                        placeholder="Es. bicarbonato..."
+                        placeholder="Digita qui la risposta..."
                         className="w-full bg-geminiDark border border-geminiBorder rounded-2xl p-3.5 text-xs text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500"
                       />
                     </div>
                   )}
 
-                  {/* ACCOPPIAMENTO */}
+                  {/* 3. ACCOPPIAMENTI */}
                   {currentQuizQ.type === 'accoppiamento' && (
                     <div className="space-y-3">
                       <label className="block text-xs font-semibold text-gray-300">Associa a ciascun elemento la definizione corretta:</label>
@@ -1882,68 +1722,51 @@ function MainAppContent() {
                     </div>
                   )}
 
-                  {/* DOMANDA APERTA */}
+                  {/* 4. DOMANDA APERTA */}
                   {currentQuizQ.type === 'aperta' && (
                     <div className="space-y-2">
                       <div className="flex justify-between items-center">
-                        <label className="block text-xs font-semibold text-gray-300">Scrivi la tua risposta argomentativa:</label>
-                        <span className="text-[10px] text-amber-400">Valutazione didattica /30</span>
+                        <label className="block text-xs font-semibold text-gray-300">Scrivi la tua risposta argomentativa completa:</label>
+                        <span className="text-[10px] text-amber-400">Valutazione rigorosa in /30</span>
                       </div>
                       <textarea 
                         rows={5}
                         value={userAnswers[currentQuizQ.id] || ''}
                         onChange={(e) => setUserAnswers(prev => ({ ...prev, [currentQuizQ.id]: e.target.value }))}
-                        placeholder="Spiega i concetti, i passaggi e i meccanismi..."
+                        placeholder="Argomenta la tua risposta spiegando cause, meccanismi, definizioni o classificazioni..."
                         className="w-full bg-geminiDark border border-geminiBorder rounded-2xl p-3.5 text-xs text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 leading-relaxed"
                       />
                     </div>
                   )}
 
-                  {/* FEEDBACK IMMEDIATO MODULARE E COSTRUTTIVO */}
+                  {/* FEEDBACK IMMEDIATO SE ATTIVO */}
                   {quizFeedbackMode === 'immediato' && (
                     <div className="pt-2">
                       {immediateEvaluations[currentQuizQ.id] ? (
                         <div className={`p-4 rounded-2xl border text-xs space-y-2.5 animate-fadeIn ${
-                          immediateEvaluations[currentQuizQ.id].score >= 24
-                            ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200'
-                            : immediateEvaluations[currentQuizQ.id].score >= 18
-                            ? 'bg-blue-950/30 border-blue-500/40 text-blue-200'
-                            : immediateEvaluations[currentQuizQ.id].score >= 10
-                            ? 'bg-amber-950/30 border-amber-500/40 text-amber-200'
-                            : 'bg-red-950/20 border-red-500/30 text-red-200'
+                          immediateEvaluations[currentQuizQ.id].isCorrect 
+                            ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200' 
+                            : 'bg-red-950/30 border-red-500/40 text-red-200'
                         }`}>
                           <div className="flex items-center justify-between font-bold">
                             <span className="flex items-center gap-1.5">
-                              {immediateEvaluations[currentQuizQ.id].score >= 18 
-                                ? <CheckCircle size={16} className="text-emerald-400" /> 
-                                : <AlertTriangle size={16} className="text-amber-400" />}
-                              <span>
-                                {immediateEvaluations[currentQuizQ.id].score >= 28 ? "Risposta Eccellente" :
-                                 immediateEvaluations[currentQuizQ.id].score >= 24 ? "Concetto Centrato" :
-                                 immediateEvaluations[currentQuizQ.id].score >= 18 ? "Risposta Soddisfacente" :
-                                 immediateEvaluations[currentQuizQ.id].score >= 10 ? "Risposta Parziale" : "Da Rivedere"}
-                              </span>
+                              {immediateEvaluations[currentQuizQ.id].isCorrect ? <CheckCircle size={16} className="text-emerald-400" /> : <XCircle size={16} className="text-red-400" />}
+                              <span>{immediateEvaluations[currentQuizQ.id].isCorrect ? 'Esito Positivo' : 'Esito Negativo'}</span>
                             </span>
                             {immediateEvaluations[currentQuizQ.id].score !== undefined && (
-                              <span className="bg-geminiDark px-2 py-0.5 rounded border border-geminiBorder font-bold">
-                                Voto: {immediateEvaluations[currentQuizQ.id].score}/30
+                              <span className="bg-geminiDark px-2 py-0.5 rounded border border-geminiBorder">
+                                Voto: <strong>{immediateEvaluations[currentQuizQ.id].score}/30</strong>
                               </span>
                             )}
                           </div>
 
                           <p className="leading-relaxed text-gray-200">
-                            {immediateEvaluations[currentQuizQ.id].feedback}
+                            {immediateEvaluations[currentQuizQ.id].feedback || currentQuizQ.explanation}
                           </p>
-
-                          {immediateEvaluations[currentQuizQ.id].strengths && immediateEvaluations[currentQuizQ.id].strengths.length > 0 && (
-                            <div className="text-[11px] text-emerald-300/90 pt-1 border-t border-geminiBorder/40">
-                              <strong>Punti individuati bene:</strong> {immediateEvaluations[currentQuizQ.id].strengths.join(', ')}
-                            </div>
-                          )}
 
                           {immediateEvaluations[currentQuizQ.id].missedPoints && immediateEvaluations[currentQuizQ.id].missedPoints.length > 0 && (
                             <div className="text-[11px] text-amber-300/90 pt-1 border-t border-geminiBorder/40">
-                              <strong>💡 Suggerimenti per completare la risposta:</strong> {immediateEvaluations[currentQuizQ.id].missedPoints.join(', ')}
+                              <strong>Aspetti da integrare:</strong> {immediateEvaluations[currentQuizQ.id].missedPoints.join(', ')}
                             </div>
                           )}
                         </div>
@@ -1954,13 +1777,13 @@ function MainAppContent() {
                           className="w-full py-2.5 bg-geminiHover hover:bg-geminiBorder border border-geminiBorder text-xs text-blue-300 font-bold rounded-xl transition flex items-center justify-center gap-2"
                         >
                           {isEvaluatingOpen ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
-                          <span>{isEvaluatingOpen ? "Valutazione didattica in corso..." : "Verifica risposta adesso"}</span>
+                          <span>{isEvaluatingOpen ? "L'AI sta valutando la risposta..." : "Verifica risposta adesso"}</span>
                         </button>
                       )}
                     </div>
                   )}
 
-                  {/* Pulsanti navigazione */}
+                  {/* Pulsanti navigazione domande */}
                   <div className="flex items-center justify-between pt-4 border-t border-geminiBorder/60">
                     <button
                       onClick={() => setCurrentQuestionIndex(prev => Math.max(0, prev - 1))}
@@ -1984,7 +1807,7 @@ function MainAppContent() {
                         className="flex items-center gap-1.5 px-6 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold transition shadow-lg"
                       >
                         <CheckCircle size={14} />
-                        <span>Concludi e Salva Esito</span>
+                        <span>Concludi e Mostra Esito</span>
                       </button>
                     )}
                   </div>
@@ -2001,12 +1824,13 @@ function MainAppContent() {
 
                   <div className="space-y-1">
                     <h3 className="text-xl font-bold text-gray-100">Verifica Completata!</h3>
-                    <p className="text-xs text-gray-400">I risultati sono stati registrati nel tuo grado di preparazione generale.</p>
+                    <p className="text-xs text-gray-400">Ecco il resoconto analitico delle tue competenze.</p>
                   </div>
 
+                  {/* Griglia Punteggio */}
                   <div className="grid grid-cols-3 gap-3 max-w-md mx-auto">
                     <div className="bg-geminiDark p-3 rounded-2xl border border-geminiBorder">
-                      <div className="text-[10px] uppercase font-bold text-gray-400">Esito</div>
+                      <div className="text-[10px] uppercase font-bold text-gray-400">Punteggio</div>
                       <div className="text-lg font-bold text-amber-400">{calculateFinalQuizScore().correct} / {calculateFinalQuizScore().total}</div>
                     </div>
                     <div className="bg-geminiDark p-3 rounded-2xl border border-geminiBorder">
@@ -2014,7 +1838,7 @@ function MainAppContent() {
                       <div className="text-lg font-bold text-blue-400">{calculateFinalQuizScore().percentage}%</div>
                     </div>
                     <div className="bg-geminiDark p-3 rounded-2xl border border-geminiBorder">
-                      <div className="text-[10px] uppercase font-bold text-gray-400">Voto Medio</div>
+                      <div className="text-[10px] uppercase font-bold text-gray-400">Media /30</div>
                       <div className="text-lg font-bold text-emerald-400">{calculateFinalQuizScore().averageScore}/30</div>
                     </div>
                   </div>
@@ -2030,7 +1854,7 @@ function MainAppContent() {
                       onClick={() => setIsQuizModalOpen(false)}
                       className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition shadow-md"
                     >
-                      Chiudi e Torna allo Studio
+                      Torna al Progetto
                     </button>
                   </div>
                 </div>
@@ -2191,7 +2015,7 @@ function MainAppContent() {
         {/* ------------------------------------------------------------- */}
         {currentView === 'wizard' && (
           <main className="flex-1 overflow-y-auto px-4 md:px-8 py-8 max-w-2xl mx-auto w-full flex flex-col justify-center">
-            {/* Wizard steps */}
+            {/* Step 1, Step 2, Step 3, Step 4 del wizard */}
             {wizardStep === 1 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
                 <div className="flex items-center gap-3">
@@ -2594,7 +2418,7 @@ function MainAppContent() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* VISTA 2: PAGINA PROGETTO CON "GRADO DI PREPARAZIONE GENERALE" */}
+        {/* VISTA 2: PAGINA DEDICATA AL PROGETTO CON "VERIFICA COMPETENZE" */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'project' && activeProject && (
           <main className="flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-5xl mx-auto w-full space-y-6">
@@ -2613,7 +2437,6 @@ function MainAppContent() {
               </span>
             </div>
 
-            {/* CARD PRINCIPALE ESAME */}
             <div className="bg-gradient-to-br from-geminiDarkSecondary via-geminiDarkSecondary to-blue-950/20 border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-xl space-y-4">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="space-y-1">
@@ -2640,36 +2463,23 @@ function MainAppContent() {
                 </div>
               </div>
 
-              {/* WIDGET PROMINENTE: GRADO DI PREPARAZIONE GENERALE */}
-              <div className="mt-4 p-4 rounded-2xl bg-geminiDark/80 border border-blue-500/30 space-y-2.5 shadow-inner">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Activity className="text-blue-400" size={18} />
-                    <span className="text-xs font-bold text-gray-100 uppercase tracking-wider">Grado di Preparazione Generale:</span>
-                    <span className="text-xs font-semibold text-blue-300 bg-blue-500/20 px-2.5 py-0.5 rounded-lg border border-blue-500/30">
-                      {readiness.label}
-                    </span>
-                  </div>
-                  <span className="text-base font-extrabold text-blue-400">
-                    {readiness.percentage}%
-                  </span>
-                </div>
-
-                <div className="w-full bg-geminiDarkSecondary h-2.5 rounded-full overflow-hidden border border-geminiBorder/60">
-                  <div 
-                    className="bg-gradient-to-r from-blue-600 via-indigo-500 to-emerald-400 h-full rounded-full transition-all duration-500"
-                    style={{ width: `${readiness.percentage}%` }}
-                  />
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between text-[11px] text-gray-400 pt-0.5">
-                  <span>📖 Lezioni studiate: <strong>{calculateGlobalProgress().completed}/{calculateGlobalProgress().total}</strong> ({calculateGlobalProgress().percent}%)</span>
-                  <span>🏆 Verifiche svolte: <strong>{readiness.testsCount}</strong> {readiness.testsCount > 0 && `(Media voto: ${readiness.averageQuizScore}/30)`}</span>
-                </div>
+              <div className="flex flex-wrap gap-2 pt-2">
+                <span className="bg-geminiHover border border-geminiBorder px-3 py-1.5 rounded-xl text-xs text-gray-300 flex items-center gap-1.5">
+                  <Target size={13} className="text-blue-400" />
+                  <span>Obiettivo: <strong>{activeProject?.prepLevel || 80}%</strong> ({getPrepLabel(activeProject?.prepLevel || 80).split('(')[0].trim()})</span>
+                </span>
+                <span className="bg-geminiHover border border-geminiBorder px-3 py-1.5 rounded-xl text-xs text-gray-300 flex items-center gap-1.5">
+                  <GraduationCap size={13} className="text-indigo-400" />
+                  <span>Prova: <strong className="capitalize">{activeProject?.examType ? activeProject.examType.replace('_', ' + ') : 'Orale'}</strong></span>
+                </span>
+                <span className="bg-geminiHover border border-geminiBorder px-3 py-1.5 rounded-xl text-xs text-gray-300 flex items-center gap-1.5">
+                  <Sliders size={13} className="text-purple-400" />
+                  <span>Stile: <strong className="capitalize">{activeProject?.languageStyle || 'Automatico'}</strong></span>
+                </span>
               </div>
             </div>
 
-            {/* GRIGLIA 3 SEZIONI: MATERIALI, PIANO DIDATTICO E VERIFICA COMPETENZE */}
+            {/* GRIGLIA 3 COLONNE: MATERIALI, PIANO DI STUDIO E VERIFICA COMPETENZE */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               
               {/* Card 1: Fonti */}
@@ -2704,7 +2514,7 @@ function MainAppContent() {
                 </div>
 
                 <div className="pt-2 text-[11px] text-gray-500">
-                  Fonti indicizzate e pronte
+                  Tutte le fonti sono indicizzate
                 </div>
               </div>
 
@@ -2720,7 +2530,7 @@ function MainAppContent() {
                   </p>
                   
                   <div className="mt-3 p-2.5 bg-geminiDark rounded-xl border border-geminiBorder flex items-center justify-between text-xs">
-                    <span className="text-gray-400 text-[11px]">Avanzamento:</span>
+                    <span className="text-gray-400 text-[11px]">Progresso:</span>
                     <span className="font-bold text-emerald-400 text-[11px]">
                       {calculateGlobalProgress().completed} / {calculateGlobalProgress().total} ({calculateGlobalProgress().percent}%)
                     </span>
@@ -2737,7 +2547,7 @@ function MainAppContent() {
                 </button>
               </div>
 
-              {/* Card 3: VERIFICA COMPETENZE */}
+              {/* Card 3: NUOVA SEZIONE "VERIFICA COMPETENZE" */}
               <div className="bg-geminiDarkSecondary border border-amber-500/30 p-6 rounded-3xl shadow-lg space-y-4 flex flex-col justify-between bg-gradient-to-b from-geminiDarkSecondary to-amber-950/10">
                 <div>
                   <div className="flex items-center justify-between border-b border-geminiBorder/60 pb-3">
@@ -2746,16 +2556,16 @@ function MainAppContent() {
                       <span>Verifica Competenze</span>
                     </div>
                     <span className="text-[10px] bg-amber-500/15 text-amber-300 font-bold px-2 py-0.5 rounded-md border border-amber-500/20">
-                      Prova Esame
+                      Novità
                     </span>
                   </div>
                   <p className="text-xs text-gray-400 mt-3 leading-relaxed">
-                    Avvia una prova su tutte le lezioni o su temi scelti con feedback costruttivo e valutazione modulare in /30.
+                    Simula una prova d'esame personalizzata: scegli le lezioni, il tipo di domande (aperte, quiz, completamenti) e ricevi una valutazione accademica rigorosa.
                   </p>
                 </div>
 
                 <button 
-                  onClick={handleOpenGeneralQuizModal}
+                  onClick={handleOpenQuizModal}
                   className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-gradient-to-r from-amber-600 via-orange-600 to-amber-600 hover:from-amber-500 hover:to-orange-500 text-white text-xs font-bold shadow-lg shadow-amber-600/30 transition transform active:scale-98"
                 >
                   <CheckCircle2 size={15} />
@@ -2796,7 +2606,7 @@ function MainAppContent() {
                   <span>Programma Giornaliero di Studio</span>
                 </h2>
                 <p className="text-xs text-gray-400 mt-1">
-                  Seleziona una giornata per consultare, personalizzare o verificare lezioni.
+                  Seleziona una giornata per consultare, personalizzare o generare lezioni.
                 </p>
               </div>
 
@@ -2854,7 +2664,7 @@ function MainAppContent() {
                           {day.dayTitle}
                         </h3>
                         <div className="text-xs text-gray-400 mt-0.5">
-                          {day.topics?.length || 0} argomenti ({dayCompletedTopics} completati)
+                          {day.topics?.length || 0} argomenti previsti ({dayCompletedTopics} completati)
                         </div>
                       </div>
                     </div>
@@ -2876,7 +2686,7 @@ function MainAppContent() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* VISTA 4: DETTAGLIO GIORNO CON TASTO "VERIFICA LEZIONE" DEDICATO */}
+        {/* VISTA 4: DETTAGLIO GIORNO WYSIWYG & CHATBOT FISSO A LATO       */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'day_detail' && activeProject && currentDayData && (
           <main className="flex-1 flex flex-col h-full w-full overflow-hidden">
@@ -2926,30 +2736,18 @@ function MainAppContent() {
                     </div>
 
                     {currentSelectedTopic && (
-                      <div className="flex items-center gap-2 shrink-0">
-                        {/* TASTO "VERIFICA" DEDICATO ALLA SINGOLA LEZIONE */}
-                        <button
-                          onClick={handleOpenSingleLessonQuizModal}
-                          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 transition shadow-sm"
-                          title="Avvia una verifica specifica solo su questa lezione"
-                        >
-                          <GraduationCap size={13} />
-                          <span>Verifica Lezione</span>
-                        </button>
-
-                        <button
-                          onClick={() => handleGenerateLesson(currentDayData.dayNumber, currentSelectedTopic)}
-                          disabled={isGeneratingLesson}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition shadow-sm ${
-                            isGeneratingLesson 
-                              ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
-                              : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/20'
-                          }`}
-                        >
-                          {isGeneratingLesson ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                          <span>{currentSelectedTopic.lesson ? 'Rigenera' : 'Genera lezione'}</span>
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => handleGenerateLesson(currentDayData.dayNumber, currentSelectedTopic)}
+                        disabled={isGeneratingLesson}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition shadow-sm shrink-0 ${
+                          isGeneratingLesson 
+                            ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
+                            : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/20'
+                        }`}
+                      >
+                        {isGeneratingLesson ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                        <span>{currentSelectedTopic.lesson ? 'Rigenera' : 'Genera lezione'}</span>
+                      </button>
                     )}
                   </div>
 
@@ -3087,7 +2885,7 @@ function MainAppContent() {
 
                 </div>
 
-                {/* CORPO DELLA LEZIONE */}
+                {/* AREA DEL DOCUMENTO SCROLLABILE WYSIWYG */}
                 <div className="flex-1 overflow-y-auto p-4 md:p-6 relative">
                   
                   {isGeneratingLesson ? (
@@ -3099,17 +2897,10 @@ function MainAppContent() {
                   ) : currentSelectedTopic?.lesson ? (
                     <div className="max-w-3xl mx-auto space-y-4">
                       
-                      {/* Badge con stato e punteggio ultima verifica per questa lezione */}
-                      <div className="flex flex-wrap items-center justify-between text-xs text-gray-400 bg-geminiDarkSecondary/60 px-4 py-2 rounded-2xl border border-geminiBorder gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px]">✏️ <strong>Modifica testo attiva</strong></span>
-                          {currentSelectedTopic.quizScore && (
-                            <span className="bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-md border border-amber-500/30 text-[10px] font-bold">
-                              Verifica: {currentSelectedTopic.quizScore}/30
-                            </span>
-                          )}
-                        </div>
-                        
+                      <div className="flex items-center justify-between text-xs text-gray-400 bg-geminiDarkSecondary/60 px-4 py-2 rounded-2xl border border-geminiBorder">
+                        <span className="text-[11px]">
+                          ✏️ <strong>Documento modificabile</strong>: puoi cliccare e scrivere direttamente nel foglio.
+                        </span>
                         <button
                           onClick={() => handleToggleTopicComplete(currentDayData.dayNumber, currentSelectedTopic.id)}
                           className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition ${
@@ -3123,7 +2914,6 @@ function MainAppContent() {
                         </button>
                       </div>
 
-                      {/* Foglio WYSIWYG */}
                       <div className="bg-geminiDarkSecondary/70 border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-xl min-h-[520px]">
                         <div
                           ref={wysiwygEditorRef}
@@ -3149,7 +2939,7 @@ function MainAppContent() {
 
               </div>
 
-              {/* COLONNA DESTRA: CHATBOT LEZIONE */}
+              {/* COLONNA DESTRA: CHATBOT DELLA LEZIONE */}
               <div className="w-full md:w-80 lg:w-96 h-80 md:h-full flex flex-col bg-geminiDarkSecondary border-l border-geminiBorder/60 shrink-0 overflow-hidden">
                 
                 <div className="px-4 py-3 border-b border-geminiBorder/40 bg-geminiDarkSecondary flex items-center justify-between shrink-0">
@@ -3358,7 +3148,7 @@ function MainAppContent() {
               </div>
             </div>
 
-            {/* Input Bar Fisso */}
+            {/* Input Bar Fisso in Basso */}
             <footer className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-geminiDark via-geminiDark to-transparent z-10">
               <div className="max-w-3xl mx-auto">
                 
