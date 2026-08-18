@@ -470,18 +470,18 @@ function MainAppContent() {
         setAuthPassword('');
       } else if (authMode === 'signup') {
         await signUpUser(authEmail, authPassword, authFullName);
-        setAuthSuccess("Registrazione completata con successo! Controlla la tua email per confermare l'account o accedi con le tue credenziali.");
+        setAuthSuccess('Registrazione completata con successo! Controlla la tua email per confermare l'account o accedi con le tue credenziali.');
         setTimeout(() => {
           setAuthMode('login');
           setAuthSuccess('');
         }, 3500);
       } else if (authMode === 'reset') {
         await resetUserPassword(authEmail);
-        setAuthSuccess("Ti abbiamo inviato un'email con il link per reimpostare la tua password.");
+        setAuthSuccess('Ti abbiamo inviato un'email con il link per reimpostare la tua password.');
       }
     } catch (err) {
       console.error('Auth error:', err);
-      setAuthError(err.message || "Si è verificato un errore durante l'operazione.");
+      setAuthError(err.message || 'Si è verificato un errore durante l'operazione.');
     } finally {
       setIsAuthSubmitting(false);
     }
