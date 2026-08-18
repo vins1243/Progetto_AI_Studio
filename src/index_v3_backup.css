@@ -13,7 +13,7 @@ html, body {
   color-scheme: dark;
 }
 
-/* Scrollbar Scura Globale */
+/* Scrollbar Scura Globale (WebKit: Chrome, Safari, Edge) */
 ::-webkit-scrollbar {
   width: 7px;
   height: 7px;
@@ -33,12 +33,13 @@ html, body {
   background: #3c4043;
 }
 
+/* Scrollbar Scura per Firefox */
 * {
   scrollbar-width: thin;
   scrollbar-color: #2a2b2f #131314;
 }
 
-/* STILI PER EDITOR WYSIWYG */
+/* STILI PER EDITOR WYSIWYG DIRETTO SENZA MARKDOWN GREZZO */
 .wysiwyg-editor {
   outline: none;
   min-height: 480px;
@@ -158,36 +159,7 @@ html, body {
   padding-bottom: 0.4rem;
 }
 
-/* Stili Immagini nell'Editor */
-.lesson-image-wrapper {
-  position: relative;
-  display: block;
-}
-
-.lesson-image-wrapper.text-left {
-  text-align: left;
-}
-
-.lesson-image-wrapper.text-center {
-  text-align: center;
-}
-
-.lesson-image-wrapper.text-right {
-  text-align: right;
-}
-
-.lesson-img {
-  display: inline-block;
-  user-select: none;
-  transition: outline 0.15s ease;
-}
-
-.lesson-img.img-active-selected {
-  outline: 2px solid #3b82f6;
-  outline-offset: 2px;
-}
-
-/* Stili KaTeX */
+/* Stili Formule Matematiche KaTeX */
 .katex-display {
   margin: 1rem 0;
   overflow-x: auto;
@@ -201,7 +173,7 @@ html, body {
   color: #93c5fd;
 }
 
-/* Animazione popup */
+/* Animazione per il popup fluttuante sulla selezione */
 @keyframes popupFadeIn {
   from {
     opacity: 0;
@@ -215,71 +187,4 @@ html, body {
 
 .animate-popup {
   animation: popupFadeIn 0.15s ease-out forwards;
-}
-
-/* STILI PER ESPORTAZIONE PDF PULITA */
-.pdf-export-container {
-  background-color: #ffffff !important;
-  color: #1e293b !important;
-  padding: 30px !important;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
-  line-height: 1.65 !important;
-}
-
-.pdf-export-container h1 {
-  color: #0f172a !important;
-  font-size: 24px !important;
-  border-bottom: 2px solid #3b82f6 !important;
-  padding-bottom: 8px !important;
-  margin-top: 20px !important;
-  margin-bottom: 12px !important;
-}
-
-.pdf-export-container h2 {
-  color: #1e40af !important;
-  font-size: 18px !important;
-  margin-top: 18px !important;
-  margin-bottom: 10px !important;
-}
-
-.pdf-export-container h3 {
-  color: #3730a3 !important;
-  font-size: 15px !important;
-  margin-top: 14px !important;
-  margin-bottom: 8px !important;
-}
-
-.pdf-export-container p, .pdf-export-container li {
-  color: #334155 !important;
-  font-size: 13px !important;
-}
-
-.pdf-export-container strong, .pdf-export-container b {
-  color: #1e3a8a !important;
-  background-color: #eff6ff !important;
-  padding: 1px 3px !important;
-  border: 1px solid #bfdbfe !important;
-  border-radius: 3px !important;
-}
-
-.pdf-export-container table {
-  border-collapse: collapse !important;
-  width: 100% !important;
-  margin: 15px 0 !important;
-}
-
-.pdf-export-container th, .pdf-export-container td {
-  border: 1px solid #cbd5e1 !important;
-  padding: 8px 12px !important;
-  font-size: 12px !important;
-  color: #1e293b !important;
-}
-
-.pdf-export-container th {
-  background-color: #f1f5f9 !important;
-  font-weight: bold !important;
-}
-
-.pdf-export-container .katex {
-  color: #1e40af !important;
 }

@@ -58,11 +58,13 @@ import {
   Mic,
   MicOff,
   Image as ImageIcon,
-  Download
+  Crop,
+  Maximize,
+  Minimize
 } from 'lucide-react';
 
 // IndexedDB Helper
-const DB_NAME = 'StudyAIDB_V11';
+const DB_NAME = 'StudyAIDB_V10';
 const STORE_NAME = 'project_data_store';
 
 function getDB() {
@@ -270,7 +272,7 @@ export default function App() {
 function MainAppContent() {
   const [currentView, setCurrentView] = useState('chat');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [sidebarTab, setSidebarTab] = useState('projects');
+  const [sidebarTab, setSidebarTab] = useState('projects'); // 'conversations' | 'projects'
 
   // Chat Homepage (Supporto fino a 10 file simultanei)
   const [conversations, setConversations] = useState(() => {
@@ -284,7 +286,7 @@ function MainAppContent() {
   const [currentChatId, setCurrentChatId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputPrompt, setInputPrompt] = useState('');
-  const [attachedFiles, setAttachedFiles] = useState([]);
+  const [attachedFiles, setAttachedFiles] = useState([]); // Array fino a 10 file
   const [isLoading, setIsLoading] = useState(false);
   const [isDraggingOverChat, setIsDraggingOverChat] = useState(false);
 
@@ -307,17 +309,14 @@ function MainAppContent() {
   const [selectedDayNumber, setSelectedDayNumber] = useState(1);
   const [selectedTopicId, setSelectedTopicId] = useState(null);
   const [isGeneratingLesson, setIsGeneratingLesson] = useState(false);
-  const [isExportingPDF, setIsExportingPDF] = useState(false);
 
   // POPUP FLUTTUANTE SU SELEZIONE TESTO
   const [floatingPopup, setFloatingPopup] = useState(null);
   const [isRewriting, setIsRewriting] = useState(false);
 
-  // GESTIONE SELEZIONE E RIDIMENSIONAMENTO TRASCINABILE IMMAGINI
+  // CONTROLLI IMMAGINE NELLA LEZIONE
   const [selectedImageEl, setSelectedImageEl] = useState(null);
-  const [imageBoxRect, setImageBoxRect] = useState(null); // { left, top, width, height }
   const [imageToolPos, setImageToolPos] = useState(null);
-  const resizingStateRef = useRef(null); // { handle, startX, startY, startW, startH }
 
   // CHATBOT LEZIONE CON MODIFICA DIRETTA
   const [lessonChatMessages, setLessonChatMessages] = useState([]);
@@ -415,33 +414,11 @@ function MainAppContent() {
         lastLoadedTopicIdRef.current = currentId;
         const html = renderMarkdownAndLatexToHtml(currentSelectedTopic.lesson || '');
         wysiwygEditorRef.current.innerHTML = html;
-        setSelectedImageEl(null);
-        setImageBoxRect(null);
       }
     }
   }, [currentView, currentSelectedTopic?.id, currentSelectedTopic?.lesson]);
 
-  // Aggiorna posizione rettangolo di selezione immagine
-  const updateImageBoxPosition = (img) => {
-    if (!img) {
-      setImageBoxRect(null);
-      setImageToolPos(null);
-      return;
-    }
-    const rect = img.getBoundingClientRect();
-    setImageBoxRect({
-      left: rect.left,
-      top: rect.top,
-      width: rect.width,
-      height: rect.height,
-    });
-    setImageToolPos({
-      x: Math.max(10, rect.left + rect.width / 2),
-      y: Math.max(50, rect.top - 12)
-    });
-  };
-
-  // Listener per selezione immagini nell'editor
+  // Gestione clic sulle immagini dentro l'editor per mostrare toolbar controlli
   useEffect(() => {
     const handleEditorClick = (e) => {
       if (currentView !== 'day_detail') return;
@@ -449,84 +426,20 @@ function MainAppContent() {
       if (e.target && e.target.tagName === 'IMG') {
         const img = e.target;
         setSelectedImageEl(img);
-        updateImageBoxPosition(img);
-      } else if (!e.target.closest('#image-editing-toolbar') && !e.target.closest('#image-resize-overlay')) {
+        const rect = img.getBoundingClientRect();
+        setImageToolPos({
+          x: Math.max(10, rect.left + rect.width / 2),
+          y: Math.max(50, rect.top - 10)
+        });
+      } else if (!e.target.closest('#image-editing-toolbar')) {
         setSelectedImageEl(null);
-        setImageBoxRect(null);
         setImageToolPos(null);
       }
     };
 
-    const handleScrollOrResize = () => {
-      if (selectedImageEl) updateImageBoxPosition(selectedImageEl);
-    };
-
     document.addEventListener('click', handleEditorClick);
-    window.addEventListener('scroll', handleScrollOrResize, true);
-    window.addEventListener('resize', handleScrollOrResize);
-
-    return () => {
-      document.removeEventListener('click', handleEditorClick);
-      window.removeEventListener('scroll', handleScrollOrResize, true);
-      window.removeEventListener('resize', handleScrollOrResize);
-    };
-  }, [currentView, selectedImageEl]);
-
-  // GESTIONE TRASCINAMENTO MANIGLIE DI RIDIMENSIONAMENTO IMMAGINE (CORNER & EDGE HANDLES)
-  const handleResizeHandleMouseDown = (e, handleType) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (!selectedImageEl) return;
-    const rect = selectedImageEl.getBoundingClientRect();
-
-    resizingStateRef.current = {
-      handle: handleType,
-      startX: e.clientX,
-      startY: e.clientY,
-      startWidth: rect.width,
-      startHeight: rect.height,
-      aspectRatio: rect.width / rect.height
-    };
-
-    const handleMouseMove = (moveEvent) => {
-      if (!resizingStateRef.current || !selectedImageEl) return;
-      const { handle, startX, startY, startWidth, startHeight, aspectRatio } = resizingStateRef.current;
-      
-      const deltaX = moveEvent.clientX - startX;
-      const deltaY = moveEvent.clientY - startY;
-
-      let newWidth = startWidth;
-
-      if (handle === 'se' || handle === 'e') {
-        newWidth = Math.max(80, startWidth + deltaX);
-      } else if (handle === 'sw' || handle === 'w') {
-        newWidth = Math.max(80, startWidth - deltaX);
-      } else if (handle === 'ne') {
-        newWidth = Math.max(80, startWidth + deltaX);
-      } else if (handle === 'nw') {
-        newWidth = Math.max(80, startWidth - deltaX);
-      } else if (handle === 's') {
-        newWidth = Math.max(80, (startHeight + deltaY) * aspectRatio);
-      } else if (handle === 'n') {
-        newWidth = Math.max(80, (startHeight - deltaY) * aspectRatio);
-      }
-
-      selectedImageEl.style.width = `${Math.round(newWidth)}px`;
-      selectedImageEl.style.height = 'auto';
-      updateImageBoxPosition(selectedImageEl);
-    };
-
-    const handleMouseUp = () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-      resizingStateRef.current = null;
-      handleEditorInput();
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-  };
+    return () => document.removeEventListener('click', handleEditorClick);
+  }, [currentView]);
 
   // Rilevamento selezione testo per popup fluttuante
   useEffect(() => {
@@ -569,7 +482,7 @@ function MainAppContent() {
     };
 
     const handleMouseDown = (e) => {
-      if (e.target.closest('#floating-selection-popup') || e.target.closest('#image-editing-toolbar') || e.target.closest('#image-resize-overlay')) return;
+      if (e.target.closest('#floating-selection-popup') || e.target.closest('#image-editing-toolbar')) return;
       setTimeout(handleSelection, 120);
     };
 
@@ -639,70 +552,6 @@ function MainAppContent() {
     setLoadingProgress(0);
     setCurrentView('wizard');
     setIsSidebarOpen(false);
-  };
-
-  // -------------------------------------------------------------
-  // ESPORTAZIONE PDF DELLA LEZIONE CON HTML2PDF
-  // -------------------------------------------------------------
-  const handleDownloadLessonPDF = () => {
-    if (!wysiwygEditorRef.current || !currentSelectedTopic) return;
-    setIsExportingPDF(true);
-
-    try {
-      const topicTitle = currentSelectedTopic.title || 'Lezione';
-      const examName = activeProject?.description || 'Studio';
-      const dayTitle = currentDayData?.dayTitle || '';
-      const dayDate = currentDayData?.date || '';
-
-      // Crea contenitore temporaneo per la formattazione A4 pulita
-      const printContainer = document.createElement('div');
-      printContainer.className = 'pdf-export-container';
-      
-      printContainer.innerHTML = `
-        <div style="border-bottom: 2px solid #2563eb; padding-bottom: 12px; margin-bottom: 20px;">
-          <div style="font-size: 11px; color: #2563eb; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;">
-            StudyAI • Guida Didattica
-          </div>
-          <h1 style="margin: 6px 0 2px 0; font-size: 22px; color: #0f172a;">${topicTitle}</h1>
-          <div style="font-size: 12px; color: #64748b; margin-top: 4px;">
-            <strong>Materia:</strong> ${examName} • <strong>${dayTitle}</strong> (${dayDate})
-          </div>
-        </div>
-        <div style="font-size: 13px; color: #1e293b; line-height: 1.7;">
-          ${wysiwygEditorRef.current.innerHTML}
-        </div>
-        <div style="border-top: 1px solid #e2e8f0; margin-top: 30px; padding-top: 10px; font-size: 10px; color: #94a3b8; text-align: center;">
-          Documento generato con StudyAI • ${new Date().toLocaleDateString('it-IT')}
-        </div>
-      `;
-
-      const opt = {
-        margin: [12, 12, 12, 12],
-        filename: `${topicTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}_Lezione.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, logging: false },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-      };
-
-      if (typeof window !== 'undefined' && window.html2pdf) {
-        window.html2pdf().set(opt).from(printContainer).save().then(() => {
-          setIsExportingPDF(false);
-        });
-      } else {
-        // Fallback stampa browser
-        const printWin = window.open('', '', 'width=800,height=900');
-        printWin.document.write(`<html><head><title>${topicTitle}</title><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"/></head><body style="padding:20px; font-family:sans-serif;">${printContainer.innerHTML}</body></html>`);
-        printWin.document.close();
-        printWin.focus();
-        printWin.print();
-        printWin.close();
-        setIsExportingPDF(false);
-      }
-    } catch (err) {
-      console.error("Errore esportazione PDF:", err);
-      alert("Errore durante la generazione del PDF.");
-      setIsExportingPDF(false);
-    }
   };
 
   // -------------------------------------------------------------
@@ -805,11 +654,13 @@ function MainAppContent() {
   // -------------------------------------------------------------
   const handleToggleVoiceRecording = async () => {
     if (isRecordingAudio) {
+      // Ferma registrazione
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
       }
       setIsRecordingAudio(false);
     } else {
+      // Avvia registrazione
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         alert("Il tuo browser non supporta la registrazione microfonica.");
         return;
@@ -833,6 +684,7 @@ function MainAppContent() {
         };
 
         mediaRecorder.onstop = async () => {
+          // Chiudi tracce audio
           stream.getTracks().forEach(track => track.stop());
 
           const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
@@ -880,6 +732,7 @@ function MainAppContent() {
   // -------------------------------------------------------------
   // GESTIONE IMMAGINI NELLE LEZIONI (PASTE, UPLOAD & CONTROLLI)
   // -------------------------------------------------------------
+  // Inserimento immagine al cursore
   const insertImageAtCaret = (base64Url) => {
     if (!wysiwygEditorRef.current) return;
 
@@ -890,6 +743,7 @@ function MainAppContent() {
     handleEditorInput();
   };
 
+  // Paste immagine da appunti
   const handleEditorPaste = (e) => {
     const items = e.clipboardData?.items;
     if (!items) return;
@@ -908,6 +762,7 @@ function MainAppContent() {
     }
   };
 
+  // Upload immagine da tasto barra formattazione
   const handleImageFileSelect = (e) => {
     const file = e.target.files?.[0];
     if (file && file.type.startsWith('image/')) {
@@ -918,13 +773,20 @@ function MainAppContent() {
     e.target.value = '';
   };
 
+  // Controlli per immagine selezionata
+  const handleResizeImage = (widthPercent) => {
+    if (selectedImageEl) {
+      selectedImageEl.style.width = `${widthPercent}%`;
+      handleEditorInput();
+    }
+  };
+
   const handleAlignImage = (alignClass) => {
     if (selectedImageEl) {
       const wrapper = selectedImageEl.closest('.lesson-image-wrapper');
       if (wrapper) {
         wrapper.className = `lesson-image-wrapper my-4 select-none ${alignClass}`;
         handleEditorInput();
-        updateImageBoxPosition(selectedImageEl);
       }
     }
   };
@@ -935,7 +797,6 @@ function MainAppContent() {
       if (wrapper) wrapper.remove();
       else selectedImageEl.remove();
       setSelectedImageEl(null);
-      setImageBoxRect(null);
       setImageToolPos(null);
       handleEditorInput();
     }
@@ -980,7 +841,7 @@ function MainAppContent() {
           const buffer = await file.arrayBuffer();
           const res = await extractTextFromDocx(buffer);
           text = res.text;
-        } else if (name.endsWith('.pptx') || mime.includes('presentation')) {
+        } else if (name.endsWith('.pptx') || mime.includes('presentation') || mime.includes('powerpoint')) {
           const buffer = await file.arrayBuffer();
           const res = await extractTextFromPptx(buffer);
           text = res.text;
@@ -1909,65 +1770,7 @@ function MainAppContent() {
         </div>
       )}
 
-      {/* OVERLAY CORNER & EDGE HANDLES PER RIDIMENSIONAMENTO TRASCINABILE IMMAGINE */}
-      {selectedImageEl && imageBoxRect && (
-        <div
-          id="image-resize-overlay"
-          className="fixed z-40 pointer-events-auto border-2 border-blue-500"
-          style={{
-            left: `${imageBoxRect.left}px`,
-            top: `${imageBoxRect.top}px`,
-            width: `${imageBoxRect.width}px`,
-            height: `${imageBoxRect.height}px`,
-          }}
-        >
-          {/* Maniglie Angoli */}
-          <div 
-            onMouseDown={(e) => handleResizeHandleMouseDown(e, 'nw')}
-            className="absolute -top-1.5 -left-1.5 w-3.5 h-3.5 bg-white border-2 border-blue-600 rounded-sm cursor-nwse-resize shadow-md hover:scale-125 transition"
-            title="Trascina per ridimensionare"
-          />
-          <div 
-            onMouseDown={(e) => handleResizeHandleMouseDown(e, 'ne')}
-            className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-white border-2 border-blue-600 rounded-sm cursor-nesw-resize shadow-md hover:scale-125 transition"
-            title="Trascina per ridimensionare"
-          />
-          <div 
-            onMouseDown={(e) => handleResizeHandleMouseDown(e, 'sw')}
-            className="absolute -bottom-1.5 -left-1.5 w-3.5 h-3.5 bg-white border-2 border-blue-600 rounded-sm cursor-nesw-resize shadow-md hover:scale-125 transition"
-            title="Trascina per ridimensionare"
-          />
-          <div 
-            onMouseDown={(e) => handleResizeHandleMouseDown(e, 'se')}
-            className="absolute -bottom-1.5 -right-1.5 w-3.5 h-3.5 bg-white border-2 border-blue-600 rounded-sm cursor-nwse-resize shadow-md hover:scale-125 transition"
-            title="Trascina per ridimensionare"
-          />
-
-          {/* Maniglie Lati */}
-          <div 
-            onMouseDown={(e) => handleResizeHandleMouseDown(e, 'n')}
-            className="absolute -top-1.5 left-1/2 transform -translate-x-1/2 w-3.5 h-3.5 bg-white border-2 border-blue-600 rounded-sm cursor-ns-resize shadow-md hover:scale-125 transition"
-            title="Trascina altezza"
-          />
-          <div 
-            onMouseDown={(e) => handleResizeHandleMouseDown(e, 's')}
-            className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2 w-3.5 h-3.5 bg-white border-2 border-blue-600 rounded-sm cursor-ns-resize shadow-md hover:scale-125 transition"
-            title="Trascina altezza"
-          />
-          <div 
-            onMouseDown={(e) => handleResizeHandleMouseDown(e, 'w')}
-            className="absolute top-1/2 -left-1.5 transform -translate-y-1/2 w-3.5 h-3.5 bg-white border-2 border-blue-600 rounded-sm cursor-ew-resize shadow-md hover:scale-125 transition"
-            title="Trascina larghezza"
-          />
-          <div 
-            onMouseDown={(e) => handleResizeHandleMouseDown(e, 'e')}
-            className="absolute top-1/2 -right-1.5 transform -translate-y-1/2 w-3.5 h-3.5 bg-white border-2 border-blue-600 rounded-sm cursor-ew-resize shadow-md hover:scale-125 transition"
-            title="Trascina larghezza"
-          />
-        </div>
-      )}
-
-      {/* TOOLBAR CONTESTUALE ALLINEAMENTO & ELIMINA IMMAGINE */}
+      {/* TOOLBAR CONTESTUALE PER MODIFICA IMMAGINI NELLE LEZIONI */}
       {selectedImageEl && imageToolPos && (
         <div
           id="image-editing-toolbar"
@@ -1977,28 +1780,49 @@ function MainAppContent() {
             top: `${imageToolPos.y}px`,
           }}
         >
-          <span className="text-[10px] text-gray-400 font-bold px-1">Allinea:</span>
-          <button
-            onClick={() => handleAlignImage('text-left')}
-            className="p-1 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-            title="Allinea a sinistra"
-          >
-            <AlignLeft size={13} />
-          </button>
-          <button
-            onClick={() => handleAlignImage('text-center')}
-            className="p-1 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-            title="Centra"
-          >
-            <AlignCenter size={13} />
-          </button>
-          <button
-            onClick={() => handleAlignImage('text-right')}
-            className="p-1 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-            title="Allinea a destra"
-          >
-            <AlignRight size={13} />
-          </button>
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-gray-400 font-bold px-1">Dimensione:</span>
+            {[
+              { label: '25%', val: 25 },
+              { label: '50%', val: 50 },
+              { label: '75%', val: 75 },
+              { label: '100%', val: 100 },
+            ].map(sz => (
+              <button
+                key={sz.val}
+                onClick={() => handleResizeImage(sz.val)}
+                className="px-2 py-0.5 bg-geminiDark hover:bg-geminiHover border border-geminiBorder rounded-lg text-[10px] font-semibold text-gray-200 transition"
+              >
+                {sz.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="w-[1px] h-4 bg-geminiBorder mx-0.5" />
+
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => handleAlignImage('text-left')}
+              className="p-1 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
+              title="Allinea a sinistra"
+            >
+              <AlignLeft size={13} />
+            </button>
+            <button
+              onClick={() => handleAlignImage('text-center')}
+              className="p-1 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
+              title="Centra immagine"
+            >
+              <AlignCenter size={13} />
+            </button>
+            <button
+              onClick={() => handleAlignImage('text-right')}
+              className="p-1 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
+              title="Allinea a destra"
+            >
+              <AlignRight size={13} />
+            </button>
+          </div>
 
           <div className="w-[1px] h-4 bg-geminiBorder mx-0.5" />
 
@@ -2534,7 +2358,7 @@ function MainAppContent() {
         />
       )}
 
-      {/* SIDEBAR CON SEGMENTED SWITCHER */}
+      {/* SIDEBAR CON SEGMENTED SWITCHER (CONVERSAZIONI VS PROGETTI) */}
       <aside 
         className={`fixed inset-y-0 left-0 z-50 flex flex-col w-80 max-w-[85vw] bg-geminiDarkSecondary border-r border-geminiBorder shadow-2xl transition-transform duration-300 ease-in-out overflow-hidden ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -3369,7 +3193,6 @@ function MainAppContent() {
                       setLessonChatMessages([]);
                       setFloatingPopup(null);
                       setSelectedImageEl(null);
-                      setImageBoxRect(null);
                       setPreviousLessonBackup(null);
                       lastLoadedTopicIdRef.current = null;
                       setCurrentView('day_detail');
@@ -3421,7 +3244,7 @@ function MainAppContent() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* VISTA 4: DETTAGLIO GIORNO CON EXPORT PDF E RESIZE IMMAGINI    */}
+        {/* VISTA 4: DETTAGLIO GIORNO CON INSERIMENTO IMMAGINI E CONTROLLI */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'day_detail' && activeProject && currentDayData && (
           <main className="flex-1 flex flex-col h-full w-full overflow-hidden">
@@ -3443,7 +3266,7 @@ function MainAppContent() {
 
             <div className="flex-1 flex flex-col md:flex-row h-full w-full overflow-hidden">
               
-              {/* COLONNA SINISTRA: FOGLIO WYSIWYG CON EXPORT PDF E IMMAGINI */}
+              {/* COLONNA SINISTRA: FOGLIO WYSIWYG CON PASTE E UPLOAD IMMAGINI */}
               <div className="flex-1 flex flex-col h-full overflow-hidden border-r border-geminiBorder/40">
                 
                 <div className="px-4 py-2 border-b border-geminiBorder/40 bg-geminiDarkSecondary/30 shrink-0 space-y-2">
@@ -3457,7 +3280,6 @@ function MainAppContent() {
                             setSelectedTopicId(topic.id);
                             setFloatingPopup(null);
                             setSelectedImageEl(null);
-                            setImageBoxRect(null);
                             lastLoadedTopicIdRef.current = null;
                           }}
                           className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 border ${
@@ -3474,19 +3296,6 @@ function MainAppContent() {
 
                     {currentSelectedTopic && (
                       <div className="flex items-center gap-2 shrink-0">
-                        {/* TASTO SCARICA PDF */}
-                        {currentSelectedTopic.lesson && (
-                          <button
-                            onClick={handleDownloadLessonPDF}
-                            disabled={isExportingPDF}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 transition shadow-sm"
-                            title="Scarica il documento PDF formattato di questa lezione"
-                          >
-                            {isExportingPDF ? <RefreshCw size={12} className="animate-spin" /> : <Download size={12} />}
-                            <span>Scarica PDF</span>
-                          </button>
-                        )}
-
                         <button
                           onClick={handleOpenSingleLessonQuizModal}
                           className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 transition shadow-sm"
@@ -3512,7 +3321,7 @@ function MainAppContent() {
                     )}
                   </div>
 
-                  {/* BARRA FORMATTAZIONE CON TASTO IMMAGINE */}
+                  {/* BARRA FORMATTAZIONE CON TASTO INSERISCI IMMAGINE */}
                   {currentSelectedTopic?.lesson && (
                     <div className="flex items-center gap-1 pt-1 overflow-x-auto text-xs text-gray-300 border-t border-geminiBorder/40">
                       
@@ -3620,6 +3429,7 @@ function MainAppContent() {
 
                       <div className="w-[1px] h-4 bg-geminiBorder mx-1" />
 
+                      {/* TASTO ICONA CARICA IMMAGINE */}
                       <input 
                         type="file" 
                         ref={imageUploadInputRef} 
@@ -3640,7 +3450,7 @@ function MainAppContent() {
 
                 </div>
 
-                {/* CORPO DELLA LEZIONE CON SUPPORTO DRAG TO RESIZE */}
+                {/* CORPO DELLA LEZIONE CON SUPPORTO INCOLLA IMMAGINI */}
                 <div className="flex-1 overflow-y-auto p-4 md:p-6 relative">
                   
                   {isGeneratingLesson ? (
@@ -3654,7 +3464,7 @@ function MainAppContent() {
                       
                       <div className="flex flex-wrap items-center justify-between text-xs text-gray-400 bg-geminiDarkSecondary/60 px-4 py-2 rounded-2xl border border-geminiBorder gap-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-[11px]">✏️ <strong>Modifica testo attiva</strong> • Trascina gli angoli per ridimensionare le immagini</span>
+                          <span className="text-[11px]">✏️ <strong>Modifica testo attiva</strong> • Puoi incollare immagini (Ctrl+V)</span>
                           {currentSelectedTopic.quizScore && (
                             <span className="bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-md border border-amber-500/30 text-[10px] font-bold">
                               Verifica: {currentSelectedTopic.quizScore}/30
@@ -3819,7 +3629,7 @@ function MainAppContent() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* VISTA 5: CHAT HOMEPAGE                                        */}
+        {/* VISTA 5: CHAT CON DRAG&DROP (FINO A 10 FILE) E DETTATURA WHISPER */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'chat' && (
           <div 
@@ -3830,7 +3640,7 @@ function MainAppContent() {
             className="flex-1 flex flex-col h-full w-full overflow-hidden relative"
           >
             
-            {/* OVERLAY DRAG & DROP */}
+            {/* OVERLAY DRAG & DROP PER CHAT */}
             {isDraggingOverChat && (
               <div className="absolute inset-0 z-50 bg-blue-950/85 border-4 border-dashed border-blue-400 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-fadeIn pointer-events-none">
                 <UploadCloud size={48} className="text-blue-400 animate-bounce mb-3" />
@@ -3839,6 +3649,7 @@ function MainAppContent() {
               </div>
             )}
 
+            {/* Messaggi */}
             <div className="flex-1 overflow-y-auto w-full px-4 sm:px-6">
               <div className="max-w-3xl mx-auto py-6 space-y-6 pb-40">
                 
@@ -3928,9 +3739,11 @@ function MainAppContent() {
               </div>
             </div>
 
+            {/* Input Bar Fisso con Drag & Drop Chip List, Upload Multi-File e Dettatura Whisper */}
             <footer className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-geminiDark via-geminiDark to-transparent z-10">
               <div className="max-w-3xl mx-auto">
                 
+                {/* LISTA FILE ALLEGATI CHAT (FINO A 10 FILE) */}
                 {attachedFiles.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mb-2 max-h-24 overflow-y-auto p-1 bg-geminiDarkSecondary/80 rounded-2xl border border-geminiBorder shadow-md">
                     {attachedFiles.map(file => (
@@ -3956,6 +3769,7 @@ function MainAppContent() {
                   </div>
                 )}
 
+                {/* BANNER REGISTRAZIONE / TRASCRIZIONE WHISPER */}
                 {isRecordingAudio && (
                   <div className="flex items-center justify-between gap-2 mb-2 px-4 py-2 bg-red-950/60 border border-red-500/50 rounded-2xl text-xs text-red-200 animate-pulse shadow-lg">
                     <div className="flex items-center gap-2">
@@ -3978,8 +3792,10 @@ function MainAppContent() {
                   </div>
                 )}
 
+                {/* Box di digitazione con controlli */}
                 <div className="flex items-end gap-2 bg-geminiDarkSecondary border border-geminiBorder rounded-3xl px-4 py-2.5 shadow-xl focus-within:border-blue-500 transition">
                   
+                  {/* Tasto Allega Multi-File */}
                   <input 
                     type="file" 
                     ref={fileInputRef}
@@ -3997,6 +3813,7 @@ function MainAppContent() {
                     <Paperclip size={18} />
                   </button>
 
+                  {/* Tasto Microfono Dettatura Whisper */}
                   <button
                     type="button"
                     onClick={handleToggleVoiceRecording}
@@ -4037,7 +3854,7 @@ function MainAppContent() {
                 </div>
                 
                 <div className="text-center mt-2 text-[11px] text-gray-500">
-                  Trascina file fino a 10 elementi • Dettatura vocale Whisper • Esportazione PDF
+                  Trascina file fino a 10 elementi • Dettatura vocale ad alta precisione con Whisper
                 </div>
               </div>
             </footer>
