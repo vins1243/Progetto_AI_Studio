@@ -3281,15 +3281,12 @@ function MainAppContent() {
             
             <div 
               onClick={() => setCurrentView('chat')}
-              className="flex items-center gap-2.5 cursor-pointer select-none group"
-              title="MinervaAI Home"
+              className="flex items-center gap-2.5 cursor-pointer"
             >
-              <img 
-                src={logoImg} 
-                alt="MinervaAI" 
-                className="w-8 h-8 object-contain rounded-lg shadow-sm" 
-              />
-              <span className="font-bold text-lg tracking-tight bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 bg-clip-text text-transparent">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white font-bold shadow-md">
+                <GraduationCap size={18} />
+              </div>
+              <span className="font-semibold text-lg tracking-tight bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent">
                 MinervaAI
               </span>
             </div>
