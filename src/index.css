@@ -2,47 +2,145 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Tema Scuro Globale */
-html, body {
-  margin: 0;
-  padding: 0;
+/* ------------------------------------------------------------- */
+/* VARIABILI & TEMI GLOBALI (LIGHT / DARK)                       */
+/* ------------------------------------------------------------- */
+:root {
+  --bg-main: #f8fafc;
+  --bg-card: #ffffff;
+  --bg-hover: #f1f5f9;
+  --border-color: #e2e8f0;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+}
+
+html.dark, body.dark {
+  --bg-main: #131314;
+  --bg-card: #1e1f20;
+  --bg-hover: #282a2c;
+  --border-color: #2a2b2f;
+  --text-main: #e3e3e3;
+  --text-muted: #9ca3af;
   background-color: #131314;
   color: #e3e3e3;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  overflow-x: hidden;
   color-scheme: dark;
 }
 
-/* Scrollbar Scura Globale */
-::-webkit-scrollbar {
+html.light, body.light {
+  --bg-main: #f8fafc;
+  --bg-card: #ffffff;
+  --bg-hover: #f1f5f9;
+  --border-color: #e2e8f0;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  background-color: #f8fafc;
+  color: #0f172a;
+  color-scheme: light;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow-x: hidden;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Scrollbar Scura (Dark) */
+html.dark ::-webkit-scrollbar {
   width: 7px;
   height: 7px;
 }
-
-::-webkit-scrollbar-track {
+html.dark ::-webkit-scrollbar-track {
   background: #131314;
 }
-
-::-webkit-scrollbar-thumb {
+html.dark ::-webkit-scrollbar-thumb {
   background: #2a2b2f;
   border-radius: 6px;
   border: 1px solid #131314;
 }
-
-::-webkit-scrollbar-thumb:hover {
+html.dark ::-webkit-scrollbar-thumb:hover {
   background: #3c4043;
 }
-
-* {
+html.dark * {
   scrollbar-width: thin;
   scrollbar-color: #2a2b2f #131314;
 }
 
-/* STILI PER EDITOR WYSIWYG */
+/* Scrollbar Chiara (Light) */
+html.light ::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+html.light ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+html.light ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 6px;
+  border: 1px solid #f1f5f9;
+}
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+html.light * {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+}
+
+/* ------------------------------------------------------------- */
+/* OVERRIDE CLASSI UTILITY PER TEMA CHIARO (MODALITÀ GIORNO)    */
+/* ------------------------------------------------------------- */
+html.light .bg-geminiDark {
+  background-color: #f8fafc !important;
+}
+html.light .bg-geminiDarkSecondary {
+  background-color: #ffffff !important;
+}
+html.light .border-geminiBorder {
+  border-color: #e2e8f0 !important;
+}
+html.light .hover\:bg-geminiHover:hover {
+  background-color: #f1f5f9 !important;
+}
+html.light .text-gray-100, 
+html.light .text-gray-200 {
+  color: #0f172a !important;
+}
+html.light .text-gray-300 {
+  color: #1e293b !important;
+}
+html.light .text-gray-400 {
+  color: #475569 !important;
+}
+html.light .text-gray-500 {
+  color: #64748b !important;
+}
+html.light .bg-geminiDark\/50,
+html.light .bg-geminiDark\/60,
+html.light .bg-geminiDark\/70,
+html.light .bg-geminiDark\/80,
+html.light .bg-geminiDark\/90 {
+  background-color: rgba(248, 250, 252, 0.9) !important;
+}
+html.light .bg-geminiDarkSecondary\/60,
+html.light .bg-geminiDarkSecondary\/70,
+html.light .bg-geminiDarkSecondary\/80,
+html.light .bg-geminiDarkSecondary\/90,
+html.light .bg-geminiDarkSecondary\/95 {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+}
+html.light .shadow-2xl,
+html.light .shadow-xl {
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04) !important;
+}
+
+/* ------------------------------------------------------------- */
+/* STILI PER EDITOR WYSIWYG                                      */
+/* ------------------------------------------------------------- */
 .wysiwyg-editor {
   outline: none;
   min-height: 480px;
-  color: #e2e8f0;
   line-height: 1.75;
   font-size: 15px;
 }
@@ -51,7 +149,11 @@ html, body {
   outline: none;
 }
 
-.wysiwyg-editor h1 {
+/* Versione Dark Editor */
+html.dark .wysiwyg-editor {
+  color: #e2e8f0;
+}
+html.dark .wysiwyg-editor h1 {
   font-size: 1.5rem;
   font-weight: 700;
   color: #f8fafc;
@@ -60,49 +162,41 @@ html, body {
   padding-bottom: 0.3rem;
   border-bottom: 1px solid #2a2b2f;
 }
-
-.wysiwyg-editor h2 {
+html.dark .wysiwyg-editor h2 {
   font-size: 1.28rem;
   font-weight: 700;
   color: #60a5fa;
   margin-top: 1.3rem;
   margin-bottom: 0.5rem;
 }
-
-.wysiwyg-editor h3 {
+html.dark .wysiwyg-editor h3 {
   font-size: 1.12rem;
   font-weight: 600;
   color: #a5b4fc;
   margin-top: 1.1rem;
   margin-bottom: 0.4rem;
 }
-
-.wysiwyg-editor p {
+html.dark .wysiwyg-editor p {
   margin-bottom: 0.85rem;
   line-height: 1.75;
   color: #e2e8f0;
 }
-
-.wysiwyg-editor ul {
+html.dark .wysiwyg-editor ul, html.dark .wysiwyg-editor ol {
+  margin-left: 1.8rem;
+  margin-bottom: 0.85rem;
+  color: #e2e8f0;
+}
+html.dark .wysiwyg-editor ul {
   list-style-type: disc;
-  margin-left: 1.8rem;
-  margin-bottom: 0.85rem;
-  color: #e2e8f0;
 }
-
-.wysiwyg-editor ol {
+html.dark .wysiwyg-editor ol {
   list-style-type: decimal;
-  margin-left: 1.8rem;
-  margin-bottom: 0.85rem;
-  color: #e2e8f0;
 }
-
-.wysiwyg-editor li {
+html.dark .wysiwyg-editor li {
   margin-bottom: 0.35rem;
   line-height: 1.65;
 }
-
-.wysiwyg-editor strong, .wysiwyg-editor b {
+html.dark .wysiwyg-editor strong, html.dark .wysiwyg-editor b {
   font-weight: 700;
   color: #93c5fd;
   background-color: rgba(59, 130, 246, 0.12);
@@ -110,18 +204,15 @@ html, body {
   border-radius: 0.25rem;
   border: 1px solid rgba(59, 130, 246, 0.25);
 }
-
-.wysiwyg-editor em, .wysiwyg-editor i {
+html.dark .wysiwyg-editor em, html.dark .wysiwyg-editor i {
   font-style: italic;
   color: #cbd5e1;
 }
-
-.wysiwyg-editor u {
+html.dark .wysiwyg-editor u {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-
-.wysiwyg-editor table {
+html.dark .wysiwyg-editor table {
   width: 100%;
   border-collapse: collapse;
   margin: 1.2rem 0;
@@ -129,24 +220,20 @@ html, body {
   border-radius: 0.5rem;
   overflow: hidden;
 }
-
-.wysiwyg-editor th, .wysiwyg-editor td {
+html.dark .wysiwyg-editor th, html.dark .wysiwyg-editor td {
   border: 1px solid #2a2b2f;
   padding: 0.6rem 0.85rem;
   text-align: left;
 }
-
-.wysiwyg-editor th {
+html.dark .wysiwyg-editor th {
   background-color: #1e1f20;
   color: #f1f5f9;
   font-weight: 600;
 }
-
-.wysiwyg-editor tr:nth-child(even) {
+html.dark .wysiwyg-editor tr:nth-child(even) {
   background-color: rgba(255, 255, 255, 0.02);
 }
-
-.wysiwyg-editor blockquote {
+html.dark .wysiwyg-editor blockquote {
   border-left: 4px solid #3b82f6;
   padding-left: 1rem;
   margin: 0.9rem 0;
@@ -158,30 +245,121 @@ html, body {
   padding-bottom: 0.4rem;
 }
 
+/* Versione Light Editor */
+html.light .wysiwyg-editor {
+  color: #1e293b;
+}
+html.light .wysiwyg-editor h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-top: 1.5rem;
+  margin-bottom: 0.6rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+html.light .wysiwyg-editor h2 {
+  font-size: 1.28rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  margin-top: 1.3rem;
+  margin-bottom: 0.5rem;
+}
+html.light .wysiwyg-editor h3 {
+  font-size: 1.12rem;
+  font-weight: 600;
+  color: #4338ca;
+  margin-top: 1.1rem;
+  margin-bottom: 0.4rem;
+}
+html.light .wysiwyg-editor p {
+  margin-bottom: 0.85rem;
+  line-height: 1.75;
+  color: #1e293b;
+}
+html.light .wysiwyg-editor ul, html.light .wysiwyg-editor ol {
+  margin-left: 1.8rem;
+  margin-bottom: 0.85rem;
+  color: #1e293b;
+}
+html.light .wysiwyg-editor ul {
+  list-style-type: disc;
+}
+html.light .wysiwyg-editor ol {
+  list-style-type: decimal;
+}
+html.light .wysiwyg-editor li {
+  margin-bottom: 0.35rem;
+  line-height: 1.65;
+}
+html.light .wysiwyg-editor strong, html.light .wysiwyg-editor b {
+  font-weight: 700;
+  color: #1e40af;
+  background-color: rgba(59, 130, 246, 0.1);
+  padding: 0.1rem 0.25rem;
+  border-radius: 0.25rem;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+html.light .wysiwyg-editor em, html.light .wysiwyg-editor i {
+  font-style: italic;
+  color: #475569;
+}
+html.light .wysiwyg-editor u {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+html.light .wysiwyg-editor table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.2rem 0;
+  font-size: 0.85rem;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+html.light .wysiwyg-editor th, html.light .wysiwyg-editor td {
+  border: 1px solid #e2e8f0;
+  padding: 0.6rem 0.85rem;
+  text-align: left;
+}
+html.light .wysiwyg-editor th {
+  background-color: #f1f5f9;
+  color: #0f172a;
+  font-weight: 600;
+}
+html.light .wysiwyg-editor tr:nth-child(even) {
+  background-color: rgba(15, 23, 42, 0.02);
+}
+html.light .wysiwyg-editor blockquote {
+  border-left: 4px solid #2563eb;
+  padding-left: 1rem;
+  margin: 0.9rem 0;
+  font-style: italic;
+  color: #475569;
+  background-color: rgba(241, 245, 249, 0.8);
+  border-radius: 0 0.5rem 0.5rem 0;
+  padding-top: 0.4rem;
+  padding-bottom: 0.4rem;
+}
+
 /* Stili Immagini nell'Editor */
 .lesson-image-wrapper {
   position: relative;
   display: block;
 }
-
 .lesson-image-wrapper.text-left {
   text-align: left;
 }
-
 .lesson-image-wrapper.text-center {
   text-align: center;
 }
-
 .lesson-image-wrapper.text-right {
   text-align: right;
 }
-
 .lesson-img {
   display: inline-block;
   user-select: none;
   transition: outline 0.15s ease;
 }
-
 .lesson-img.img-active-selected {
   outline: 2px solid #3b82f6;
   outline-offset: 2px;
@@ -195,10 +373,13 @@ html, body {
   padding: 0.5rem 0;
   text-align: center;
 }
-
-.katex {
+html.dark .katex {
   font-size: 1.08em;
   color: #93c5fd;
+}
+html.light .katex {
+  font-size: 1.08em;
+  color: #1d4ed8;
 }
 
 /* Animazione popup */
@@ -212,7 +393,6 @@ html, body {
     transform: translateY(0) scale(1);
   }
 }
-
 .animate-popup {
   animation: popupFadeIn 0.15s ease-out forwards;
 }
@@ -225,7 +405,6 @@ html, body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
   line-height: 1.65 !important;
 }
-
 .pdf-export-container h1 {
   color: #0f172a !important;
   font-size: 24px !important;
@@ -234,26 +413,22 @@ html, body {
   margin-top: 20px !important;
   margin-bottom: 12px !important;
 }
-
 .pdf-export-container h2 {
   color: #1e40af !important;
   font-size: 18px !important;
   margin-top: 18px !important;
   margin-bottom: 10px !important;
 }
-
 .pdf-export-container h3 {
   color: #3730a3 !important;
   font-size: 15px !important;
   margin-top: 14px !important;
   margin-bottom: 8px !important;
 }
-
 .pdf-export-container p, .pdf-export-container li {
   color: #334155 !important;
   font-size: 13px !important;
 }
-
 .pdf-export-container strong, .pdf-export-container b {
   color: #1e3a8a !important;
   background-color: #eff6ff !important;
@@ -261,25 +436,21 @@ html, body {
   border: 1px solid #bfdbfe !important;
   border-radius: 3px !important;
 }
-
 .pdf-export-container table {
   border-collapse: collapse !important;
   width: 100% !important;
   margin: 15px 0 !important;
 }
-
 .pdf-export-container th, .pdf-export-container td {
   border: 1px solid #cbd5e1 !important;
   padding: 8px 12px !important;
   font-size: 12px !important;
   color: #1e293b !important;
 }
-
 .pdf-export-container th {
   background-color: #f1f5f9 !important;
   font-weight: bold !important;
 }
-
 .pdf-export-container .katex {
   color: #1e40af !important;
 }

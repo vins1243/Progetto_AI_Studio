@@ -58,8 +58,6 @@ import {
   Mic,
   MicOff,
   Image as ImageIcon,
-  Sun,
-  Moon,
   Download
 ,
   User,
@@ -88,7 +86,7 @@ import {
 
 
 // IndexedDB Helper
-const DB_NAME = 'MinervaAIDB_V11';
+const DB_NAME = 'StudyAIDB_V11';
 const STORE_NAME = 'project_data_store';
 
 function getDB() {
@@ -285,29 +283,6 @@ class ErrorBoundary extends Component {
   }
 }
 
-
-// Componente Logo Dinamico per MinervaAI (con fallback elegante)
-function AppLogo({ className = "w-8 h-8", imgClassName = "w-full h-full object-contain" }) {
-  const [hasError, setHasError] = useState(false);
-  if (hasError) {
-    return (
-      <div className={`${className} rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-600/20`}>
-        <GraduationCap size={20} />
-      </div>
-    );
-  }
-  return (
-    <div className={`${className} flex items-center justify-center overflow-hidden shrink-0`}>
-      <img 
-        src="/logo.png" 
-        alt="MinervaAI Logo" 
-        className={imgClassName} 
-        onError={() => setHasError(true)} 
-      />
-    </div>
-  );
-}
-
 export default function App() {
   return (
     <ErrorBoundary>
@@ -358,53 +333,6 @@ function MainAppContent() {
   const [lessonChatMessages, setLessonChatMessages] = useState([]);
   const [lessonChatInput, setLessonChatInput] = useState('');
   const [isLessonChatLoading, setIsLessonChatLoading] = useState(false);
-  // STATO TEMA GIORNO / NOTTE (DEFAULT: IMPOSTAZIONI DI SISTEMA)
-  const [theme, setTheme] = useState(() => {
-    try {
-      const saved = localStorage.getItem('minerva_theme');
-      if (saved === 'light' || saved === 'dark') return saved;
-      if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
-        return 'light';
-      }
-    } catch {}
-    return 'dark';
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('minerva_theme', theme);
-      if (typeof document !== 'undefined') {
-        document.documentElement.classList.remove('dark', 'light');
-        document.documentElement.classList.add(theme);
-      }
-    } catch (err) {
-      console.warn('Theme update error:', err);
-    }
-  }, [theme]);
-
-  // Listener per cambiamenti del tema di sistema in tempo reale se non forzato
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-    const mq = window.matchMedia('(prefers-color-scheme: light)');
-    const handleChange = (e) => {
-      const saved = localStorage.getItem('minerva_theme');
-      if (!saved) {
-        setTheme(e.matches ? 'light' : 'dark');
-      }
-    };
-    mq.addEventListener('change', handleChange);
-    return () => mq.removeEventListener('change', handleChange);
-  }, []);
-
-  const toggleTheme = () => {
-    setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
-  };
-
-  // DETTATURA VOCALE PER CHAT DELLA LEZIONE
-  const [isRecordingLessonAudio, setIsRecordingLessonAudio] = useState(false);
-  const [isTranscribingLessonAudio, setIsTranscribingLessonAudio] = useState(false);
-  const lessonMediaRecorderRef = useRef(null);
-  const lessonAudioChunksRef = useRef([]);
   const [previousLessonBackup, setPreviousLessonBackup] = useState(null);
 
   // Toolbar stato
@@ -877,7 +805,7 @@ function MainAppContent() {
       printContainer.innerHTML = `
         <div style="border-bottom: 2px solid #2563eb; padding-bottom: 12px; margin-bottom: 20px;">
           <div style="font-size: 11px; color: #2563eb; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;">
-            MinervaAI • Guida Didattica
+            StudyAI • Guida Didattica
           </div>
           <h1 style="margin: 6px 0 2px 0; font-size: 22px; color: #0f172a;">${topicTitle}</h1>
           <div style="font-size: 12px; color: #64748b; margin-top: 4px;">
@@ -888,7 +816,7 @@ function MainAppContent() {
           ${wysiwygEditorRef.current.innerHTML}
         </div>
         <div style="border-top: 1px solid #e2e8f0; margin-top: 30px; padding-top: 10px; font-size: 10px; color: #94a3b8; text-align: center;">
-          Documento generato con MinervaAI • ${new Date().toLocaleDateString('it-IT')}
+          Documento generato con StudyAI • ${new Date().toLocaleDateString('it-IT')}
         </div>
       `;
 
@@ -1547,82 +1475,7 @@ function MainAppContent() {
     }
   };
 
-  // DETTATURA VOCALE CHAT DELLA LEZIONE CON WHISPER
-  const handleToggleLessonVoiceRecording = async () => {
-    if (isRecordingLessonAudio) {
-      if (lessonMediaRecorderRef.current && lessonMediaRecorderRef.current.state !== 'inactive') {
-        lessonMediaRecorderRef.current.stop();
-      }
-      setIsRecordingLessonAudio(false);
-    } else {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        alert("Il tuo browser non supporta la registrazione microfonica.");
-        return;
-      }
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        lessonAudioChunksRef.current = [];
-
-        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
-          ? 'audio/webm;codecs=opus' 
-          : (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : 'audio/webm');
-
-        const mediaRecorder = new MediaRecorder(stream, { mimeType });
-        lessonMediaRecorderRef.current = mediaRecorder;
-
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) {
-            lessonAudioChunksRef.current.push(e.data);
-          }
-        };
-
-        mediaRecorder.onstop = async () => {
-          stream.getTracks().forEach(track => track.stop());
-
-          const audioBlob = new Blob(lessonAudioChunksRef.current, { type: mimeType });
-          if (audioBlob.size < 500) return;
-
-          setIsTranscribingLessonAudio(true);
-
-          try {
-            const reader = new FileReader();
-            reader.onload = async () => {
-              const base64Audio = reader.result;
-
-              const res = await fetch('/.netlify/functions/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  action: 'transcribe_audio',
-                  audioBase64: base64Audio,
-                  audioMimeType: mimeType
-                }),
-              });
-
-              const data = await res.json();
-              if (data.text) {
-                setLessonChatInput(prev => prev ? `${prev.trim()} ${data.text.trim()}` : data.text.trim());
-              }
-            };
-            reader.readAsDataURL(audioBlob);
-          } catch (err) {
-            console.error("Errore dettatura Whisper lezione:", err);
-          } finally {
-            setIsTranscribingLessonAudio(false);
-          }
-        };
-
-        mediaRecorder.start();
-        setIsRecordingLessonAudio(true);
-      } catch (err) {
-        alert("Permesso microfono non concesso o errore audio.");
-        setIsRecordingLessonAudio(false);
-      }
-    }
-  };
-
-    // CHATBOT LEZIONE: MODIFICA DIRETTA
+  // CHATBOT LEZIONE: MODIFICA DIRETTA
   const handleSendLessonChatMessage = async (preset = null) => {
     const promptText = (preset || lessonChatInput).trim();
     if (!promptText || isLessonChatLoading || !currentSelectedTopic?.lesson) return;
@@ -2174,12 +2027,12 @@ function MainAppContent() {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-geminiDark text-gray-100">
         <div className="flex flex-col items-center space-y-4">
-          <div className="w-16 h-16 flex items-center justify-center animate-pulse">
-            <AppLogo className="w-16 h-16" imgClassName="w-16 h-16 object-contain drop-shadow-xl" />
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-xl shadow-blue-600/30 animate-pulse">
+            <GraduationCap size={32} />
           </div>
           <div className="flex items-center space-x-2 text-sm text-gray-400">
             <RefreshCw size={16} className="animate-spin text-blue-500" />
-            <span>Avvio di MinervaAI...</span>
+            <span>Verifica sessione in corso...</span>
           </div>
         </div>
       </div>
@@ -2188,23 +2041,14 @@ function MainAppContent() {
 
   if (!user) {
     return (
-      <div className="flex min-h-screen w-screen items-center justify-center bg-geminiDark text-gray-100 p-4 sm:p-6 selection:bg-blue-600 selection:text-white relative">
-        {/* Toggle Tema Notte / Giorno */}
-        <button
-          onClick={toggleTheme}
-          className="absolute top-6 right-6 p-2.5 rounded-2xl bg-geminiDarkSecondary border border-geminiBorder text-gray-400 hover:text-amber-400 hover:bg-geminiHover transition shadow-lg"
-          title={theme === 'dark' ? "Passa a Modalità Giorno (Chiaro)" : "Passa a Modalità Notte (Scuro)"}
-        >
-          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-        </button>
-
+      <div className="flex min-h-screen w-screen items-center justify-center bg-geminiDark text-gray-100 p-4 sm:p-6 selection:bg-blue-600 selection:text-white">
         <div className="w-full max-w-md bg-geminiDarkSecondary border border-geminiBorder rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 animate-popup">
           <div className="text-center space-y-2">
-            <div className="w-16 h-16 mx-auto flex items-center justify-center">
-              <AppLogo className="w-16 h-16" imgClassName="w-16 h-16 object-contain drop-shadow-xl" />
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 mx-auto flex items-center justify-center text-white shadow-lg shadow-blue-600/30">
+              <GraduationCap size={28} />
             </div>
-            <h1 className="text-2xl font-bold text-gray-100 tracking-tight flex items-center justify-center gap-2">
-              MinervaAI
+            <h1 className="text-2xl font-bold text-gray-100 tracking-tight">
+              Study AI
             </h1>
             <p className="text-xs text-gray-400">
               {authMode === 'login' && 'Accedi al tuo account per visualizzare i tuoi progetti di studio e le tue lezioni.'}
@@ -3265,7 +3109,7 @@ function MainAppContent() {
                 <GraduationCap size={18} />
               </div>
               <span className="font-semibold text-lg tracking-tight bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent">
-                MinervaAI
+                StudyAI
               </span>
             </div>
           </div>
@@ -4378,29 +4222,6 @@ function MainAppContent() {
                 </div>
 
                 <div className="p-3 border-t border-geminiBorder/40 bg-geminiDarkSecondary shrink-0">
-                  {/* Banner Dettatura Vocale Lezione */}
-                  {isRecordingLessonAudio && (
-                    <div className="flex items-center justify-between mb-2 px-3 py-1.5 bg-red-950/70 border border-red-500/60 rounded-xl text-[11px] text-red-200 animate-pulse">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                        <span>Ascolto vocale in corso...</span>
-                      </div>
-                      <button
-                        onClick={handleToggleLessonVoiceRecording}
-                        className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg text-[10px] transition"
-                      >
-                        Stop
-                      </button>
-                    </div>
-                  )}
-
-                  {isTranscribingLessonAudio && (
-                    <div className="flex items-center gap-2 mb-2 px-3 py-1.5 bg-blue-950/70 border border-blue-500/50 rounded-xl text-[11px] text-blue-200">
-                      <RefreshCw size={12} className="animate-spin text-blue-400" />
-                      <span>Trascrizione Whisper...</span>
-                    </div>
-                  )}
-
                   <div className="flex items-center gap-1.5 bg-geminiDark border border-geminiBorder rounded-2xl px-3 py-1.5 focus-within:border-blue-500 transition">
                     <input
                       type="text"
@@ -4412,34 +4233,17 @@ function MainAppContent() {
                           handleSendLessonChatMessage();
                         }
                       }}
-                      placeholder="Chiedi, detta con Whisper o modifica..."
+                      placeholder="Chiedi o aggiungi info alla lezione..."
                       className="flex-1 bg-transparent text-xs text-gray-100 placeholder-gray-500 focus:outline-none"
                     />
-
-                    {/* Bottone Microfono Whisper per Chat della Lezione */}
-                    <button
-                      type="button"
-                      onClick={handleToggleLessonVoiceRecording}
-                      disabled={isTranscribingLessonAudio}
-                      className={`p-1.5 rounded-full transition ${
-                        isRecordingLessonAudio 
-                          ? 'bg-red-600 text-white animate-pulse' 
-                          : 'text-gray-400 hover:text-amber-400 hover:bg-geminiHover'
-                      }`}
-                      title={isRecordingLessonAudio ? "Ferma registrazione" : "Dettatura vocale con OpenAI Whisper"}
-                    >
-                      {isRecordingLessonAudio ? <MicOff size={13} /> : <Mic size={13} />}
-                    </button>
-
                     <button
                       onClick={() => handleSendLessonChatMessage()}
-                      disabled={!lessonChatInput.trim() || isLessonChatLoading || isRecordingLessonAudio}
+                      disabled={!lessonChatInput.trim() || isLessonChatLoading}
                       className={`p-1.5 rounded-full transition ${
-                        lessonChatInput.trim() && !isLessonChatLoading && !isRecordingLessonAudio
+                        lessonChatInput.trim() && !isLessonChatLoading 
                           ? 'bg-blue-600 text-white hover:bg-blue-500' 
                           : 'text-gray-600 cursor-not-allowed'
                       }`}
-                      title="Invia messaggio"
                     >
                       <Send size={13} />
                     </button>
@@ -4698,13 +4502,13 @@ function MainAppContent() {
                 <GraduationCap size={24} />
               </div>
               <h2 className="text-xl font-bold text-gray-100">
-                {authMode === 'login' && 'Accedi a MinervaAI'}
+                {authMode === 'login' && 'Accedi a Study AI'}
                 {authMode === 'signup' && 'Crea il tuo Account'}
                 {authMode === 'reset' && 'Recupera Password'}
               </h2>
               <p className="text-xs text-gray-400">
                 {authMode === 'login' && 'Sincronizza le tue guide e le tue chat su tutti i tuoi dispositivi.'}
-                {authMode === 'signup' && 'Unisciti a MinervaAI per salvare i tuoi piani di studio nel cloud.'}
+                {authMode === 'signup' && 'Unisciti a Study AI per salvare i tuoi piani di studio nel cloud.'}
                 {authMode === 'reset' && 'Inserisci la tua email per ricevere il link di ripristino.'}
               </p>
             </div>

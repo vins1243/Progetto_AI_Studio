@@ -115,6 +115,7 @@ export const handler = async (event) => {
         } else if (OpenAI.toFile) {
           audioFileObj = await OpenAI.toFile(buffer, 'audio.webm', { type: mime });
         } else {
+          // Fallback con buffer nominato
           audioFileObj = {
             buffer,
             name: 'audio.webm',
@@ -152,7 +153,7 @@ export const handler = async (event) => {
       const types = Array.isArray(questionTypes) && questionTypes.length > 0 
         ? questionTypes 
         : ['scelta_multipla', 'completamento', 'accoppiamento', 'aperta'];
-        
+      
       const topics = Array.isArray(topicsList) && topicsList.length > 0
         ? topicsList
         : ['Argomenti Generali'];
@@ -165,7 +166,7 @@ export const handler = async (event) => {
         }
       });
 
-      const quizSystemPrompt = `Sei MinervaAI, professore universitario e tutor accademico esperto ed empatico.
+      const quizSystemPrompt = `Sei un professore universitario e tutor accademico esperto ed empatico.
 Il tuo compito è formulare una prova di verifica delle competenze composta da esattamente ${targetCount} domande.
 
 TIPOLOGIE RICHIESTE: ${types.join(', ')}
@@ -197,7 +198,7 @@ FORMATO DI RISPOSTA OBBLIGATORIO (JSON con chiave "questions"):
 }
 
 REGOLE ESSENZIALI:
-1. Per i completamenti, formula la domanda con una frase dove la parola mancante sia un termine chiave preciso. Includi sempre varianti e sinonimi in "alternativeAnswers".
+1. Per i completamenti, formula la domanda con una frase dove la parola mancante sia un termine chiave preciso (es. "bicarbonato", "insulina", "mitocondrio"). Includi sempre varianti e sinonimi in "alternativeAnswers".
 2. Distribuisci le domande equamente tra gli argomenti indicati.
 3. Restituisci ESCLUSIVAMENTE il JSON valido.`;
 
@@ -241,11 +242,11 @@ ${sourcesContext ? `FONTI DELLO STUDENTE:\n${sourcesContext.slice(0, 25000)}` : 
     // AZIONE 3: VALUTAZIONE MODULARE E COSTRUTTIVA DI UNA RISPOSTA APERTA
     // -------------------------------------------------------------
     if (action === 'evaluate_open_answer') {
-      const evaluationSystemPrompt = `Sei MinervaAI, tutor accademico e mentore didattico empatico, costruttivo e incoraggiante.
+      const evaluationSystemPrompt = `Sei un tutor accademico e mentore didattico empatico, costruttivo e incoraggiante.
 Il tuo obiettivo è aiutare lo studente a consolidare la sua preparazione universitaria, valorizzando ciò che ha compreso e spiegando con gentilezza e chiarezza cosa andrebbe integrato o corretto.
 
 REGOLE FONDAMENTALI DI TONO E VALUTAZIONE:
-1. TONO: Gentile, costruttivo, motivante e pedagogico. Non usare MAI toni duri, svalutanti o severi. Lo studente sta imparando!
+1. TONO: Gentile, costruttivo, motivante e pedagogico. Non usare MAI toni duri, offensivi, svalutanti o severi. Lo studente sta imparando!
 2. VALUTAZIONE MODULARE IN TRENTESIMI (da 0 a 30):
    - 28-30: Risposta eccellente, ricca e ben argomentata.
    - 24-27: Risposta molto buona (i concetti principali ci sono, manca solo qualche dettaglio o approfondimento).
@@ -342,7 +343,7 @@ Restituisci ESCLUSIVAMENTE il testo riscritto. Non aggiungere frasi tipo "Ecco i
 
       const { response: completion } = await callOpenAIWithFallback(openai, 'gpt-4o-mini', {
         messages: [
-          { role: 'system', content: 'Sei MinervaAI, un editor e docente universitario esperto nel perfezionare testi accademici.' },
+          { role: 'system', content: 'Sei un editor e docente universitario esperto nel perfezionare testi accademici.' },
           { role: 'user', content: rewritePrompt }
         ],
         temperature: 0.3,
@@ -364,7 +365,7 @@ Restituisci ESCLUSIVAMENTE il testo riscritto. Non aggiungere frasi tipo "Ecco i
       const currentLesson = lessonContent || '';
       const userQuestion = prompt || '';
 
-      const lessonChatSystemPrompt = `Sei MinervaAI, il Tutor Accademico dedicato a QUESTA SPECIFICA LEZIONE.
+      const lessonChatSystemPrompt = `Sei il Tutor Accademico dedicato a QUESTA SPECIFICA LEZIONE.
 Hai accesso completo al testo attuale della lezione dello studente:
 
 --- INIZIO TESTO ATTUALE DELLA LEZIONE ---
@@ -470,7 +471,7 @@ FORMATO RISPOSTA OBBLIGATORIO JSON:
         }
       }
 
-      const syllabusSystemPrompt = `Sei MinervaAI, professore universitario e pianificatore didattico d'eccellenza.
+      const syllabusSystemPrompt = `Sei un professore universitario e pianificatore didattico di altissimo livello.
 Il tuo compito è strutturare un piano di studio accademico completo, coerente e perfettamente bilanciato di esattamente ${numDays} giorni per la materia indicata.
 
 REGOLE DIDATTICHE:
@@ -547,7 +548,7 @@ Genera il piano di studio JSON.`;
     }
 
     // -------------------------------------------------------------
-    // AZIONE 7: GENERAZIONE LEZIONE DIDATTICA AD ALTA PRECISIONE (MINERVAAI)
+    // AZIONE 7: GENERAZIONE LEZIONE DIDATTICA
     // -------------------------------------------------------------
     if (isLessonGeneration) {
       const isStrict = sourceType === 'my_materials';
@@ -556,49 +557,30 @@ Genera il piano di studio JSON.`;
       allFiles.forEach((f, idx) => {
         const text = (f.text || f.extractedText || '').trim();
         if (text) {
-          relevantSources += `\n\n=== DOCUMENTO: "${f.name || `File ${idx + 1}`}" ===\n${text.slice(0, 25000)}\n=== FINE DOCUMENTO ===\n`;
+          relevantSources += `\n\n=== DOCUMENTO: "${f.name || `File ${idx + 1}`}" ===\n${text.slice(0, 20000)}\n=== FINE DOCUMENTO ===\n`;
         }
       });
 
-      const styleInstruction = languageStyle === 'discorsivo'
-        ? "STILE ESPOSITIVO (DISCORSIVO): Redigi un testo prevalentemente discorsivo, fluido, dettagliato ed esplicativo, con spiegazioni approfondite e discorsive dei meccanismi logici e scientifici, limitando i punti elenco solo quando strettamente indispensabili."
-        : languageStyle === 'schematico'
-        ? "STILE ESPOSITIVO (SCHEMATICO): Redigi un testo schematico, altamente strutturato con elenchi puntati analitici, gerarchie concettuali e tabelle comparative Markdown."
-        : "STILE ESPOSITIVO (AUTOMATICO): Redigi un testo prettamente discorsivo, rigoroso e accademico ma limpido e fluido, inserendo punti elenco o tabelle solo dove davvero necessario (es. formule, passaggi di processi, classificazioni o elenchi tecnici).";
+      const lessonSystemPrompt = `Sei un docente universitario e tutor accademico di altissimo livello.
+Il tuo compito è redigere una lezione didattica specialistica, chiara, altamente logica, approfondita ed esaustiva sul tema richiesto.
 
-      const lessonSystemPrompt = `Sei MinervaAI, docente universitario e tutor accademico d'eccellenza.
-Il tuo compito inderogabile è redigere una lezione didattica specialistica, rigorosa, logica, altamente pedagogica e completa al 100% sul tema richiesto.
+${isStrict ? `REGOLA FONDAMENTALE E RIGIDA:
+Devi spiegare l'argomento basandoti UNICAMENTE ED ESCLUSIVAMENTE sulle informazioni, spiegazioni, definizioni, formule ed esempi PRESENTI NEI DOCUMENTI ALLEGATI DELLO STUDENTE.
+NON aggiungere nozioni esterne da internet.
+Il tuo compito è rendere il materiale originale molto più chiaro, ordinato, schematizzato e pedagogico, senza inventare o deviare dalle fonti caricate.` : `Spiega l'argomento attingendo alle migliori nozioni scientifiche e accademiche universitarie.`}
 
-LE PAROLE D'ORDINE SONO: COMPLETEZZA, CHIAREZZA E LOGICA.
-
-${isStrict ? `COPERTURA E FEDELTÀ ASSOLUTA ALLE FONTI (100%):
-- Devi coprire al 100% tutto l'argomento senza tralasciare nulla dei file caricati dallo studente.
-- Includi tutte le definizioni, i meccanismi, le formule, i passaggi sequenziali e gli esempi pertinenti presenti nelle dispense.
-- Non aggiungere nozioni inventate che devino dai materiali dello studente, ma rendi il contenuto delle dispense enormemente più chiaro, ordinato, schematizzato e pedagogico.` : `Spiega l'argomento attingendo alle nozioni universitarie e scientifiche più autorevoli e aggiornate.`}
-
-${styleInstruction}
-
-STRUTTURA OBBLIGATORIA DELLA LEZIONE IN DUE FASI:
-
-1. SCALETTA PRELIMINARE DETTAGLIATA (ALL'INIZIO):
-   All'inizio della lezione devi SEMPRE creare una scaletta completa e dettagliata di tutti i punti che verranno trattati:
-   - Struttura la scaletta con capitoli numerati (es. 1., 2., 3...) e sottoargomenti indentati rispetto agli argomenti principali (es. 1.1, 1.2, 2.1...).
-   - Inserisci questa scaletta in un blocco introduttivo intitolato "## 📋 Indice e Scaletta Dettagliata della Lezione".
-
-2. TRATTAZIONE E APPROFONDIMENTO CAPITOLO PER CAPITOLO:
-   Subito dopo la scaletta, sviluppa TUTTI i singoli argomenti e relativi sottoargomenti stilati nella scaletta, uno ad uno:
-   - Intitola ogni capitolo in modo chiaro (usando ## e ###).
-   - Approfondisci ogni concetto con linguaggio accademico ma facilmente comprensibile, chiaro e sequenziale.
-   - Evidenzia SEMPRE i termini tecnici e i concetti fondamentali in GRASSETTO (**termine**).
-   - Per qualsiasi formula matematica, chimica, medica, fisica o statistica, USA LA NOTAZIONE LaTeX ($...$ inline o $$...$$ a blocco).
-   - Utilizza tabelle comparative Markdown per confrontare definizioni, parametri o tipologie quando utile.`;
+FORMATTAZIONE:
+- Usa titoli chiari in Markdown (##, ###).
+- Evidenzia SEMPRE i termini tecnici e i concetti fondamentali in GRASSETTO (**termine**).
+- Usa elenchi puntati strutturati e tabelle comparative Markdown.
+- Per qualsiasi formula scientifica, chimica, medica, fisica o statistica, USA LA NOTAZIONE LaTeX ($formula$ o $$formula$$).`;
 
       const lessonUserPrompt = `Argomento della lezione: "${topicTitle}".
-Materia: "${examDescription || ''}", Livello target: ${prepLevel || 80}%, Stile prescelto: ${languageStyle || 'automatico'}.
+Materia: "${examDescription || ''}", Livello target: ${prepLevel || 80}%, Stile: ${languageStyle || 'automatico'}.
 
-${relevantSources ? `FONTI DELLO STUDENTE ESTRATTE DAI FILE CARICATI:\n${relevantSources.slice(0, 40000)}` : 'Nessun file testuale allegato, basati sul programma accademico della materia.'}
+${relevantSources ? `FONTI DELLO STUDENTE ESTRATTE DAI FILE CARICATI:\n${relevantSources.slice(0, 35000)}` : ''}
 
-Genera la lezione didattica completa al 100%, iniziando con la scaletta numerata/indentata e proseguendo con la trattazione dettagliata capitolo per capitolo.`;
+Redigi la lezione didattica in modo chiaro, schematizzato e rigorosamente fedele al tema.`;
 
       const { response: completion, modelUsed } = await callOpenAIWithFallback(openai, 'gpt-4o-mini', {
         messages: [
@@ -642,7 +624,7 @@ Genera la lezione didattica completa al 100%, iniziando con la scaletta numerata
     });
 
     const userPrompt = prompt || '';
-    const standardSystemInstruction = `Sei MinervaAI, tutor universitario e assistente allo studio avanzato.
+    const standardSystemInstruction = `Sei un tutor universitario e assistente allo studio avanzato.
 Rispondi in modo chiaro, approfondito, logico e pedagogico in formato Markdown con termini chiave in grassetto ed equazioni LaTeX in $ o $$ quando utili. Se l'utente allega file o immagini, analizzali attentamente per rispondere in modo preciso.`;
 
     let finalPromptText = userPrompt;
@@ -691,7 +673,7 @@ Rispondi in modo chiaro, approfondito, logico e pedagogico in formato Markdown c
       body: JSON.stringify({ reply, modelUsed }),
     };
   } catch (error) {
-    console.error('Errore backend MinervaAI:', error);
+    console.error('Errore backend:', error);
     return {
       statusCode: 500,
       body: JSON.stringify({ error: error.message || 'Errore durante la generazione.' }),

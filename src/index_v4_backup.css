@@ -1,0 +1,285 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Tema Scuro Globale */
+html, body {
+  margin: 0;
+  padding: 0;
+  background-color: #131314;
+  color: #e3e3e3;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow-x: hidden;
+  color-scheme: dark;
+}
+
+/* Scrollbar Scura Globale */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: #131314;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2a2b2f;
+  border-radius: 6px;
+  border: 1px solid #131314;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3c4043;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a2b2f #131314;
+}
+
+/* STILI PER EDITOR WYSIWYG */
+.wysiwyg-editor {
+  outline: none;
+  min-height: 480px;
+  color: #e2e8f0;
+  line-height: 1.75;
+  font-size: 15px;
+}
+
+.wysiwyg-editor:focus {
+  outline: none;
+}
+
+.wysiwyg-editor h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #f8fafc;
+  margin-top: 1.5rem;
+  margin-bottom: 0.6rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid #2a2b2f;
+}
+
+.wysiwyg-editor h2 {
+  font-size: 1.28rem;
+  font-weight: 700;
+  color: #60a5fa;
+  margin-top: 1.3rem;
+  margin-bottom: 0.5rem;
+}
+
+.wysiwyg-editor h3 {
+  font-size: 1.12rem;
+  font-weight: 600;
+  color: #a5b4fc;
+  margin-top: 1.1rem;
+  margin-bottom: 0.4rem;
+}
+
+.wysiwyg-editor p {
+  margin-bottom: 0.85rem;
+  line-height: 1.75;
+  color: #e2e8f0;
+}
+
+.wysiwyg-editor ul {
+  list-style-type: disc;
+  margin-left: 1.8rem;
+  margin-bottom: 0.85rem;
+  color: #e2e8f0;
+}
+
+.wysiwyg-editor ol {
+  list-style-type: decimal;
+  margin-left: 1.8rem;
+  margin-bottom: 0.85rem;
+  color: #e2e8f0;
+}
+
+.wysiwyg-editor li {
+  margin-bottom: 0.35rem;
+  line-height: 1.65;
+}
+
+.wysiwyg-editor strong, .wysiwyg-editor b {
+  font-weight: 700;
+  color: #93c5fd;
+  background-color: rgba(59, 130, 246, 0.12);
+  padding: 0.1rem 0.25rem;
+  border-radius: 0.25rem;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+
+.wysiwyg-editor em, .wysiwyg-editor i {
+  font-style: italic;
+  color: #cbd5e1;
+}
+
+.wysiwyg-editor u {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.wysiwyg-editor table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.2rem 0;
+  font-size: 0.85rem;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.wysiwyg-editor th, .wysiwyg-editor td {
+  border: 1px solid #2a2b2f;
+  padding: 0.6rem 0.85rem;
+  text-align: left;
+}
+
+.wysiwyg-editor th {
+  background-color: #1e1f20;
+  color: #f1f5f9;
+  font-weight: 600;
+}
+
+.wysiwyg-editor tr:nth-child(even) {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.wysiwyg-editor blockquote {
+  border-left: 4px solid #3b82f6;
+  padding-left: 1rem;
+  margin: 0.9rem 0;
+  font-style: italic;
+  color: #94a3b8;
+  background-color: rgba(30, 31, 32, 0.6);
+  border-radius: 0 0.5rem 0.5rem 0;
+  padding-top: 0.4rem;
+  padding-bottom: 0.4rem;
+}
+
+/* Stili Immagini nell'Editor */
+.lesson-image-wrapper {
+  position: relative;
+  display: block;
+}
+
+.lesson-image-wrapper.text-left {
+  text-align: left;
+}
+
+.lesson-image-wrapper.text-center {
+  text-align: center;
+}
+
+.lesson-image-wrapper.text-right {
+  text-align: right;
+}
+
+.lesson-img {
+  display: inline-block;
+  user-select: none;
+  transition: outline 0.15s ease;
+}
+
+.lesson-img.img-active-selected {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Stili KaTeX */
+.katex-display {
+  margin: 1rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.5rem 0;
+  text-align: center;
+}
+
+.katex {
+  font-size: 1.08em;
+  color: #93c5fd;
+}
+
+/* Animazione popup */
+@keyframes popupFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-popup {
+  animation: popupFadeIn 0.15s ease-out forwards;
+}
+
+/* STILI PER ESPORTAZIONE PDF PULITA */
+.pdf-export-container {
+  background-color: #ffffff !important;
+  color: #1e293b !important;
+  padding: 30px !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+  line-height: 1.65 !important;
+}
+
+.pdf-export-container h1 {
+  color: #0f172a !important;
+  font-size: 24px !important;
+  border-bottom: 2px solid #3b82f6 !important;
+  padding-bottom: 8px !important;
+  margin-top: 20px !important;
+  margin-bottom: 12px !important;
+}
+
+.pdf-export-container h2 {
+  color: #1e40af !important;
+  font-size: 18px !important;
+  margin-top: 18px !important;
+  margin-bottom: 10px !important;
+}
+
+.pdf-export-container h3 {
+  color: #3730a3 !important;
+  font-size: 15px !important;
+  margin-top: 14px !important;
+  margin-bottom: 8px !important;
+}
+
+.pdf-export-container p, .pdf-export-container li {
+  color: #334155 !important;
+  font-size: 13px !important;
+}
+
+.pdf-export-container strong, .pdf-export-container b {
+  color: #1e3a8a !important;
+  background-color: #eff6ff !important;
+  padding: 1px 3px !important;
+  border: 1px solid #bfdbfe !important;
+  border-radius: 3px !important;
+}
+
+.pdf-export-container table {
+  border-collapse: collapse !important;
+  width: 100% !important;
+  margin: 15px 0 !important;
+}
+
+.pdf-export-container th, .pdf-export-container td {
+  border: 1px solid #cbd5e1 !important;
+  padding: 8px 12px !important;
+  font-size: 12px !important;
+  color: #1e293b !important;
+}
+
+.pdf-export-container th {
+  background-color: #f1f5f9 !important;
+  font-weight: bold !important;
+}
+
+.pdf-export-container .katex {
+  color: #1e40af !important;
+}
