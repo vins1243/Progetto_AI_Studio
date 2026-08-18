@@ -69,8 +69,7 @@ import {
   Mail,
   Lock,
   Key,
-  Cloud,
-  CreditCard
+  Cloud
 } from 'lucide-react';
 
 import { 
@@ -87,8 +86,7 @@ import {
   saveChatToCloud, 
   deleteChatFromCloud,
   fetchUserProfile,
-  setSubscriptionActive,
-  cancelUserSubscription
+  setSubscriptionActive
 } from './supabaseClient.js';
 
 const STRIPE_PAYMENT_URL = 'https://buy.stripe.com/test_fZu14p1No81J5Eg9nme7m00';
@@ -460,8 +458,6 @@ function MainAppContent() {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [isCheckingPayment, setIsCheckingPayment] = useState(false);
-  const [isSubManageModalOpen, setIsSubManageModalOpen] = useState(false);
-  const [isCancelingSub, setIsCancelingSub] = useState(false);
   const [isAuthInitializing, setIsAuthInitializing] = useState(true);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState('login'); // 'login' | 'signup' | 'reset'
@@ -539,24 +535,17 @@ function MainAppContent() {
     };
   }, []);
 
-  const loadCloudData = async (userId, userObj = null) => {
+  const loadCloudData = async (userId) => {
     if (!userId) return;
     setIsCloudSyncing(true);
     try {
-      const email = userObj?.email || user?.email || '';
-      const fullName = userObj?.user_metadata?.full_name || user?.user_metadata?.full_name || '';
-      const profile = await fetchUserProfile(userId, email, fullName);
+      const profile = await fetchUserProfile(userId);
       setUserProfile(profile);
 
-      if (profile?.subscription_status === 'active' || profile?.is_premium) {
-        const cloudProjects = await fetchProjectsFromCloud(userId);
-        setSavedProjects(cloudProjects || []);
-        const cloudChats = await fetchChatsFromCloud(userId);
-        setConversations(cloudChats || []);
-      } else {
-        setSavedProjects([]);
-        setConversations([]);
-      }
+      const cloudProjects = await fetchProjectsFromCloud(userId);
+      setSavedProjects(cloudProjects || []);
+      const cloudChats = await fetchChatsFromCloud(userId);
+      setConversations(cloudChats || []);
     } catch (err) {
       console.warn('Errore sync dati cloud:', err);
     } finally {
@@ -570,8 +559,7 @@ function MainAppContent() {
     try {
       const params = new URLSearchParams(window.location.search);
       if (params.get('payment') === 'success') {
-        setSubscriptionActive,
-  cancelUserSubscription(user.id, 'monthly_14.99').then(() => {
+        setSubscriptionActive(user.id, 'monthly_14.99').then(() => {
           fetchUserProfile(user.id).then(p => setUserProfile(p));
           const cleanUrl = window.location.pathname;
           window.history.replaceState({}, document.title, cleanUrl);
@@ -618,30 +606,6 @@ function MainAppContent() {
       setAuthError(err.message || "Si è verificato un errore durante l'operazione.");
     } finally {
       setIsAuthSubmitting(false);
-    }
-  };
-
-  const handleCancelSubscription = async () => {
-    if (!user?.id) return;
-    const confirmCancel = window.confirm("Sei sicuro di voler disdire il tuo abbonamento MinervaAI Premium? Perderai l'accesso a tutte le funzionalità alla scadenza.");
-    if (!confirmCancel) return;
-
-    setIsCancelingSub(true);
-    try {
-      const ok = await cancelUserSubscription(user.id);
-      if (ok) {
-        const p = await fetchUserProfile(user.id);
-        setUserProfile(p);
-        setIsSubManageModalOpen(false);
-        setIsProfileMenuOpen(false);
-        alert("Il tuo abbonamento è stato disdetto.");
-      } else {
-        alert("Si è verificato un errore durante la disdetta. Riprova più tardi.");
-      }
-    } catch (err) {
-      console.error("Errore disdetta:", err);
-    } finally {
-      setIsCancelingSub(false);
     }
   };
 
@@ -3508,26 +3472,10 @@ function MainAppContent() {
                     <p className="text-xs font-bold text-gray-100 truncate">{user.user_metadata?.full_name || 'Studente'}</p>
                     <p className="text-[11px] text-gray-400 truncate">{user.email}</p>
                     <div className="flex items-center gap-1.5 mt-2 text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full w-fit">
-                      <CreditCard size={12} />
-                      <span>Abbonamento Attivo (14,99 €/m)</span>
+                      <Cloud size={12} />
+                      <span>Cloud Sincronizzato</span>
                     </div>
                   </div>
-                  <button
-                    onClick={() => { setIsProfileMenuOpen(false); setIsSubManageModalOpen(true); }}
-                    className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold rounded-xl transition ${
-                      theme === 'light' ? 'text-slate-800 hover:bg-slate-100' : 'text-gray-100 hover:bg-geminiHover'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <CreditCard size={14} className="text-blue-500" />
-                      <span>Abbonamento</span>
-                    </div>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                      isSubscribed ? 'bg-emerald-500/15 text-emerald-600' : 'bg-red-500/15 text-red-500'
-                    }`}>
-                      {isSubscribed ? 'Attivo' : 'Non attivo'}
-                    </span>
-                  </button>
                   <button
                     onClick={() => { setIsProfileMenuOpen(false); handleSignOut(); }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-red-400 hover:bg-red-500/10 rounded-xl transition"
@@ -5007,97 +4955,6 @@ function MainAppContent() {
           </div>
         )}
       {/* ------------------------------------------------------------- */}
-            {/* ------------------------------------------------------------- */}
-      {/* MODALE GESTIONE ABBONAMENTO STRIPE                            */}
-      {/* ------------------------------------------------------------- */}
-      {isSubManageModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-popup">
-          <div className={`w-full max-w-md border rounded-3xl p-6 sm:p-8 shadow-2xl relative space-y-5 transition ${
-            theme === 'light' ? 'bg-white border-slate-200 shadow-slate-200/50 text-slate-800' : 'bg-geminiDarkSecondary border-geminiBorder text-gray-100'
-          }`}>
-            <button
-              onClick={() => setIsSubManageModalOpen(false)}
-              className={`absolute top-5 right-5 p-2 rounded-xl transition ${
-                theme === 'light' ? 'text-slate-400 hover:text-slate-900 hover:bg-slate-100' : 'text-gray-400 hover:text-white hover:bg-geminiHover'
-              }`}
-              title="Chiudi"
-            >
-              <X size={18} />
-            </button>
-
-            <div className="flex items-center gap-3">
-              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${
-                theme === 'light' ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-blue-600/20 text-blue-400 border-blue-500/30'
-              }`}>
-                <CreditCard size={24} />
-              </div>
-              <div>
-                <h3 className={`text-lg font-bold ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>
-                  Il tuo Abbonamento
-                </h3>
-                <p className={`text-xs ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>
-                  Dettagli del piano MinervaAI Premium
-                </p>
-              </div>
-            </div>
-
-            <div className={`p-4 rounded-2xl border space-y-3 ${
-              theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-geminiDark border-geminiBorder'
-            }`}>
-              <div className="flex items-center justify-between text-xs">
-                <span className={theme === 'light' ? 'text-slate-500' : 'text-gray-400'}>Piano attuale:</span>
-                <span className="font-bold text-blue-500">MinervaAI Premium</span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className={theme === 'light' ? 'text-slate-500' : 'text-gray-400'}>Costo:</span>
-                <span className="font-bold">14,99 € / mese</span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className={theme === 'light' ? 'text-slate-500' : 'text-gray-400'}>Stato:</span>
-                <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 border border-emerald-500/30 font-semibold text-[11px]">
-                  Attivo
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className={theme === 'light' ? 'text-slate-500' : 'text-gray-400'}>Metodo di pagamento:</span>
-                <span className="font-medium">Stripe Checkout</span>
-              </div>
-            </div>
-
-            <div className="space-y-2.5 pt-2">
-              {isSubscribed ? (
-                <button
-                  onClick={handleCancelSubscription}
-                  disabled={isCancelingSub}
-                  className="w-full py-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/30 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2"
-                >
-                  {isCancelingSub ? (
-                    <>
-                      <RefreshCw size={14} className="animate-spin" />
-                      <span>Disdetta in corso...</span>
-                    </>
-                  ) : (
-                    <span>Disdici Abbonamento</span>
-                  )}
-                </button>
-              ) : (
-                <a
-                  href={`${STRIPE_PAYMENT_URL}?prefilled_email=${encodeURIComponent(user?.email || '')}&client_reference_id=${user?.id || ''}`}
-                  className="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-2xl text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30"
-                >
-                  <Sparkles size={15} />
-                  <span>Attiva o Rinnova Abbonamento (14,99 €/m)</span>
-                </a>
-              )}
-
-              <p className={`text-[10px] text-center ${theme === 'light' ? 'text-slate-400' : 'text-gray-500'}`}>
-                Disdicendo, il tuo account verrà bloccato alla scadenza e riapparirà la schermata di abbonamento.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* MODALE AUTENTICAZIONE SUPABASE (ACCEDI / REGISTRATI / RECUPERA) */}
       {/* ------------------------------------------------------------- */}
       {isAuthModalOpen && (

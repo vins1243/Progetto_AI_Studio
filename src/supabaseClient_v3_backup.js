@@ -266,35 +266,24 @@ export async function deleteChatFromCloud(userId, chatId) {
 }
 
 // -------------------------------------------------------------
-// HELPER PROFILO E ABBONAMENTO STRIPE (RIGOROSO ANCHE PER UTENTI ESISTENTI)
+// HELPER PROFILO E ABBONAMENTO STRIPE
 // -------------------------------------------------------------
-export async function fetchUserProfile(userId, email = '', fullName = '') {
-  if (!client || !userId) return { id: userId, subscription_status: 'inactive' };
+export async function fetchUserProfile(userId) {
+  if (!client || !userId) return null;
   try {
     const { data, error } = await client
       .from('profiles')
       .select('*')
       .eq('id', userId)
-      .maybeSingle();
+      .single();
 
-    if (!data) {
-      const { data: newProfile } = await client
-        .from('profiles')
-        .insert({
-          id: userId,
-          email: email || '',
-          full_name: fullName || '',
-          subscription_status: 'inactive'
-        })
-        .select()
-        .maybeSingle();
-      return newProfile || { id: userId, subscription_status: 'inactive' };
+    if (error && error.code !== 'PGRST116') {
+      console.warn('Errore lettura profilo:', error);
     }
-
-    return data;
+    return data || null;
   } catch (err) {
     console.warn('Fetch user profile exception:', err);
-    return { id: userId, subscription_status: 'inactive' };
+    return null;
   }
 }
 
