@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Tema Scuro Globale */
+/* Tema Scuro Globale e Stili Base */
 html, body {
   margin: 0;
   padding: 0;
@@ -15,8 +15,8 @@ html, body {
 
 /* Scrollbar Scura Globale (WebKit: Chrome, Safari, Edge) */
 ::-webkit-scrollbar {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -26,7 +26,7 @@ html, body {
 ::-webkit-scrollbar-thumb {
   background: #2a2b2f;
   border-radius: 6px;
-  border: 1px solid #131314;
+  border: 2px solid #131314;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -39,13 +39,12 @@ html, body {
   scrollbar-color: #2a2b2f #131314;
 }
 
-/* STILI PER EDITOR WYSIWYG DIRETTO SENZA MARKDOWN GREZZO */
+/* Stili Editor WYSIWYG per Lezioni Direttamente Modificabili */
 .wysiwyg-editor {
   outline: none;
-  min-height: 480px;
-  color: #e2e8f0;
-  line-height: 1.75;
-  font-size: 15px;
+  min-height: 400px;
+  color: #e3e3e3;
+  line-height: 1.7;
 }
 
 .wysiwyg-editor:focus {
@@ -53,17 +52,17 @@ html, body {
 }
 
 .wysiwyg-editor h1 {
-  font-size: 1.5rem;
+  font-size: 1.45rem;
   font-weight: 700;
   color: #f8fafc;
-  margin-top: 1.5rem;
+  margin-top: 1.4rem;
   margin-bottom: 0.6rem;
   padding-bottom: 0.3rem;
   border-bottom: 1px solid #2a2b2f;
 }
 
 .wysiwyg-editor h2 {
-  font-size: 1.28rem;
+  font-size: 1.25rem;
   font-weight: 700;
   color: #60a5fa;
   margin-top: 1.3rem;
@@ -71,7 +70,7 @@ html, body {
 }
 
 .wysiwyg-editor h3 {
-  font-size: 1.12rem;
+  font-size: 1.1rem;
   font-weight: 600;
   color: #a5b4fc;
   margin-top: 1.1rem;
@@ -80,26 +79,26 @@ html, body {
 
 .wysiwyg-editor p {
   margin-bottom: 0.85rem;
-  line-height: 1.75;
+  line-height: 1.7;
   color: #e2e8f0;
 }
 
 .wysiwyg-editor ul {
   list-style-type: disc;
-  margin-left: 1.8rem;
+  margin-left: 1.6rem;
   margin-bottom: 0.85rem;
   color: #e2e8f0;
 }
 
 .wysiwyg-editor ol {
   list-style-type: decimal;
-  margin-left: 1.8rem;
+  margin-left: 1.6rem;
   margin-bottom: 0.85rem;
   color: #e2e8f0;
 }
 
 .wysiwyg-editor li {
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.3rem;
   line-height: 1.65;
 }
 
@@ -159,25 +158,11 @@ html, body {
   padding-bottom: 0.4rem;
 }
 
-/* Stili Formule Matematiche KaTeX */
-.katex-display {
-  margin: 1rem 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 0.5rem 0;
-  text-align: center;
-}
-
-.katex {
-  font-size: 1.08em;
-  color: #93c5fd;
-}
-
-/* Animazione per il popup fluttuante sulla selezione */
+/* Animazione per il popup fluttuante */
 @keyframes popupFadeIn {
   from {
     opacity: 0;
-    transform: translateY(6px) scale(0.96);
+    transform: translateY(6px) scale(0.95);
   }
   to {
     opacity: 1;

@@ -44,12 +44,14 @@ import {
   Heading1,
   Heading2,
   Heading3,
+  Type,
   Wand2,
-  Undo2
+  Undo2,
+  CornerDownLeft
 } from 'lucide-react';
 
 // IndexedDB Helper
-const DB_NAME = 'StudyAIDB_V6';
+const DB_NAME = 'StudyAIDB_V5';
 const STORE_NAME = 'project_data_store';
 
 function getDB() {
@@ -149,59 +151,25 @@ async function extractTextFromPptx(arrayBuffer) {
   return { text: text.trim(), pagesCount: slideFiles.length };
 }
 
-// RENDERING AUTOMATICO MARKDOWN + LATEX KATEX VERSO HTML WYSIWYG
-function renderMarkdownAndLatexToHtml(md) {
+// Convertitore Markdown di base a HTML per visualizzazione modificabile WYSIWYG
+function markdownToHtml(md) {
   if (!md) return '';
   let html = md;
-
-  // 1. Render LaTeX display blocks $$ ... $$
-  html = html.replace(/\$\$([\s\S]*?)\$\$/g, (match, expr) => {
-    try {
-      if (typeof window !== 'undefined' && window.katex) {
-        return `<div class="katex-display" contenteditable="false">${window.katex.renderToString(expr.trim(), { displayMode: true, throwOnError: false })}</div>`;
-      }
-    } catch (e) {
-      console.warn("KaTeX display error:", e);
-    }
-    return `<div class="katex-display" contenteditable="false">${expr}</div>`;
-  });
-
-  // 2. Render LaTeX inline math $ ... $
-  html = html.replace(/\$([^\$\n]+?)\$/g, (match, expr) => {
-    try {
-      if (typeof window !== 'undefined' && window.katex) {
-        return `<span class="katex-inline" contenteditable="false">${window.katex.renderToString(expr.trim(), { displayMode: false, throwOnError: false })}</span>`;
-      }
-    } catch (e) {
-      console.warn("KaTeX inline error:", e);
-    }
-    return `<span class="katex-inline" contenteditable="false">${expr}</span>`;
-  });
-
-  // 3. Intestazioni Markdown
+  // Intestazioni
   html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
   html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
   html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
-
-  // 4. Grassetto e Corsivo
+  // Grassetto e Corsivo
   html = html.replace(/\*\*\*(.*?)\*\*\*/gim, '<b><i>$1</i></b>');
   html = html.replace(/\*\*(.*?)\*\*/gim, '<b>$1</b>');
   html = html.replace(/\*(.*?)\*/gim, '<i>$1</i>');
-
-  // 5. Elenchi
+  // Elenchi puntati
   html = html.replace(/^\s*-\s+(.*$)/gim, '<ul><li>$1</li></ul>');
   html = html.replace(/<\/ul>\s*<ul>/gim, '');
-  html = html.replace(/^\s*\d+\.\s+(.*$)/gim, '<ol><li>$1</li></ol>');
-  html = html.replace(/<\/ol>\s*<ol>/gim, '');
-
-  // 6. Citazioni
-  html = html.replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>');
-
-  // 7. Paragrafi
+  // Paragrafi e a capo
   html = html.replace(/\n\n/gim, '</p><p>');
   html = html.replace(/\n/gim, '<br/>');
-
-  if (!html.startsWith('<h') && !html.startsWith('<p') && !html.startsWith('<ul') && !html.startsWith('<ol') && !html.startsWith('<div')) {
+  if (!html.startsWith('<h') && !html.startsWith('<p') && !html.startsWith('<ul')) {
     html = '<p>' + html + '</p>';
   }
   return html;
@@ -287,19 +255,19 @@ function MainAppContent() {
   const [selectedTopicId, setSelectedTopicId] = useState(null);
   const [isGeneratingLesson, setIsGeneratingLesson] = useState(false);
 
-  // POPUP FLUTTUANTE AUTOMATICO SU SELEZIONE TESTO
-  const [floatingPopup, setFloatingPopup] = useState(null); // { x, y, text, range }
+  // POPUP FLUTTUANTE SU SELEZIONE TESTO
+  const [floatingPopup, setFloatingPopup] = useState(null); // { x, y, text }
   const [isRewriting, setIsRewriting] = useState(false);
 
-  // CHATBOT LEZIONE DEDICATO CON MODIFICA DIRETTA
+  // CHATBOT DEDICATO ALLA LEZIONE CON MODIFICA DIRETTA
   const [lessonChatMessages, setLessonChatMessages] = useState([]);
   const [lessonChatInput, setLessonChatInput] = useState('');
   const [isLessonChatLoading, setIsLessonChatLoading] = useState(false);
   const [previousLessonBackup, setPreviousLessonBackup] = useState(null);
 
-  // Toolbar stato
-  const [selectedFontSize, setSelectedFontSize] = useState('15');
-  const [selectedFontFamily, setSelectedFontFamily] = useState('sans-serif');
+  // Toolbar state
+  const [activeFont, setActiveFont] = useState('sans');
+  const [activeFontSize, setActiveFontSize] = useState('15px');
 
   // Wizard State
   const [wizardStep, setWizardStep] = useState(1);
@@ -316,18 +284,18 @@ function MainAppContent() {
 
   const fileInputRef = useRef(null);
   const wizardFileInputRef = useRef(null);
+  const projectAddFileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
   const lessonChatEndRef = useRef(null);
   const textareaRef = useRef(null);
   const wysiwygEditorRef = useRef(null);
-  const lastLoadedTopicIdRef = useRef(null);
 
-  // Storage sync
+  // Sync Storage
   useEffect(() => {
     try {
       localStorage.setItem('study_ai_chats', JSON.stringify(conversations));
     } catch (e) {
-      console.warn("Quota chat", e);
+      console.warn("Storage chat quota", e);
     }
   }, [conversations]);
 
@@ -347,7 +315,7 @@ function MainAppContent() {
       }));
       localStorage.setItem('study_ai_projects', JSON.stringify(sanitized));
     } catch (e) {
-      console.warn("Quota projects", e);
+      console.warn("Storage projects quota", e);
     }
   }, [savedProjects]);
 
@@ -359,30 +327,14 @@ function MainAppContent() {
     lessonChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [lessonChatMessages, isLessonChatLoading]);
 
-  const currentDayData = activeProject?.schedule?.find(d => d.dayNumber === selectedDayNumber) || activeProject?.schedule?.[0];
-  const currentSelectedTopic = currentDayData?.topics?.find(t => t.id === selectedTopicId) || currentDayData?.topics?.[0];
-
-  // Inizializza il contenuto dell'editor WYSIWYG solo al cambio di argomento o nuova generazione
+  // Gestione selezione testo per far apparire automaticamente il popup fluttuante
   useEffect(() => {
-    if (currentView === 'day_detail' && currentSelectedTopic && wysiwygEditorRef.current) {
-      const currentId = currentSelectedTopic.id;
-      // Se l'argomento è cambiato o l'editor è vuoto, popola con l'HTML formattato
-      if (lastLoadedTopicIdRef.current !== currentId || !wysiwygEditorRef.current.innerHTML.trim()) {
-        lastLoadedTopicIdRef.current = currentId;
-        const html = renderMarkdownAndLatexToHtml(currentSelectedTopic.lesson || '');
-        wysiwygEditorRef.current.innerHTML = html;
-      }
-    }
-  }, [currentView, currentSelectedTopic?.id, currentSelectedTopic?.lesson]);
-
-  // RILEVAMENTO SELEZIONE TESTO PER FAR APPARIRE IL POPUP AUTOMATICO
-  useEffect(() => {
-    const handleSelection = () => {
+    const handleSelectionChange = () => {
       if (currentView !== 'day_detail') return;
 
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed || !selection.rangeCount) {
-        setFloatingPopup(null);
+        // Nessuna selezione attiva
         return;
       }
 
@@ -392,8 +344,12 @@ function MainAppContent() {
         return;
       }
 
+      // Verifica che la selezione si trovi dentro l'editor WYSIWYG
       const editorEl = wysiwygEditorRef.current;
-      if (!editorEl || !editorEl.contains(selection.anchorNode)) {
+      if (!editorEl) return;
+
+      const anchorNode = selection.anchorNode;
+      if (!editorEl.contains(anchorNode)) {
         setFloatingPopup(null);
         return;
       }
@@ -404,26 +360,27 @@ function MainAppContent() {
 
         if (rect && rect.width > 0) {
           setFloatingPopup({
-            x: Math.max(20, Math.min(window.innerWidth - 180, rect.left + rect.width / 2)),
-            y: Math.max(60, rect.top - 12),
+            x: Math.max(10, rect.left + rect.width / 2),
+            y: Math.max(10, rect.top - 10),
             text: text,
             range: range.cloneRange()
           });
         }
       } catch (err) {
-        console.warn("Selection rect error:", err);
+        console.warn("Range rect error:", err);
       }
     };
 
     const handleMouseDown = (e) => {
+      // Se clicchi fuori dal popup, chiudilo
       if (e.target.closest('#floating-selection-popup')) return;
-      setTimeout(handleSelection, 120);
+      setTimeout(handleSelectionChange, 150);
     };
 
-    document.addEventListener('mouseup', handleSelection);
+    document.addEventListener('mouseup', handleSelectionChange);
     document.addEventListener('mousedown', handleMouseDown);
     return () => {
-      document.removeEventListener('mouseup', handleSelection);
+      document.removeEventListener('mouseup', handleSelectionChange);
       document.removeEventListener('mousedown', handleMouseDown);
     };
   }, [currentView]);
@@ -594,7 +551,7 @@ function MainAppContent() {
     }
   };
 
-  // FINALIZZAZIONE WIZARD (CON SUPPORTO "CERCA ONLINE" E "USA IL MIO MATERIALE")
+  // FINALIZZAZIONE WIZARD
   const handleFinalizeGuide = async () => {
     const isOnlineSearch = sourceType === 'search_online';
 
@@ -734,9 +691,6 @@ function MainAppContent() {
 
       const lessonContent = data.reply;
       updateTopicLessonContent(dayNum, topic.id, lessonContent);
-      if (wysiwygEditorRef.current) {
-        wysiwygEditorRef.current.innerHTML = renderMarkdownAndLatexToHtml(lessonContent);
-      }
     } catch (err) {
       alert(`Errore nella generazione: ${err.message}`);
     } finally {
@@ -765,18 +719,9 @@ function MainAppContent() {
     setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProject : p));
   };
 
-  // Sincronizzazione in tempo reale durante la digitazione nell'editor WYSIWYG
-  const handleEditorInput = () => {
-    if (!wysiwygEditorRef.current || !currentDayData || !currentSelectedTopic) return;
-    const rawText = wysiwygEditorRef.current.innerText || '';
-    // Salva il testo senza forzare ri-render React sul DOM attivo
-    updateTopicLessonContent(currentDayData.dayNumber, currentSelectedTopic.id, rawText);
-  };
-
-  // COMANDI DI FORMATTAZIONE SULLA SELEZIONE ESATTA
-  const applyFormattingCommand = (command, value = null) => {
+  // COMANDI DI FORMATTAZIONE WYSIWYG
+  const executeEditorCommand = (command, value = null) => {
     if (typeof document !== 'undefined') {
-      document.execCommand('styleWithCSS', false, true);
       document.execCommand(command, false, value);
       if (wysiwygEditorRef.current) {
         wysiwygEditorRef.current.focus();
@@ -785,60 +730,11 @@ function MainAppContent() {
     }
   };
 
-  // APPLICAZIONE DIMENSIONE TESTO (DA 4 A 32 PX) SUL TESTO SELEZIONATO
-  const applyCustomFontSize = (sizePx) => {
-    setSelectedFontSize(sizePx);
-    const selection = window.getSelection();
-    if (!selection || selection.isCollapsed || !selection.rangeCount) return;
-
-    try {
-      document.execCommand('styleWithCSS', false, true);
-      const range = selection.getRangeAt(0);
-      const span = document.createElement('span');
-      span.style.fontSize = `${sizePx}px`;
-      span.appendChild(range.extractContents());
-      range.insertNode(span);
-      selection.removeAllRanges();
-      const newRange = document.createRange();
-      newRange.selectNodeContents(span);
-      selection.addRange(newRange);
-      handleEditorInput();
-    } catch (e) {
-      console.warn("Font size apply error:", e);
-    }
-  };
-
-  // APPLICAZIONE CARATTERE DEL TESTO SUL TESTO SELEZIONATO
-  const applyCustomFontFamily = (fontName) => {
-    setSelectedFontFamily(fontName);
-    const selection = window.getSelection();
-    if (!selection || selection.isCollapsed || !selection.rangeCount) return;
-
-    try {
-      document.execCommand('styleWithCSS', false, true);
-      const range = selection.getRangeAt(0);
-      const span = document.createElement('span');
-      span.style.fontFamily = fontName;
-      span.appendChild(range.extractContents());
-      range.insertNode(span);
-      selection.removeAllRanges();
-      const newRange = document.createRange();
-      newRange.selectNodeContents(span);
-      selection.addRange(newRange);
-      handleEditorInput();
-    } catch (e) {
-      console.warn("Font family apply error:", e);
-    }
-  };
-
-  // ALLINEAMENTO TESTO (SINISTRA, CENTRO, DESTRA, GIUSTIFICATO)
-  const applyAlignment = (alignType) => {
-    document.execCommand('styleWithCSS', false, true);
-    if (alignType === 'left') document.execCommand('justifyLeft', false, null);
-    else if (alignType === 'center') document.execCommand('justifyCenter', false, null);
-    else if (alignType === 'right') document.execCommand('justifyRight', false, null);
-    else if (alignType === 'justify') document.execCommand('justifyFull', false, null);
-    handleEditorInput();
+  // Sincronizzazione input da ContentEditable
+  const handleEditorInput = () => {
+    if (!wysiwygEditorRef.current || !currentDayData || !currentSelectedTopic) return;
+    const innerText = wysiwygEditorRef.current.innerText || '';
+    updateTopicLessonContent(currentDayData.dayNumber, currentSelectedTopic.id, innerText);
   };
 
   // RISCRITTURA DA POPUP AUTOMATICO SULLA SELEZIONE DEL TESTO
@@ -846,7 +742,6 @@ function MainAppContent() {
     if (!floatingPopup || !floatingPopup.text || isRewriting) return;
 
     const selectedText = floatingPopup.text;
-    const targetRange = floatingPopup.range;
     setIsRewriting(true);
 
     try {
@@ -865,19 +760,15 @@ function MainAppContent() {
       if (!res.ok) throw new Error(data.error || 'Errore riscrittura.');
 
       const newRewrittenText = data.rewrittenText;
-      const formattedHtmlReplacement = renderMarkdownAndLatexToHtml(newRewrittenText);
 
-      // Sostituzione in-place esatta nel DOM dell'editor
-      if (targetRange) {
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = formattedHtmlReplacement;
-        targetRange.deleteContents();
-        const frag = document.createDocumentFragment();
-        while (tempDiv.firstChild) {
-          frag.appendChild(tempDiv.firstChild);
+      // Sostituzione diretta nel ContentEditable o nel testo
+      if (wysiwygEditorRef.current) {
+        const currentFullText = wysiwygEditorRef.current.innerText || '';
+        if (currentFullText.includes(selectedText)) {
+          const updatedFull = currentFullText.replace(selectedText, newRewrittenText);
+          wysiwygEditorRef.current.innerText = updatedFull;
+          updateTopicLessonContent(currentDayData.dayNumber, currentSelectedTopic.id, updatedFull);
         }
-        targetRange.insertNode(frag);
-        handleEditorInput();
       }
 
       setFloatingPopup(null);
@@ -916,12 +807,12 @@ function MainAppContent() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Errore risposta tutor');
 
-      // Se l'AI ha modificato direttamente il documento, aggiorniamo subito il file e la visualizzazione!
+      // Se l'AI ha modificato direttamente il documento, applichiamo subito la modifica al file!
       if (data.hasUpdatedLesson && data.updatedLessonContent) {
-        setPreviousLessonBackup(currentDocText);
+        setPreviousLessonBackup(currentDocText); // salva per eventuale annulla
         updateTopicLessonContent(currentDayData.dayNumber, currentSelectedTopic.id, data.updatedLessonContent);
         if (wysiwygEditorRef.current) {
-          wysiwygEditorRef.current.innerHTML = renderMarkdownAndLatexToHtml(data.updatedLessonContent);
+          wysiwygEditorRef.current.innerText = data.updatedLessonContent;
         }
       }
 
@@ -944,7 +835,7 @@ function MainAppContent() {
     if (previousLessonBackup && currentDayData && currentSelectedTopic) {
       updateTopicLessonContent(currentDayData.dayNumber, currentSelectedTopic.id, previousLessonBackup);
       if (wysiwygEditorRef.current) {
-        wysiwygEditorRef.current.innerHTML = renderMarkdownAndLatexToHtml(previousLessonBackup);
+        wysiwygEditorRef.current.innerText = previousLessonBackup;
       }
       setPreviousLessonBackup(null);
       alert("Modifica del chatbot annullata.");
@@ -989,7 +880,7 @@ function MainAppContent() {
     return { completed, total, percent };
   };
 
-  // Chat Homepage
+  // Chat Homepage (Layout centrato e stabile)
   const handleSendMessage = async (textToSend = inputPrompt) => {
     const prompt = textToSend.trim();
     if (!prompt && !attachedFile) return;
@@ -1066,12 +957,12 @@ function MainAppContent() {
     return 'Padronanza totale & Dettagli (30 e Lode)';
   };
 
+  const currentDayData = activeProject?.schedule?.find(d => d.dayNumber === selectedDayNumber) || activeProject?.schedule?.[0];
+  const currentSelectedTopic = currentDayData?.topics?.find(t => t.id === selectedTopicId) || currentDayData?.topics?.[0];
+
   const totalFilesSelected = wizardUploadedFiles.length;
   const totalFilesReady = wizardUploadedFiles.filter(f => f.status === 'ready').length;
   const isAnyFileExtracting = extractingCount > 0 || wizardUploadedFiles.some(f => f.status === 'extracting');
-
-  // Array dimensioni testo da 4 a 32
-  const fontSizes = [4, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 26, 28, 30, 32];
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-geminiDark text-gray-200 relative font-sans">
@@ -1080,39 +971,39 @@ function MainAppContent() {
       {floatingPopup && (
         <div 
           id="floating-selection-popup"
-          className="fixed z-50 transform -translate-x-1/2 -translate-y-full mb-2 bg-geminiDarkSecondary/95 border border-blue-500/80 shadow-2xl rounded-2xl p-1.5 flex items-center gap-1.5 animate-popup text-xs backdrop-blur-md"
+          className="fixed z-50 transform -translate-x-1/2 -translate-y-full mb-2 bg-geminiDarkSecondary border border-indigo-500/60 shadow-2xl rounded-2xl p-1.5 flex items-center gap-1 animate-popup text-xs backdrop-blur-md"
           style={{
             left: `${floatingPopup.x}px`,
             top: `${floatingPopup.y}px`,
           }}
         >
           {isRewriting ? (
-            <div className="flex items-center gap-2 px-3 py-1 text-xs text-blue-300">
-              <RefreshCw size={13} className="animate-spin text-blue-400" />
-              <span>Elaborazione in corso...</span>
+            <div className="flex items-center gap-2 px-3 py-1 text-xs text-indigo-300">
+              <RefreshCw size={13} className="animate-spin text-indigo-400" />
+              <span>Elaborazione testo in corso...</span>
             </div>
           ) : (
             <>
               <button
                 onClick={() => handleRewriteFromPopup('riassumi')}
-                className="flex items-center gap-1 px-2.5 py-1.5 hover:bg-blue-600/30 text-gray-200 hover:text-white rounded-xl transition text-xs font-semibold"
-                title="Sintetizza la parte selezionata"
+                className="flex items-center gap-1 px-2.5 py-1.5 hover:bg-indigo-600/30 text-gray-200 hover:text-white rounded-xl transition text-xs font-semibold"
+                title="Sintetizza il passaggio selezionato"
               >
                 <span>📝 Riassumi</span>
               </button>
               <div className="w-[1px] h-4 bg-geminiBorder" />
               <button
                 onClick={() => handleRewriteFromPopup('approfondisci')}
-                className="flex items-center gap-1 px-2.5 py-1.5 hover:bg-blue-600/30 text-gray-200 hover:text-white rounded-xl transition text-xs font-semibold"
-                title="Aggiungi spiegazioni, formule e dettagli"
+                className="flex items-center gap-1 px-2.5 py-1.5 hover:bg-indigo-600/30 text-gray-200 hover:text-white rounded-xl transition text-xs font-semibold"
+                title="Aggiungi dettagli, spiegazioni ed esempi"
               >
                 <span>🔍 Approfondisci</span>
               </button>
               <div className="w-[1px] h-4 bg-geminiBorder" />
               <button
                 onClick={() => handleRewriteFromPopup('chiaro')}
-                className="flex items-center gap-1 px-2.5 py-1.5 hover:bg-blue-600/30 text-gray-200 hover:text-white rounded-xl transition text-xs font-semibold"
-                title="Riscrivi in modo più chiaro e semplice"
+                className="flex items-center gap-1 px-2.5 py-1.5 hover:bg-indigo-600/30 text-gray-200 hover:text-white rounded-xl transition text-xs font-semibold"
+                title="Riscrivi con parole più chiare e semplici"
               >
                 <span>💡 Riscrivi meglio</span>
               </button>
@@ -1129,7 +1020,7 @@ function MainAppContent() {
         />
       )}
 
-      {/* SIDEBAR RETRATTILE */}
+      {/* SIDEBAR */}
       <aside 
         className={`fixed inset-y-0 left-0 z-50 flex flex-col w-80 max-w-[85vw] bg-geminiDarkSecondary border-r border-geminiBorder shadow-2xl transition-transform duration-300 ease-in-out overflow-hidden ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -1227,7 +1118,7 @@ function MainAppContent() {
         </div>
       </aside>
 
-      {/* CONTENUTO PRINCIPALE */}
+      {/* CONTENITORE PRINCIPALE */}
       <div className="flex-1 flex flex-col h-full w-full relative overflow-hidden">
         
         {/* HEADER FISSO */}
@@ -1271,7 +1162,7 @@ function MainAppContent() {
         {currentView === 'wizard' && (
           <main className="flex-1 overflow-y-auto px-4 md:px-8 py-8 max-w-2xl mx-auto w-full flex flex-col justify-center">
             
-            {/* STEP 1 */}
+            {/* STEP 1: CALENDARIO ESAME */}
             {wizardStep === 1 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
                 <div className="flex items-center gap-3">
@@ -1326,7 +1217,7 @@ function MainAppContent() {
               </div>
             )}
 
-            {/* STEP 2 */}
+            {/* STEP 2: DETTAGLI ESAME */}
             {wizardStep === 2 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
                 <div className="flex items-center gap-3">
@@ -1368,7 +1259,7 @@ function MainAppContent() {
                     rows={2}
                     value={examDescription}
                     onChange={(e) => setExamDescription(e.target.value)}
-                    placeholder="Es. Anatomia Patologica, Fisiologia, Diritto Privato..."
+                    placeholder="Es. Anatomia Patologica, Fisiologia, Diritto..."
                     className="w-full bg-geminiDark border border-geminiBorder rounded-2xl p-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition resize-none"
                   />
                 </div>
@@ -1465,7 +1356,7 @@ function MainAppContent() {
                   </div>
                   <div>
                     <h2 className="text-xl font-bold text-gray-100">Fonti di Studio</h2>
-                    <p className="text-xs text-gray-400">Scegli se usare i tuoi file o cercare online.</p>
+                    <p className="text-xs text-gray-400">Scegli come strutturare il tuo materiale di studio.</p>
                   </div>
                 </div>
 
@@ -1492,7 +1383,7 @@ function MainAppContent() {
                     </div>
                     <div>
                       <div className="font-semibold text-sm text-gray-100">Usa il mio materiale</div>
-                      <div className="text-[11px] text-gray-400 mt-0.5">Carica PDF, Word, PPTX o appunti.</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">Carica PDF, Word, PPTX o appunti. L'AI estrarrà solo questi contenuti.</div>
                     </div>
                   </div>
 
@@ -1518,7 +1409,7 @@ function MainAppContent() {
                     </div>
                     <div>
                       <div className="font-semibold text-sm text-gray-100">Cerca online</div>
-                      <div className="text-[11px] text-gray-400 mt-0.5">L'AI strutturerà il programma accademico completo senza file.</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">Nessun file necessario: l'AI strutturerà il programma accademico completo.</div>
                     </div>
                   </div>
                 </div>
@@ -1869,7 +1760,6 @@ function MainAppContent() {
                       setLessonChatMessages([]);
                       setFloatingPopup(null);
                       setPreviousLessonBackup(null);
-                      lastLoadedTopicIdRef.current = null;
                       setCurrentView('day_detail');
                     }}
                     className={`p-4 sm:p-5 rounded-2xl border cursor-pointer transition flex items-center justify-between group ${
@@ -1919,12 +1809,12 @@ function MainAppContent() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* VISTA 4: DETTAGLIO GIORNO CON WYSIWYG & CHATBOT FISSO A LATO */}
+        {/* VISTA 4: DETTAGLIO GIORNO WYSIWYG CON TOOLBAR & CHATBOT FISSO */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'day_detail' && activeProject && currentDayData && (
           <main className="flex-1 flex flex-col h-full w-full overflow-hidden">
             
-            {/* Top Bar 1: Breadcrumb navigazione */}
+            {/* Top Bar 1: Breadcrumbs e selezione argomento */}
             <div className="flex items-center justify-between px-4 sm:px-6 py-2 border-b border-geminiBorder/40 bg-geminiDarkSecondary/70 shrink-0">
               <button 
                 onClick={() => setCurrentView('study_plan')}
@@ -1940,13 +1830,13 @@ function MainAppContent() {
               </div>
             </div>
 
-            {/* Layout Rigido e Flessibile a 2 Colonne */}
+            {/* Layout Rigido a Due Colonne: Nessun traboccamento o spaginatura */}
             <div className="flex-1 flex flex-col md:flex-row h-full w-full overflow-hidden">
               
-              {/* COLONNA SINISTRA: FOGLIO WYSIWYG MODIFICABILE IN TEMPO REALE */}
+              {/* COLONNA SINISTRA: EDITOR WYSIWYG FORMATTATO E MODIFICABILE NATIVAMENTE */}
               <div className="flex-1 flex flex-col h-full overflow-hidden border-r border-geminiBorder/40">
                 
-                {/* Selettore Argomenti e Barra Formattazione */}
+                {/* Selettore Argomenti e Toolbar Superiore */}
                 <div className="px-4 py-2 border-b border-geminiBorder/40 bg-geminiDarkSecondary/30 shrink-0 space-y-2">
                   
                   <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1">
@@ -1957,7 +1847,6 @@ function MainAppContent() {
                           onClick={() => {
                             setSelectedTopicId(topic.id);
                             setFloatingPopup(null);
-                            lastLoadedTopicIdRef.current = null;
                           }}
                           className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 border ${
                             currentSelectedTopic?.id === topic.id
@@ -1982,100 +1871,99 @@ function MainAppContent() {
                         }`}
                       >
                         {isGeneratingLesson ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                        <span>{currentSelectedTopic.lesson ? 'Rigenera' : 'Genera lezione'}</span>
+                        <span>{currentSelectedTopic.lesson ? 'Rigenera lezione' : 'Genera lezione'}</span>
                       </button>
                     )}
                   </div>
 
-                  {/* BARRA FORMATTAZIONE COMPLETA (Font, Dimensione da 4 a 32, B/I/U, Allineamenti, Elenchi) */}
+                  {/* BARRA FORMATTAZIONE RICCA (Font, Dimensione, B/I/U, Allineamento, Elenchi) */}
                   {currentSelectedTopic?.lesson && (
                     <div className="flex items-center gap-1 pt-1 overflow-x-auto text-xs text-gray-300 border-t border-geminiBorder/40">
                       
-                      {/* Carattere del testo selezionato */}
+                      {/* Carattere del testo */}
                       <select 
-                        value={selectedFontFamily}
-                        onChange={(e) => applyCustomFontFamily(e.target.value)}
+                        value={activeFont}
+                        onChange={(e) => {
+                          setActiveFont(e.target.value);
+                          executeEditorCommand('fontName', e.target.value);
+                        }}
                         className="bg-geminiDark border border-geminiBorder rounded-lg px-2 py-1 text-[11px] text-gray-200 focus:outline-none"
-                        title="Carattere testo selezionato"
                       >
-                        <option value="sans-serif">Sans-serif</option>
-                        <option value="serif">Serif (Georgia)</option>
+                        <option value="sans">Sans-serif</option>
+                        <option value="serif">Serif</option>
                         <option value="monospace">Monospace</option>
+                        <option value="Georgia">Georgia</option>
                         <option value="Arial">Arial</option>
-                        <option value="Times New Roman">Times New Roman</option>
-                        <option value="Courier New">Courier New</option>
                       </select>
 
-                      {/* Dimensione testo selezionato (da 4 a 32 px) */}
-                      <div className="flex items-center gap-1 bg-geminiDark border border-geminiBorder rounded-lg px-2 py-0.5">
-                        <span className="text-[10px] text-gray-400">Dim:</span>
-                        <select 
-                          value={selectedFontSize}
-                          onChange={(e) => applyCustomFontSize(Number(e.target.value))}
-                          className="bg-transparent text-[11px] text-gray-200 focus:outline-none cursor-pointer"
-                          title="Dimensione testo selezionato (4 - 32px)"
-                        >
-                          {fontSizes.map(size => (
-                            <option key={size} value={size} className="bg-geminiDark text-gray-200">
-                              {size}px
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      {/* Dimensione del testo */}
+                      <select 
+                        value={activeFontSize}
+                        onChange={(e) => {
+                          setActiveFontSize(e.target.value);
+                          executeEditorCommand('fontSize', e.target.value === '12px' ? '2' : e.target.value === '14px' ? '3' : e.target.value === '18px' ? '5' : '4');
+                        }}
+                        className="bg-geminiDark border border-geminiBorder rounded-lg px-2 py-1 text-[11px] text-gray-200 focus:outline-none"
+                      >
+                        <option value="12px">Piccolo (12px)</option>
+                        <option value="15px">Normale (15px)</option>
+                        <option value="18px">Grande (18px)</option>
+                        <option value="22px">Titolo (22px)</option>
+                      </select>
 
                       <div className="w-[1px] h-4 bg-geminiBorder mx-1" />
 
-                      {/* Grassetto, Corsivo, Sottolineato */}
+                      {/* Stili base */}
                       <button 
-                        onClick={() => applyFormattingCommand('bold')}
+                        onClick={() => executeEditorCommand('bold')}
                         className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-                        title="Grassetto"
+                        title="Grassetto (Cmd+B)"
                       >
                         <Bold size={13} />
                       </button>
                       <button 
-                        onClick={() => applyFormattingCommand('italic')}
+                        onClick={() => executeEditorCommand('italic')}
                         className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-                        title="Corsivo"
+                        title="Corsivo (Cmd+I)"
                       >
                         <Italic size={13} />
                       </button>
                       <button 
-                        onClick={() => applyFormattingCommand('underline')}
+                        onClick={() => executeEditorCommand('underline')}
                         className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-                        title="Sottolineato"
+                        title="Sottolineato (Cmd+U)"
                       >
                         <UnderlineIcon size={13} />
                       </button>
 
                       <div className="w-[1px] h-4 bg-geminiBorder mx-1" />
 
-                      {/* Allineamento Funzionante (Sinistra, Centro, Destra, Giustificato) */}
+                      {/* Allineamento */}
                       <button 
-                        onClick={() => applyAlignment('left')}
+                        onClick={() => executeEditorCommand('justifyLeft')}
                         className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
                         title="Allinea a sinistra"
                       >
                         <AlignLeft size={13} />
                       </button>
                       <button 
-                        onClick={() => applyAlignment('center')}
+                        onClick={() => executeEditorCommand('justifyCenter')}
                         className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
                         title="Centra"
                       >
                         <AlignCenter size={13} />
                       </button>
                       <button 
-                        onClick={() => applyAlignment('right')}
+                        onClick={() => executeEditorCommand('justifyRight')}
                         className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
                         title="Allinea a destra"
                       >
                         <AlignRight size={13} />
                       </button>
                       <button 
-                        onClick={() => applyAlignment('justify')}
+                        onClick={() => executeEditorCommand('justifyFull')}
                         className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-                        title="Giustifica testo"
+                        title="Giustifica"
                       >
                         <AlignJustify size={13} />
                       </button>
@@ -2084,14 +1972,14 @@ function MainAppContent() {
 
                       {/* Elenchi */}
                       <button 
-                        onClick={() => applyFormattingCommand('insertUnorderedList')}
+                        onClick={() => executeEditorCommand('insertUnorderedList')}
                         className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
                         title="Elenco puntato"
                       >
                         <List size={13} />
                       </button>
                       <button 
-                        onClick={() => applyFormattingCommand('insertOrderedList')}
+                        onClick={() => executeEditorCommand('insertOrderedList')}
                         className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
                         title="Elenco numerato"
                       >
@@ -2102,21 +1990,21 @@ function MainAppContent() {
 
                       {/* Intestazioni */}
                       <button 
-                        onClick={() => applyFormattingCommand('formatBlock', '<h2>')}
+                        onClick={() => executeEditorCommand('formatBlock', '<h2>')}
                         className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition text-[11px] font-bold"
                         title="Titolo H2"
                       >
                         H2
                       </button>
                       <button 
-                        onClick={() => applyFormattingCommand('formatBlock', '<h3>')}
+                        onClick={() => executeEditorCommand('formatBlock', '<h3>')}
                         className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition text-[11px] font-bold"
                         title="Titolo H3"
                       >
                         H3
                       </button>
                       <button 
-                        onClick={() => applyFormattingCommand('formatBlock', '<p>')}
+                        onClick={() => executeEditorCommand('formatBlock', '<p>')}
                         className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition text-[11px]"
                         title="Paragrafo normale"
                       >
@@ -2127,22 +2015,22 @@ function MainAppContent() {
 
                 </div>
 
-                {/* AREA DEL DOCUMENTO SCROLLABILE E TOTALMENTE MODIFICABILE */}
+                {/* CORPO DOCUMENTO: SCROLLABILE E TOTALMENTE MODIFICABILE WYSIWYG */}
                 <div className="flex-1 overflow-y-auto p-4 md:p-6 relative">
                   
                   {isGeneratingLesson ? (
                     <div className="h-full flex flex-col items-center justify-center text-center space-y-3 py-16">
                       <Sparkles size={28} className="text-blue-400 animate-bounce" />
                       <div className="text-sm font-semibold text-gray-200">Generazione della lezione in corso...</div>
-                      <div className="text-xs text-gray-400">Elaborazione con formule LaTeX e schemi didattici</div>
+                      <div className="text-xs text-gray-400">Creazione di spiegazioni, tabelle e formule didattiche</div>
                     </div>
                   ) : currentSelectedTopic?.lesson ? (
                     <div className="max-w-3xl mx-auto space-y-4">
                       
-                      {/* Barra di stato documento e completamento */}
+                      {/* Badge info e stato studiato */}
                       <div className="flex items-center justify-between text-xs text-gray-400 bg-geminiDarkSecondary/60 px-4 py-2 rounded-2xl border border-geminiBorder">
                         <span className="text-[11px]">
-                          ✏️ <strong>Documento modificabile</strong>: puoi cliccare e scrivere direttamente nel foglio.
+                          ✏️ <strong>Documento modificabile</strong>: puoi cliccare e digitare direttamente sopra il testo.
                         </span>
                         <button
                           onClick={() => handleToggleTopicComplete(currentDayData.dayNumber, currentSelectedTopic.id)}
@@ -2157,14 +2045,19 @@ function MainAppContent() {
                         </button>
                       </div>
 
-                      {/* FOGLIO WYSIWYG MODIFICABILE IN-PLACE CON FORMULE E FORMATTAZIONE REALE */}
-                      <div className="bg-geminiDarkSecondary/70 border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-xl min-h-[520px]">
+                      {/* FOGLIO WYSIWYG EDITABLE IN-PLACE SENZA CODICE MARKDOWN */}
+                      <div className="bg-geminiDarkSecondary/70 border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-xl min-h-[500px]">
                         <div
                           ref={wysiwygEditorRef}
                           contentEditable="true"
                           suppressContentEditableWarning={true}
                           onInput={handleEditorInput}
-                          className="wysiwyg-editor focus:outline-none select-text"
+                          className="wysiwyg-editor focus:outline-none"
+                          style={{
+                            fontFamily: activeFont === 'serif' ? 'Georgia, serif' : activeFont === 'monospace' ? 'monospace' : 'inherit',
+                            fontSize: activeFontSize
+                          }}
+                          dangerouslySetInnerHTML={{ __html: markdownToHtml(currentSelectedTopic.lesson) }}
                         />
                       </div>
 
@@ -2174,7 +2067,7 @@ function MainAppContent() {
                       <BookOpen size={32} className="mx-auto text-gray-500" />
                       <div className="text-sm font-semibold text-gray-300">Nessuna lezione presente per questo argomento</div>
                       <p className="text-xs text-gray-500 max-w-sm">
-                        Clicca su <strong>"Genera lezione"</strong> in alto per creare la sintesi didattica completa con formule e tabelle.
+                        Clicca su <strong>"Genera lezione"</strong> in alto a destra per creare la sintesi didattica.
                       </p>
                     </div>
                   )}
@@ -2183,7 +2076,7 @@ function MainAppContent() {
 
               </div>
 
-              {/* COLONNA DESTRA: CHATBOT DELLA LEZIONE CON MODIFICA DIRETTA */}
+              {/* COLONNA DESTRA: CHATBOT DEDICATO ALLA LEZIONE CON MODIFICA DIRETTA */}
               <div className="w-full md:w-80 lg:w-96 h-80 md:h-full flex flex-col bg-geminiDarkSecondary border-l border-geminiBorder/60 shrink-0 overflow-hidden">
                 
                 <div className="px-4 py-3 border-b border-geminiBorder/40 bg-geminiDarkSecondary flex items-center justify-between shrink-0">
@@ -2207,13 +2100,13 @@ function MainAppContent() {
                       </p>
                       <div className="space-y-1.5 pt-2 text-left">
                         <button
-                          onClick={() => handleSendLessonChatMessage("Aggiungi una tabella riassuntiva dei concetti chiave")}
+                          onClick={() => handleSendLessonChatMessage("Aggiungi una tabella di riassunto dei punti chiave")}
                           className="w-full text-[11px] p-2 rounded-xl bg-geminiDark hover:bg-geminiHover border border-geminiBorder text-gray-300 text-left transition"
                         >
-                          + "Aggiungi una tabella riassuntiva"
+                          + "Aggiungi una tabella di riassunto"
                         </button>
                         <button
-                          onClick={() => handleSendLessonChatMessage("Spiegami questo argomento con un esempio pratico")}
+                          onClick={() => handleSendLessonChatMessage("Spiegami questo passaggio con un esempio pratico")}
                           className="w-full text-[11px] p-2 rounded-xl bg-geminiDark hover:bg-geminiHover border border-geminiBorder text-gray-300 text-left transition"
                         >
                           + "Spiegami con un esempio pratico"
@@ -2240,11 +2133,11 @@ function MainAppContent() {
                           <p className="whitespace-pre-wrap">{msg.text}</p>
                           {msg.hasUpdatedLesson && (
                             <div className="mt-2 pt-2 border-t border-geminiBorder/60 flex items-center justify-between text-[10px] text-emerald-400 font-semibold">
-                              <span>✨ Documento aggiornato direttamente</span>
+                              <span>✨ Documento aggiornato</span>
                               {previousLessonBackup && (
                                 <button
                                   onClick={handleUndoChatbotChange}
-                                  className="text-gray-400 hover:text-red-300 underline font-normal ml-2"
+                                  className="text-gray-400 hover:text-red-300 underline font-normal"
                                 >
                                   Annulla
                                 </button>
@@ -2303,11 +2196,12 @@ function MainAppContent() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* VISTA 5: CHAT HOMEPAGE CENTRATA E STABILE                    */}
+        {/* VISTA 5: CHAT HOMEPAGE CORRETTA (CENTRATA E NON SPAGINATA)   */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'chat' && (
           <div className="flex-1 flex flex-col h-full w-full overflow-hidden relative">
             
+            {/* Scrollable Container centrato */}
             <div className="flex-1 overflow-y-auto w-full px-4 sm:px-6">
               <div className="max-w-3xl mx-auto py-6 space-y-6 pb-36">
                 
