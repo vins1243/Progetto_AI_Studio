@@ -311,26 +311,3 @@ export async function setSubscriptionActive(userId, plan = 'monthly_14.99') {
     return false;
   }
 }
-
-export async function cancelUserSubscription(userId) {
-  if (!client || !userId) return false;
-  try {
-    const { data, error } = await client
-      .from('profiles')
-      .update({
-        subscription_status: 'canceled',
-      })
-      .eq('id', userId)
-      .select()
-      .single();
-
-    if (error) {
-      console.warn('Errore disdetta abbonamento:', error);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.warn('Cancel subscription exception:', err);
-    return false;
-  }
-}
