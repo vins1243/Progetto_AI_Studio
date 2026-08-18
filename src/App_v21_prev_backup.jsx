@@ -296,8 +296,15 @@ function MainAppContent() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState('projects');
 
-  // Chat Homepage (Supportata solo per utente autenticato)
-  const [conversations, setConversations] = useState([]);
+  // Chat Homepage (Supporto fino a 10 file simultanei)
+  const [conversations, setConversations] = useState(() => {
+    try {
+      const saved = localStorage.getItem('study_ai_chats');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [currentChatId, setCurrentChatId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputPrompt, setInputPrompt] = useState('');
@@ -311,8 +318,15 @@ function MainAppContent() {
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
 
-  // Progetti salvati (Cloud Supabase)
-  const [savedProjects, setSavedProjects] = useState([]);
+  // Projects
+  const [savedProjects, setSavedProjects] = useState(() => {
+    try {
+      const saved = localStorage.getItem('study_ai_projects');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [activeProject, setActiveProject] = useState(null);
   const [selectedDayNumber, setSelectedDayNumber] = useState(1);
   const [selectedTopicId, setSelectedTopicId] = useState(null);
@@ -358,7 +372,6 @@ function MainAppContent() {
   // Wizard State
   // STATO AUTENTICAZIONE E CLOUD SYNC SUPABASE
   const [user, setUser] = useState(null);
-  const [isAuthInitializing, setIsAuthInitializing] = useState(true);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState('login'); // 'login' | 'signup' | 'reset'
   const [authEmail, setAuthEmail] = useState('');
@@ -393,28 +406,14 @@ function MainAppContent() {
 
   // Sincronizzazione Sessione Utente Supabase
   useEffect(() => {
-    if (!supabase) {
-      setIsAuthInitializing(false);
-      return;
-    }
+    if (!supabase) return;
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         setUser(session.user);
         loadCloudData(session.user.id);
-      } else {
-        setUser(null);
-        setSavedProjects([]);
-        setConversations([]);
-        setActiveProject(null);
-        setCurrentChatId(null);
-        setMessages([]);
       }
-      setIsAuthInitializing(false);
-    }).catch(err => {
-      console.warn('Supabase getSession error:', err);
-      setIsAuthInitializing(false);
-    });
+    }).catch(err => console.warn('Supabase getSession error:', err));
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
@@ -422,11 +421,6 @@ function MainAppContent() {
         loadCloudData(session.user.id);
       } else {
         setUser(null);
-        setSavedProjects([]);
-        setConversations([]);
-        setActiveProject(null);
-        setCurrentChatId(null);
-        setMessages([]);
       }
     });
 
@@ -440,9 +434,23 @@ function MainAppContent() {
     setIsCloudSyncing(true);
     try {
       const cloudProjects = await fetchProjectsFromCloud(userId);
-      setSavedProjects(cloudProjects || []);
+      if (cloudProjects && cloudProjects.length > 0) {
+        setSavedProjects((prev) => {
+          const map = new Map();
+          (prev || []).forEach(p => map.set(p.id, p));
+          cloudProjects.forEach(p => map.set(p.id, p));
+          return Array.from(map.values());
+        });
+      }
       const cloudChats = await fetchChatsFromCloud(userId);
-      setConversations(cloudChats || []);
+      if (cloudChats && cloudChats.length > 0) {
+        setConversations((prev) => {
+          const map = new Map();
+          (prev || []).forEach(c => map.set(c.id, c));
+          cloudChats.forEach(c => map.set(c.id, c));
+          return Array.from(map.values());
+        });
+      }
     } catch (err) {
       console.warn('Errore sync dati cloud:', err);
     } finally {
@@ -457,26 +465,16 @@ function MainAppContent() {
     setIsAuthSubmitting(true);
     try {
       if (authMode === 'login') {
-        const res = await signInUser(authEmail, authPassword);
-        const loggedUser = res?.user || res?.session?.user;
-        if (loggedUser) {
-          setUser(loggedUser);
-          await loadCloudData(loggedUser.id);
-        }
+        await signInUser(authEmail, authPassword);
+        setIsAuthModalOpen(false);
         setAuthPassword('');
       } else if (authMode === 'signup') {
-        const res = await signUpUser(authEmail, authPassword, authFullName);
-        const signedUser = res?.user || res?.session?.user;
-        if (signedUser && res?.session) {
-          setUser(signedUser);
-          await loadCloudData(signedUser.id);
-        } else {
-          setAuthSuccess("Registrazione completata con successo! Se richiesto, controlla la tua email per confermare l'account o accedi subito con le tue credenziali.");
-          setTimeout(() => {
-            setAuthMode('login');
-            setAuthSuccess('');
-          }, 3500);
-        }
+        await signUpUser(authEmail, authPassword, authFullName);
+        setAuthSuccess("Registrazione completata con successo! Controlla la tua email per confermare l'account o accedi con le tue credenziali.");
+        setTimeout(() => {
+          setAuthMode('login');
+          setAuthSuccess('');
+        }, 3500);
       } else if (authMode === 'reset') {
         await resetUserPassword(authEmail);
         setAuthSuccess("Ti abbiamo inviato un'email con il link per reimpostare la tua password.");
@@ -494,12 +492,6 @@ function MainAppContent() {
     try {
       await signOutUser();
       setUser(null);
-      setSavedProjects([]);
-      setConversations([]);
-      setActiveProject(null);
-      setCurrentChatId(null);
-      setMessages([]);
-      setCurrentView('chat');
     } catch (err) {
       console.warn('Logout error:', err);
     }
@@ -1842,9 +1834,6 @@ function MainAppContent() {
       const updatedProj = { ...activeProject, quizHistory: updatedHistory, schedule: updatedSchedule };
       setActiveProject(updatedProj);
       setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProj : p));
-      if (user) {
-        saveProjectToCloud(user.id, updatedProj);
-      }
     }
 
     setQuizStep(5);
@@ -1908,9 +1897,6 @@ function MainAppContent() {
     const updatedProject = { ...activeProject, schedule: updatedSchedule };
     setActiveProject(updatedProject);
     setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProject : p));
-    if (user) {
-      saveProjectToCloud(user.id, updatedProject);
-    }
   };
 
   const calculateGlobalProgress = () => {
@@ -2022,202 +2008,6 @@ function MainAppContent() {
   const allProjectTopics = getAllProjectTopics();
   const currentQuizQ = quizQuestions[currentQuestionIndex];
   const readiness = calculateOverallReadiness();
-
-  if (isAuthInitializing) {
-    return (
-      <div className="flex h-screen w-screen items-center justify-center bg-geminiDark text-gray-100">
-        <div className="flex flex-col items-center space-y-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-xl shadow-blue-600/30 animate-pulse">
-            <GraduationCap size={32} />
-          </div>
-          <div className="flex items-center space-x-2 text-sm text-gray-400">
-            <RefreshCw size={16} className="animate-spin text-blue-500" />
-            <span>Verifica sessione in corso...</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="flex min-h-screen w-screen items-center justify-center bg-geminiDark text-gray-100 p-4 sm:p-6 selection:bg-blue-600 selection:text-white">
-        <div className="w-full max-w-md bg-geminiDarkSecondary border border-geminiBorder rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 animate-popup">
-          <div className="text-center space-y-2">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 mx-auto flex items-center justify-center text-white shadow-lg shadow-blue-600/30">
-              <GraduationCap size={28} />
-            </div>
-            <h1 className="text-2xl font-bold text-gray-100 tracking-tight">
-              Study AI
-            </h1>
-            <p className="text-xs text-gray-400">
-              {authMode === 'login' && 'Accedi al tuo account per visualizzare i tuoi progetti di studio e le tue lezioni.'}
-              {authMode === 'signup' && 'Crea un account gratuito per salvare e sincronizzare i tuoi esami nel cloud.'}
-              {authMode === 'reset' && 'Inserisci la tua email per ricevere le istruzioni di recupero password.'}
-            </p>
-          </div>
-
-          {/* Switcher Tab Accedi / Registrati */}
-          {authMode !== 'reset' && (
-            <div className="flex bg-geminiDark p-1 rounded-2xl border border-geminiBorder">
-              <button
-                type="button"
-                onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess(''); }}
-                className={`flex-1 py-2 text-xs font-semibold rounded-xl transition ${
-                  authMode === 'login'
-                    ? 'bg-geminiDarkSecondary text-blue-400 shadow-md border border-geminiBorder/60'
-                    : 'text-gray-400 hover:text-gray-200'
-                }`}
-              >
-                Accedi
-              </button>
-              <button
-                type="button"
-                onClick={() => { setAuthMode('signup'); setAuthError(''); setAuthSuccess(''); }}
-                className={`flex-1 py-2 text-xs font-semibold rounded-xl transition ${
-                  authMode === 'signup'
-                    ? 'bg-geminiDarkSecondary text-blue-400 shadow-md border border-geminiBorder/60'
-                    : 'text-gray-400 hover:text-gray-200'
-                }`}
-              >
-                Registrati
-              </button>
-            </div>
-          )}
-
-          {/* Banner Errore / Successo */}
-          {authError && (
-            <div className="bg-red-500/10 border border-red-500/30 p-3.5 rounded-2xl flex items-center gap-2.5 text-xs text-red-400">
-              <AlertTriangle size={16} className="shrink-0" />
-              <span>{authError}</span>
-            </div>
-          )}
-          {authSuccess && (
-            <div className="bg-emerald-500/10 border border-emerald-500/30 p-3.5 rounded-2xl flex items-center gap-2.5 text-xs text-emerald-400">
-              <CheckCircle2 size={16} className="shrink-0" />
-              <span>{authSuccess}</span>
-            </div>
-          )}
-
-          {/* Form */}
-          <form onSubmit={handleAuthSubmit} className="space-y-4">
-            {authMode === 'signup' && (
-              <div className="space-y-1.5">
-                <label className="block text-[11px] font-semibold text-gray-300 uppercase tracking-wider">
-                  Nome Completo
-                </label>
-                <div className="relative flex items-center">
-                  <User size={16} className="absolute left-3.5 text-gray-400" />
-                  <input
-                    type="text"
-                    required
-                    value={authFullName}
-                    onChange={(e) => setAuthFullName(e.target.value)}
-                    placeholder="es. Mario Rossi"
-                    className="w-full bg-geminiDark border border-geminiBorder rounded-2xl pl-10 pr-4 py-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition"
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <label className="block text-[11px] font-semibold text-gray-300 uppercase tracking-wider">
-                Email
-              </label>
-              <div className="relative flex items-center">
-                <Mail size={16} className="absolute left-3.5 text-gray-400" />
-                <input
-                  type="email"
-                  required
-                  value={authEmail}
-                  onChange={(e) => setAuthEmail(e.target.value)}
-                  placeholder="nome@esempio.it"
-                  className="w-full bg-geminiDark border border-geminiBorder rounded-2xl pl-10 pr-4 py-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition"
-                />
-              </div>
-            </div>
-
-            {authMode !== 'reset' && (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="block text-[11px] font-semibold text-gray-300 uppercase tracking-wider">
-                    Password
-                  </label>
-                  {authMode === 'login' && (
-                    <button
-                      type="button"
-                      onClick={() => { setAuthMode('reset'); setAuthError(''); setAuthSuccess(''); }}
-                      className="text-[11px] text-blue-400 hover:underline"
-                    >
-                      Password dimenticata?
-                    </button>
-                  )}
-                </div>
-                <div className="relative flex items-center">
-                  <Lock size={16} className="absolute left-3.5 text-gray-400" />
-                  <input
-                    type="password"
-                    required
-                    minLength={6}
-                    value={authPassword}
-                    onChange={(e) => setAuthPassword(e.target.value)}
-                    placeholder="Minimo 6 caratteri"
-                    className="w-full bg-geminiDark border border-geminiBorder rounded-2xl pl-10 pr-4 py-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition"
-                  />
-                </div>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={isAuthSubmitting}
-              className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 text-white font-semibold py-3.5 rounded-2xl shadow-lg shadow-blue-600/25 transition transform active:scale-98 flex items-center justify-center gap-2 text-sm"
-            >
-              {isAuthSubmitting ? (
-                <>
-                  <RefreshCw size={16} className="animate-spin" />
-                  <span>Elaborazione in corso...</span>
-                </>
-              ) : (
-                <>
-                  {authMode === 'login' && (
-                    <>
-                      <LogIn size={16} />
-                      <span>Accedi</span>
-                    </>
-                  )}
-                  {authMode === 'signup' && (
-                    <>
-                      <Sparkles size={16} />
-                      <span>Crea Account Gratuito</span>
-                    </>
-                  )}
-                  {authMode === 'reset' && (
-                    <>
-                      <Mail size={16} />
-                      <span>Invia Link di Recupero</span>
-                    </>
-                  )}
-                </>
-              )}
-            </button>
-          </form>
-
-          {authMode === 'reset' && (
-            <div className="text-center pt-2">
-              <button
-                type="button"
-                onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess(''); }}
-                className="text-xs text-blue-400 hover:underline font-semibold"
-              >
-                Torna al Login
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-geminiDark text-gray-200 relative font-sans">
