@@ -54,17 +54,11 @@ import {
   XCircle,
   ChevronDown,
   TrendingUp,
-  Activity,
-  Mic,
-  MicOff,
-  Image as ImageIcon,
-  Crop,
-  Maximize,
-  Minimize
+  Activity
 } from 'lucide-react';
 
 // IndexedDB Helper
-const DB_NAME = 'StudyAIDB_V10';
+const DB_NAME = 'StudyAIDB_V9';
 const STORE_NAME = 'project_data_store';
 
 function getDB() {
@@ -272,9 +266,11 @@ export default function App() {
 function MainAppContent() {
   const [currentView, setCurrentView] = useState('chat');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [sidebarTab, setSidebarTab] = useState('projects'); // 'conversations' | 'projects'
 
-  // Chat Homepage (Supporto fino a 10 file simultanei)
+  // SCHEDA ATTIVA NEL MENU LATERALE ('conversations' | 'projects')
+  const [sidebarTab, setSidebarTab] = useState('projects');
+
+  // Chat Homepage
   const [conversations, setConversations] = useState(() => {
     try {
       const saved = localStorage.getItem('study_ai_chats');
@@ -286,15 +282,8 @@ function MainAppContent() {
   const [currentChatId, setCurrentChatId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputPrompt, setInputPrompt] = useState('');
-  const [attachedFiles, setAttachedFiles] = useState([]); // Array fino a 10 file
+  const [attachedFile, setAttachedFile] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isDraggingOverChat, setIsDraggingOverChat] = useState(false);
-
-  // DETTATURA VOCALE CON OPENAI WHISPER
-  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
-  const [isTranscribingAudio, setIsTranscribingAudio] = useState(false);
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
 
   // Projects
   const [savedProjects, setSavedProjects] = useState(() => {
@@ -313,10 +302,6 @@ function MainAppContent() {
   // POPUP FLUTTUANTE SU SELEZIONE TESTO
   const [floatingPopup, setFloatingPopup] = useState(null);
   const [isRewriting, setIsRewriting] = useState(false);
-
-  // CONTROLLI IMMAGINE NELLA LEZIONE
-  const [selectedImageEl, setSelectedImageEl] = useState(null);
-  const [imageToolPos, setImageToolPos] = useState(null);
 
   // CHATBOT LEZIONE CON MODIFICA DIRETTA
   const [lessonChatMessages, setLessonChatMessages] = useState([]);
@@ -358,7 +343,6 @@ function MainAppContent() {
   const [loadingStatusText, setLoadingStatusText] = useState('Inizializzazione...');
 
   const fileInputRef = useRef(null);
-  const imageUploadInputRef = useRef(null);
   const wizardFileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
   const lessonChatEndRef = useRef(null);
@@ -418,29 +402,6 @@ function MainAppContent() {
     }
   }, [currentView, currentSelectedTopic?.id, currentSelectedTopic?.lesson]);
 
-  // Gestione clic sulle immagini dentro l'editor per mostrare toolbar controlli
-  useEffect(() => {
-    const handleEditorClick = (e) => {
-      if (currentView !== 'day_detail') return;
-
-      if (e.target && e.target.tagName === 'IMG') {
-        const img = e.target;
-        setSelectedImageEl(img);
-        const rect = img.getBoundingClientRect();
-        setImageToolPos({
-          x: Math.max(10, rect.left + rect.width / 2),
-          y: Math.max(50, rect.top - 10)
-        });
-      } else if (!e.target.closest('#image-editing-toolbar')) {
-        setSelectedImageEl(null);
-        setImageToolPos(null);
-      }
-    };
-
-    document.addEventListener('click', handleEditorClick);
-    return () => document.removeEventListener('click', handleEditorClick);
-  }, [currentView]);
-
   // Rilevamento selezione testo per popup fluttuante
   useEffect(() => {
     const handleSelection = () => {
@@ -482,7 +443,7 @@ function MainAppContent() {
     };
 
     const handleMouseDown = (e) => {
-      if (e.target.closest('#floating-selection-popup') || e.target.closest('#image-editing-toolbar')) return;
+      if (e.target.closest('#floating-selection-popup')) return;
       setTimeout(handleSelection, 120);
     };
 
@@ -509,7 +470,7 @@ function MainAppContent() {
     setCurrentChatId(null);
     setMessages([]);
     setInputPrompt('');
-    setAttachedFiles([]);
+    setAttachedFile(null);
     setCurrentView('chat');
     setIsSidebarOpen(false);
   };
@@ -517,7 +478,7 @@ function MainAppContent() {
   const handleSelectChat = (chat) => {
     setCurrentChatId(chat.id);
     setMessages(chat.messages || []);
-    setAttachedFiles([]);
+    setAttachedFile(null);
     setCurrentView('chat');
     setIsSidebarOpen(false);
   };
@@ -554,255 +515,23 @@ function MainAppContent() {
     setIsSidebarOpen(false);
   };
 
-  // -------------------------------------------------------------
-  // GESTIONE FILE E DRAG & DROP PER LA CHAT (MAX 10 FILE)
-  // -------------------------------------------------------------
-  const processFilesForChat = async (filesList) => {
-    const remainingSlots = 10 - attachedFiles.length;
-    if (remainingSlots <= 0) {
-      alert("Puoi caricare un massimo di 10 file per richiesta.");
-      return;
-    }
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-    const filesToProcess = Array.from(filesList).slice(0, remainingSlots);
-
-    for (const file of filesToProcess) {
-      const name = file.name.toLowerCase();
-      const mime = (file.type || '').toLowerCase();
-
-      try {
-        if (mime.startsWith('image/')) {
-          const reader = new FileReader();
-          reader.onload = () => {
-            setAttachedFiles(prev => [...prev.slice(0, 9), {
-              id: Date.now() + Math.random(),
-              name: file.name,
-              size: (file.size / 1024).toFixed(1) + ' KB',
-              mimeType: file.type || 'image/jpeg',
-              base64: reader.result,
-              isImage: true
-            }]);
-          };
-          reader.readAsDataURL(file);
-        } else {
-          let text = '';
-          if (name.endsWith('.pdf') || mime.includes('pdf')) {
-            const buffer = await file.arrayBuffer();
-            const res = await extractTextFromPdf(buffer);
-            text = res.text;
-          } else if (name.endsWith('.docx') || mime.includes('word')) {
-            const buffer = await file.arrayBuffer();
-            const res = await extractTextFromDocx(buffer);
-            text = res.text;
-          } else if (name.endsWith('.pptx') || mime.includes('presentation')) {
-            const buffer = await file.arrayBuffer();
-            const res = await extractTextFromPptx(buffer);
-            text = res.text;
-          } else {
-            text = await file.text();
-          }
-
-          setAttachedFiles(prev => [...prev.slice(0, 9), {
-            id: Date.now() + Math.random(),
-            name: file.name,
-            size: (file.size / 1024).toFixed(1) + ' KB',
-            mimeType: file.type || 'text/plain',
-            text: text,
-            isImage: false
-          }]);
-        }
-      } catch (err) {
-        console.error("Errore lettura file per chat:", err);
-      }
-    }
-  };
-
-  const handleChatFileSelect = (e) => {
-    if (e.target.files && e.target.files.length) {
-      processFilesForChat(e.target.files);
-    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setAttachedFile({
+        name: file.name,
+        mimeType: file.type || 'text/plain',
+        size: (file.size / 1024).toFixed(1) + ' KB',
+        base64: reader.result,
+      });
+    };
+    reader.readAsDataURL(file);
     e.target.value = '';
   };
 
-  const handleChatDragOver = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDraggingOverChat(true);
-  };
-
-  const handleChatDragLeave = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDraggingOverChat(false);
-  };
-
-  const handleChatDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDraggingOverChat(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length) {
-      processFilesForChat(e.dataTransfer.files);
-    }
-  };
-
-  const handleRemoveAttachedChatFile = (fileId) => {
-    setAttachedFiles(prev => prev.filter(f => f.id !== fileId));
-  };
-
-  // -------------------------------------------------------------
-  // DETTATURA VOCALE CON OPENAI WHISPER
-  // -------------------------------------------------------------
-  const handleToggleVoiceRecording = async () => {
-    if (isRecordingAudio) {
-      // Ferma registrazione
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-      }
-      setIsRecordingAudio(false);
-    } else {
-      // Avvia registrazione
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        alert("Il tuo browser non supporta la registrazione microfonica.");
-        return;
-      }
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        audioChunksRef.current = [];
-
-        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
-          ? 'audio/webm;codecs=opus' 
-          : (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : 'audio/webm');
-
-        const mediaRecorder = new MediaRecorder(stream, { mimeType });
-        mediaRecorderRef.current = mediaRecorder;
-
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) {
-            audioChunksRef.current.push(e.data);
-          }
-        };
-
-        mediaRecorder.onstop = async () => {
-          // Chiudi tracce audio
-          stream.getTracks().forEach(track => track.stop());
-
-          const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-          if (audioBlob.size < 500) return;
-
-          setIsTranscribingAudio(true);
-
-          try {
-            const reader = new FileReader();
-            reader.onload = async () => {
-              const base64Audio = reader.result;
-
-              const res = await fetch('/.netlify/functions/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  action: 'transcribe_audio',
-                  audioBase64: base64Audio,
-                  audioMimeType: mimeType
-                }),
-              });
-
-              const data = await res.json();
-              if (data.text) {
-                setInputPrompt(prev => prev ? `${prev.trim()} ${data.text.trim()}` : data.text.trim());
-              }
-            };
-            reader.readAsDataURL(audioBlob);
-          } catch (err) {
-            console.error("Errore dettatura Whisper:", err);
-          } finally {
-            setIsTranscribingAudio(false);
-          }
-        };
-
-        mediaRecorder.start();
-        setIsRecordingAudio(true);
-      } catch (err) {
-        alert("Permesso microfono non concesso o errore audio.");
-        setIsRecordingAudio(false);
-      }
-    }
-  };
-
-  // -------------------------------------------------------------
-  // GESTIONE IMMAGINI NELLE LEZIONI (PASTE, UPLOAD & CONTROLLI)
-  // -------------------------------------------------------------
-  // Inserimento immagine al cursore
-  const insertImageAtCaret = (base64Url) => {
-    if (!wysiwygEditorRef.current) return;
-
-    wysiwygEditorRef.current.focus();
-    const imgHtml = `<div class="lesson-image-wrapper my-4 text-center select-none" contenteditable="false"><img src="${base64Url}" alt="Immagine didattica" class="lesson-img rounded-2xl shadow-xl border border-geminiBorder/80 max-w-full inline-block cursor-pointer transition hover:opacity-90" style="width: 60%;" /></div><p><br></p>`;
-    
-    document.execCommand('insertHTML', false, imgHtml);
-    handleEditorInput();
-  };
-
-  // Paste immagine da appunti
-  const handleEditorPaste = (e) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-
-    for (const item of items) {
-      if (item.type.startsWith('image/')) {
-        e.preventDefault();
-        const file = item.getAsFile();
-        if (file) {
-          const reader = new FileReader();
-          reader.onload = () => insertImageAtCaret(reader.result);
-          reader.readAsDataURL(file);
-        }
-        return;
-      }
-    }
-  };
-
-  // Upload immagine da tasto barra formattazione
-  const handleImageFileSelect = (e) => {
-    const file = e.target.files?.[0];
-    if (file && file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = () => insertImageAtCaret(reader.result);
-      reader.readAsDataURL(file);
-    }
-    e.target.value = '';
-  };
-
-  // Controlli per immagine selezionata
-  const handleResizeImage = (widthPercent) => {
-    if (selectedImageEl) {
-      selectedImageEl.style.width = `${widthPercent}%`;
-      handleEditorInput();
-    }
-  };
-
-  const handleAlignImage = (alignClass) => {
-    if (selectedImageEl) {
-      const wrapper = selectedImageEl.closest('.lesson-image-wrapper');
-      if (wrapper) {
-        wrapper.className = `lesson-image-wrapper my-4 select-none ${alignClass}`;
-        handleEditorInput();
-      }
-    }
-  };
-
-  const handleDeleteImage = () => {
-    if (selectedImageEl) {
-      const wrapper = selectedImageEl.closest('.lesson-image-wrapper');
-      if (wrapper) wrapper.remove();
-      else selectedImageEl.remove();
-      setSelectedImageEl(null);
-      setImageToolPos(null);
-      handleEditorInput();
-    }
-  };
-
-  // Wizard multi-file
   const handleWizardFilesChange = async (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
@@ -992,7 +721,7 @@ function MainAppContent() {
 
       setSavedProjects(old => [newProject, ...(old || [])]);
       setActiveProject(newProject);
-      setSidebarTab('projects');
+      setSidebarTab('projects'); // Porta la sidebar su progetti
 
       setTimeout(() => {
         setCurrentView('project');
@@ -1636,23 +1365,23 @@ function MainAppContent() {
     return { completed, total, percent };
   };
 
-  // Chat Homepage: invio messaggi con multi-file (fino a 10 file)
+  // Chat Homepage
   const handleSendMessage = async (textToSend = inputPrompt) => {
     const prompt = textToSend.trim();
-    if (!prompt && attachedFiles.length === 0) return;
+    if (!prompt && !attachedFile) return;
     if (isLoading) return;
 
     const userMessage = {
       role: 'user',
       text: prompt,
-      files: attachedFiles.map(f => ({ name: f.name, size: f.size, isImage: f.isImage })),
+      file: attachedFile ? { name: attachedFile.name, size: attachedFile.size } : null,
     };
 
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setInputPrompt('');
-    const filesPayload = [...attachedFiles];
-    setAttachedFiles([]);
+    const filePayload = attachedFile;
+    setAttachedFile(null);
     setIsLoading(true);
 
     if (textareaRef.current) {
@@ -1666,7 +1395,7 @@ function MainAppContent() {
         body: JSON.stringify({
           prompt: prompt,
           history: messages,
-          files: filesPayload,
+          file: filePayload,
         }),
       });
 
@@ -1681,7 +1410,7 @@ function MainAppContent() {
       if (!chatId) {
         chatId = Date.now().toString();
         setCurrentChatId(chatId);
-        const title = prompt ? (prompt.slice(0, 28) + (prompt.length > 28 ? '...' : '')) : (filesPayload[0]?.name || 'Nuova sessione');
+        const title = prompt ? (prompt.slice(0, 28) + (prompt.length > 28 ? '...' : '')) : (filePayload?.name || 'Nuova sessione');
         setConversations([{ id: chatId, title, messages: updatedMessages }, ...(conversations || [])]);
       } else {
         setConversations((conversations || []).map(c => c.id === chatId ? { ...c, messages: updatedMessages } : c));
@@ -1767,72 +1496,6 @@ function MainAppContent() {
               </button>
             </>
           )}
-        </div>
-      )}
-
-      {/* TOOLBAR CONTESTUALE PER MODIFICA IMMAGINI NELLE LEZIONI */}
-      {selectedImageEl && imageToolPos && (
-        <div
-          id="image-editing-toolbar"
-          className="fixed z-50 transform -translate-x-1/2 -translate-y-full mb-2 bg-geminiDarkSecondary border border-indigo-500/80 shadow-2xl rounded-2xl p-1.5 flex items-center gap-1.5 animate-popup text-xs backdrop-blur-md"
-          style={{
-            left: `${imageToolPos.x}px`,
-            top: `${imageToolPos.y}px`,
-          }}
-        >
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-gray-400 font-bold px-1">Dimensione:</span>
-            {[
-              { label: '25%', val: 25 },
-              { label: '50%', val: 50 },
-              { label: '75%', val: 75 },
-              { label: '100%', val: 100 },
-            ].map(sz => (
-              <button
-                key={sz.val}
-                onClick={() => handleResizeImage(sz.val)}
-                className="px-2 py-0.5 bg-geminiDark hover:bg-geminiHover border border-geminiBorder rounded-lg text-[10px] font-semibold text-gray-200 transition"
-              >
-                {sz.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="w-[1px] h-4 bg-geminiBorder mx-0.5" />
-
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => handleAlignImage('text-left')}
-              className="p-1 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-              title="Allinea a sinistra"
-            >
-              <AlignLeft size={13} />
-            </button>
-            <button
-              onClick={() => handleAlignImage('text-center')}
-              className="p-1 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-              title="Centra immagine"
-            >
-              <AlignCenter size={13} />
-            </button>
-            <button
-              onClick={() => handleAlignImage('text-right')}
-              className="p-1 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-              title="Allinea a destra"
-            >
-              <AlignRight size={13} />
-            </button>
-          </div>
-
-          <div className="w-[1px] h-4 bg-geminiBorder mx-0.5" />
-
-          <button
-            onClick={handleDeleteImage}
-            className="p-1 hover:bg-red-500/20 text-gray-400 hover:text-red-400 rounded-lg transition"
-            title="Elimina immagine"
-          >
-            <Trash2 size={13} />
-          </button>
         </div>
       )}
 
@@ -2364,6 +2027,7 @@ function MainAppContent() {
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
+        {/* HEADER SIDEBAR CON SEGMENTED SWITCHER */}
         <div className="p-3.5 border-b border-geminiBorder/60 space-y-3 bg-geminiDarkSecondary shrink-0">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Archivio Personale</span>
@@ -2376,6 +2040,7 @@ function MainAppContent() {
             </button>
           </div>
 
+          {/* SEGMENTED PILL SWITCHER STILE GEMINI */}
           <div className="flex bg-geminiDark p-1 rounded-2xl border border-geminiBorder/80">
             <button
               onClick={() => setSidebarTab('conversations')}
@@ -2412,6 +2077,7 @@ function MainAppContent() {
             </button>
           </div>
 
+          {/* PULSANTE D'AZIONE CONTESTUALE */}
           {sidebarTab === 'conversations' ? (
             <button 
               onClick={handleNewChat}
@@ -2431,7 +2097,10 @@ function MainAppContent() {
           )}
         </div>
 
+        {/* CONTENUTO DELLA SCHEDA SELEZIONATA */}
         <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          
+          {/* VISTA SCHEDA: PROGETTI */}
           {sidebarTab === 'projects' && (
             <div className="space-y-1">
               <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-3 py-1 flex items-center justify-between">
@@ -2477,6 +2146,7 @@ function MainAppContent() {
             </div>
           )}
 
+          {/* VISTA SCHEDA: CONVERSAZIONI */}
           {sidebarTab === 'conversations' && (
             <div className="space-y-1">
               <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-3 py-1 flex items-center justify-between">
@@ -2558,10 +2228,11 @@ function MainAppContent() {
         </header>
 
         {/* ------------------------------------------------------------- */}
-        {/* VISTA 1: WIZARD                                               */}
+        {/* VISTA 1: WIZARD "CREA GUIDA ALLO STUDIO"                      */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'wizard' && (
           <main className="flex-1 overflow-y-auto px-4 md:px-8 py-8 max-w-2xl mx-auto w-full flex flex-col justify-center">
+            {/* Wizard step 1 a 4 */}
             {wizardStep === 1 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
                 <div className="flex items-center gap-3">
@@ -3010,7 +2681,7 @@ function MainAppContent() {
                 </div>
               </div>
 
-              {/* WIDGET GRADO DI PREPARAZIONE GENERALE */}
+              {/* WIDGET PROMINENTE: GRADO DI PREPARAZIONE GENERALE */}
               <div className="mt-4 p-4 rounded-2xl bg-geminiDark/80 border border-blue-500/30 space-y-2.5 shadow-inner">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -3039,7 +2710,7 @@ function MainAppContent() {
               </div>
             </div>
 
-            {/* GRIGLIA 3 SEZIONI */}
+            {/* GRIGLIA 3 SEZIONI: MATERIALI, PIANO DIDATTICO E VERIFICA COMPETENZE */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 rounded-3xl shadow-sm space-y-4 flex flex-col justify-between">
@@ -3192,7 +2863,6 @@ function MainAppContent() {
                       setSelectedTopicId(day.topics?.[0]?.id || null);
                       setLessonChatMessages([]);
                       setFloatingPopup(null);
-                      setSelectedImageEl(null);
                       setPreviousLessonBackup(null);
                       lastLoadedTopicIdRef.current = null;
                       setCurrentView('day_detail');
@@ -3244,7 +2914,7 @@ function MainAppContent() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* VISTA 4: DETTAGLIO GIORNO CON INSERIMENTO IMMAGINI E CONTROLLI */}
+        {/* VISTA 4: DETTAGLIO GIORNO CON TASTO "VERIFICA LEZIONE" DEDICATO */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'day_detail' && activeProject && currentDayData && (
           <main className="flex-1 flex flex-col h-full w-full overflow-hidden">
@@ -3266,7 +2936,7 @@ function MainAppContent() {
 
             <div className="flex-1 flex flex-col md:flex-row h-full w-full overflow-hidden">
               
-              {/* COLONNA SINISTRA: FOGLIO WYSIWYG CON PASTE E UPLOAD IMMAGINI */}
+              {/* COLONNA SINISTRA: FOGLIO WYSIWYG */}
               <div className="flex-1 flex flex-col h-full overflow-hidden border-r border-geminiBorder/40">
                 
                 <div className="px-4 py-2 border-b border-geminiBorder/40 bg-geminiDarkSecondary/30 shrink-0 space-y-2">
@@ -3279,7 +2949,6 @@ function MainAppContent() {
                           onClick={() => {
                             setSelectedTopicId(topic.id);
                             setFloatingPopup(null);
-                            setSelectedImageEl(null);
                             lastLoadedTopicIdRef.current = null;
                           }}
                           className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 border ${
@@ -3321,7 +2990,7 @@ function MainAppContent() {
                     )}
                   </div>
 
-                  {/* BARRA FORMATTAZIONE CON TASTO INSERISCI IMMAGINE */}
+                  {/* BARRA FORMATTAZIONE RICCA */}
                   {currentSelectedTopic?.lesson && (
                     <div className="flex items-center gap-1 pt-1 overflow-x-auto text-xs text-gray-300 border-t border-geminiBorder/40">
                       
@@ -3429,28 +3098,33 @@ function MainAppContent() {
 
                       <div className="w-[1px] h-4 bg-geminiBorder mx-1" />
 
-                      {/* TASTO ICONA CARICA IMMAGINE */}
-                      <input 
-                        type="file" 
-                        ref={imageUploadInputRef} 
-                        accept="image/*" 
-                        onChange={handleImageFileSelect} 
-                        className="hidden" 
-                      />
-                      <button
-                        onClick={() => imageUploadInputRef.current?.click()}
-                        className="p-1.5 hover:bg-blue-600/30 text-blue-400 hover:text-blue-300 rounded-lg transition flex items-center gap-1 font-semibold"
-                        title="Inserisci immagine nel documento"
+                      <button 
+                        onClick={() => applyFormattingCommand('formatBlock', '<h2>')}
+                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition text-[11px] font-bold"
+                        title="Titolo H2"
                       >
-                        <ImageIcon size={14} />
-                        <span className="text-[10px]">Immagine</span>
+                        H2
+                      </button>
+                      <button 
+                        onClick={() => applyFormattingCommand('formatBlock', '<h3>')}
+                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition text-[11px] font-bold"
+                        title="Titolo H3"
+                      >
+                        H3
+                      </button>
+                      <button 
+                        onClick={() => applyFormattingCommand('formatBlock', '<p>')}
+                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition text-[11px]"
+                        title="Paragrafo normale"
+                      >
+                        P
                       </button>
                     </div>
                   )}
 
                 </div>
 
-                {/* CORPO DELLA LEZIONE CON SUPPORTO INCOLLA IMMAGINI */}
+                {/* CORPO DELLA LEZIONE */}
                 <div className="flex-1 overflow-y-auto p-4 md:p-6 relative">
                   
                   {isGeneratingLesson ? (
@@ -3464,7 +3138,7 @@ function MainAppContent() {
                       
                       <div className="flex flex-wrap items-center justify-between text-xs text-gray-400 bg-geminiDarkSecondary/60 px-4 py-2 rounded-2xl border border-geminiBorder gap-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-[11px]">✏️ <strong>Modifica testo attiva</strong> • Puoi incollare immagini (Ctrl+V)</span>
+                          <span className="text-[11px]">✏️ <strong>Modifica testo attiva</strong></span>
                           {currentSelectedTopic.quizScore && (
                             <span className="bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-md border border-amber-500/30 text-[10px] font-bold">
                               Verifica: {currentSelectedTopic.quizScore}/30
@@ -3491,7 +3165,6 @@ function MainAppContent() {
                           contentEditable="true"
                           suppressContentEditableWarning={true}
                           onInput={handleEditorInput}
-                          onPaste={handleEditorPaste}
                           className="wysiwyg-editor focus:outline-none select-text"
                         />
                       </div>
@@ -3629,29 +3302,13 @@ function MainAppContent() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* VISTA 5: CHAT CON DRAG&DROP (FINO A 10 FILE) E DETTATURA WHISPER */}
+        {/* VISTA 5: CHAT HOMEPAGE CENTRATA E STABILE                    */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'chat' && (
-          <div 
-            onDragOver={handleChatDragOver}
-            onDragEnter={handleChatDragOver}
-            onDragLeave={handleChatDragLeave}
-            onDrop={handleChatDrop}
-            className="flex-1 flex flex-col h-full w-full overflow-hidden relative"
-          >
+          <div className="flex-1 flex flex-col h-full w-full overflow-hidden relative">
             
-            {/* OVERLAY DRAG & DROP PER CHAT */}
-            {isDraggingOverChat && (
-              <div className="absolute inset-0 z-50 bg-blue-950/85 border-4 border-dashed border-blue-400 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-fadeIn pointer-events-none">
-                <UploadCloud size={48} className="text-blue-400 animate-bounce mb-3" />
-                <h3 className="text-lg font-bold text-white">Rilascia qui i tuoi file</h3>
-                <p className="text-xs text-blue-200 mt-1">Puoi caricare fino a 10 file (PDF, immagini, Word, PPTX o testi)</p>
-              </div>
-            )}
-
-            {/* Messaggi */}
             <div className="flex-1 overflow-y-auto w-full px-4 sm:px-6">
-              <div className="max-w-3xl mx-auto py-6 space-y-6 pb-40">
+              <div className="max-w-3xl mx-auto py-6 space-y-6 pb-36">
                 
                 {messages.length === 0 ? (
                   <div className="min-h-[55vh] flex flex-col items-center justify-center text-center">
@@ -3663,7 +3320,7 @@ function MainAppContent() {
                       Cosa vuoi studiare oggi?
                     </h1>
                     <p className="text-gray-400 text-sm md:text-base max-w-md mb-8">
-                      Fai una domanda libera, usa la <strong>dettatura vocale</strong> o trascina fino a 10 file per un'analisi approfondita.
+                      Fai una domanda libera, oppure clicca su <strong>"Crea guida allo studio"</strong> in alto per pianificare il tuo prossimo esame.
                     </p>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg">
@@ -3671,7 +3328,7 @@ function MainAppContent() {
                         { icon: BookOpen, text: "Spiegami un argomento complesso con parole semplici" },
                         { icon: FileText, text: "Crea uno schema riassuntivo con i punti chiave" },
                         { icon: GraduationCap, text: "Fammi 5 domande a risposta multipla per testarmi" },
-                        { icon: Sparkles, text: "Analizza e confronta i file che trascino qui" }
+                        { icon: Sparkles, text: "Analizza e sintetizza il materiale che carico" }
                       ].map((item, idx) => (
                         <button
                           key={idx}
@@ -3703,14 +3360,11 @@ function MainAppContent() {
                           ? 'bg-blue-600 text-white rounded-br-sm shadow-md whitespace-pre-wrap' 
                           : 'bg-geminiDarkSecondary border border-geminiBorder text-gray-200 rounded-tl-sm shadow-sm'
                       }`}>
-                        {msg.files && msg.files.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 mb-2.5">
-                            {msg.files.map((f, fi) => (
-                              <div key={fi} className="flex items-center gap-1.5 px-2 py-1 bg-black/30 rounded-lg text-xs text-gray-200 border border-white/10">
-                                {f.isImage ? <ImageIcon size={12} className="text-indigo-300" /> : <FileText size={12} className="text-blue-300" />}
-                                <span className="font-medium truncate max-w-[140px]">{f.name}</span>
-                              </div>
-                            ))}
+                        {msg.file && (
+                          <div className="flex items-center gap-2 p-2 mb-2.5 bg-black/20 rounded-lg text-xs text-gray-200 border border-white/10">
+                            <FileText size={14} className="text-blue-300" />
+                            <span className="font-medium truncate">{msg.file.name}</span>
+                            <span className="text-gray-300">({msg.file.size})</span>
                           </div>
                         )}
                         
@@ -3739,68 +3393,29 @@ function MainAppContent() {
               </div>
             </div>
 
-            {/* Input Bar Fisso con Drag & Drop Chip List, Upload Multi-File e Dettatura Whisper */}
             <footer className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-geminiDark via-geminiDark to-transparent z-10">
               <div className="max-w-3xl mx-auto">
                 
-                {/* LISTA FILE ALLEGATI CHAT (FINO A 10 FILE) */}
-                {attachedFiles.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-2 max-h-24 overflow-y-auto p-1 bg-geminiDarkSecondary/80 rounded-2xl border border-geminiBorder shadow-md">
-                    {attachedFiles.map(file => (
-                      <div 
-                        key={file.id} 
-                        className="flex items-center gap-1.5 px-2.5 py-1 bg-geminiDark border border-geminiBorder rounded-xl text-xs text-blue-300"
-                      >
-                        {file.isImage ? <ImageIcon size={13} className="text-indigo-400" /> : <FileText size={13} className="text-blue-400" />}
-                        <span className="truncate max-w-[130px] font-medium text-[11px]">{file.name}</span>
-                        <span className="text-gray-400 text-[10px]">({file.size})</span>
-                        <button 
-                          onClick={() => handleRemoveAttachedChatFile(file.id)}
-                          className="p-0.5 hover:text-red-400 transition ml-0.5"
-                          title="Rimuovi file"
-                        >
-                          <X size={12} />
-                        </button>
-                      </div>
-                    ))}
-                    <span className="text-[10px] text-gray-400 self-center px-1">
-                      {attachedFiles.length}/10 file
-                    </span>
-                  </div>
-                )}
-
-                {/* BANNER REGISTRAZIONE / TRASCRIZIONE WHISPER */}
-                {isRecordingAudio && (
-                  <div className="flex items-center justify-between gap-2 mb-2 px-4 py-2 bg-red-950/60 border border-red-500/50 rounded-2xl text-xs text-red-200 animate-pulse shadow-lg">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
-                      <span className="font-bold">Registrazione vocale in corso... Parla pure</span>
-                    </div>
-                    <button
-                      onClick={handleToggleVoiceRecording}
-                      className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl text-xs transition"
+                {attachedFile && (
+                  <div className="flex items-center gap-2 mb-2 px-3 py-1.5 bg-geminiDarkSecondary border border-geminiBorder rounded-lg text-xs w-fit text-blue-300 shadow-md">
+                    <FileText size={14} />
+                    <span className="truncate max-w-[220px] font-medium">{attachedFile.name}</span>
+                    <span className="text-gray-400">({attachedFile.size})</span>
+                    <button 
+                      onClick={() => setAttachedFile(null)}
+                      className="p-0.5 hover:text-red-400 transition"
+                      title="Rimuovi allegato"
                     >
-                      Termina e Trascrivi
+                      <X size={14} />
                     </button>
                   </div>
                 )}
 
-                {isTranscribingAudio && (
-                  <div className="flex items-center gap-2 mb-2 px-4 py-2 bg-blue-950/60 border border-blue-500/50 rounded-2xl text-xs text-blue-200 shadow-lg">
-                    <RefreshCw size={14} className="animate-spin text-blue-400" />
-                    <span>Trascrizione intelligente in corso con OpenAI Whisper...</span>
-                  </div>
-                )}
-
-                {/* Box di digitazione con controlli */}
                 <div className="flex items-end gap-2 bg-geminiDarkSecondary border border-geminiBorder rounded-3xl px-4 py-2.5 shadow-xl focus-within:border-blue-500 transition">
-                  
-                  {/* Tasto Allega Multi-File */}
                   <input 
                     type="file" 
                     ref={fileInputRef}
-                    multiple
-                    onChange={handleChatFileSelect}
+                    onChange={handleFileChange}
                     accept=".pdf,.txt,.docx,.pptx,image/*"
                     className="hidden"
                   />
@@ -3808,24 +3423,9 @@ function MainAppContent() {
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     className="p-2 text-gray-400 hover:text-blue-400 hover:bg-geminiHover rounded-full transition mb-0.5"
-                    title="Allega fino a 10 file (o trascinali qui)"
+                    title="Carica PDF, documento o immagine"
                   >
                     <Paperclip size={18} />
-                  </button>
-
-                  {/* Tasto Microfono Dettatura Whisper */}
-                  <button
-                    type="button"
-                    onClick={handleToggleVoiceRecording}
-                    disabled={isTranscribingAudio}
-                    className={`p-2 rounded-full transition mb-0.5 ${
-                      isRecordingAudio 
-                        ? 'bg-red-600 text-white animate-pulse' 
-                        : 'text-gray-400 hover:text-amber-400 hover:bg-geminiHover'
-                    }`}
-                    title={isRecordingAudio ? "Ferma registrazione" : "Dettatura vocale con OpenAI Whisper"}
-                  >
-                    {isRecordingAudio ? <MicOff size={18} /> : <Mic size={18} />}
                   </button>
 
                   <textarea 
@@ -3833,7 +3433,7 @@ function MainAppContent() {
                     value={inputPrompt}
                     onChange={handleTextareaInput}
                     onKeyDown={handleKeyDown}
-                    placeholder="Scrivi, detta con il microfono o trascina fino a 10 file..."
+                    placeholder="Fai una domanda o incolla i tuoi appunti..."
                     rows={1}
                     className="flex-1 bg-transparent text-gray-100 placeholder-gray-500 text-sm focus:outline-none resize-none py-1 max-h-44"
                   />
@@ -3841,9 +3441,9 @@ function MainAppContent() {
                   <button 
                     type="button"
                     onClick={() => handleSendMessage()}
-                    disabled={(!inputPrompt.trim() && attachedFiles.length === 0) || isLoading || isRecordingAudio}
+                    disabled={(!inputPrompt.trim() && !attachedFile) || isLoading}
                     className={`p-2 rounded-full transition mb-0.5 ${
-                      (inputPrompt.trim() || attachedFiles.length > 0) && !isLoading && !isRecordingAudio
+                      (inputPrompt.trim() || attachedFile) && !isLoading
                         ? 'bg-blue-600 text-white hover:bg-blue-500 shadow-sm' 
                         : 'text-gray-600 bg-transparent cursor-not-allowed'
                     }`}
@@ -3854,7 +3454,7 @@ function MainAppContent() {
                 </div>
                 
                 <div className="text-center mt-2 text-[11px] text-gray-500">
-                  Trascina file fino a 10 elementi • Dettatura vocale ad alta precisione con Whisper
+                  StudyAI può commettere errori. Verifica sempre le informazioni importanti sui testi ufficiali.
                 </div>
               </div>
             </footer>

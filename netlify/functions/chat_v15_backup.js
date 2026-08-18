@@ -1,4 +1,4 @@
-import OpenAI, { toFile } from 'openai';
+import OpenAI from 'openai';
 
 // Helper per compattare i documenti ed evitare sforamenti di quota
 function createSmartFileDigest(rawText, maxChars) {
@@ -47,7 +47,6 @@ export const handler = async (event) => {
       action,
       prompt, 
       history, 
-      file,
       files, 
       sourceType, 
       isLessonGeneration, 
@@ -72,10 +71,7 @@ export const handler = async (event) => {
       question,
       idealAnswerCriteria,
       studentAnswer,
-      lessonContext,
-      // Parametri per trascrizione vocale con OpenAI Whisper
-      audioBase64,
-      audioMimeType
+      lessonContext
     } = payload;
 
     const apiKey = process.env.OPENAI_API_KEY;
@@ -88,65 +84,10 @@ export const handler = async (event) => {
     }
 
     const openai = new OpenAI({ apiKey });
-    const allFiles = Array.isArray(files) ? files : (file ? [file] : []);
+    const allFiles = Array.isArray(files) ? files : [];
 
     // -------------------------------------------------------------
-    // AZIONE 1: TRASCRIZIONE VOCALE AVANZATA CON OPENAI WHISPER
-    // -------------------------------------------------------------
-    if (action === 'transcribe_audio') {
-      if (!audioBase64) {
-        return {
-          statusCode: 400,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ error: 'Nessun file audio ricevuto.' }),
-        };
-      }
-
-      try {
-        const rawBase64 = audioBase64.includes('base64,') 
-          ? audioBase64.split('base64,')[1] 
-          : audioBase64;
-        const buffer = Buffer.from(rawBase64, 'base64');
-        const mime = audioMimeType || 'audio/webm';
-        
-        let audioFileObj;
-        if (typeof toFile === 'function') {
-          audioFileObj = await toFile(buffer, 'audio.webm', { type: mime });
-        } else if (OpenAI.toFile) {
-          audioFileObj = await OpenAI.toFile(buffer, 'audio.webm', { type: mime });
-        } else {
-          // Fallback con buffer nominato
-          audioFileObj = {
-            buffer,
-            name: 'audio.webm',
-            type: mime
-          };
-        }
-
-        const transcription = await openai.audio.transcriptions.create({
-          file: audioFileObj,
-          model: 'whisper-1',
-          language: 'it',
-          temperature: 0.2
-        });
-
-        return {
-          statusCode: 200,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: transcription.text || '' }),
-        };
-      } catch (err) {
-        console.error("Errore trascrizione Whisper:", err);
-        return {
-          statusCode: 500,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ error: `Errore nella dettatura vocale Whisper: ${err.message}` }),
-        };
-      }
-    }
-
-    // -------------------------------------------------------------
-    // AZIONE 2: GENERAZIONE VERIFICA COMPETENZE (QUIZ MULTI-TIPOLOGIA)
+    // AZIONE 1: GENERAZIONE VERIFICA COMPETENZE (QUIZ MULTI-TIPOLOGIA)
     // -------------------------------------------------------------
     if (action === 'generate_quiz') {
       const targetCount = Math.max(3, Math.min(Number(numQuestions) || 10, 80));
@@ -239,7 +180,7 @@ ${sourcesContext ? `FONTI DELLO STUDENTE:\n${sourcesContext.slice(0, 25000)}` : 
     }
 
     // -------------------------------------------------------------
-    // AZIONE 3: VALUTAZIONE MODULARE E COSTRUTTIVA DI UNA RISPOSTA APERTA
+    // AZIONE 2: VALUTAZIONE MODULARE, COSTRUTTIVA E INCORAGGIANTE DI UNA RISPOSTA APERTA
     // -------------------------------------------------------------
     if (action === 'evaluate_open_answer') {
       const evaluationSystemPrompt = `Sei un tutor accademico e mentore didattico empatico, costruttivo e incoraggiante.
@@ -258,7 +199,7 @@ REGOLE FONDAMENTALI DI TONO E VALUTAZIONE:
 
 FORMATO JSON OBBLIGATORIO:
 {
-  "score": 24,
+  "score": 24, // Intero da 0 a 30
   "maxScore": 30,
   "isCorrect": true | false,
   "feedback": "Spiegazione chiara, incoraggiante e didattica sul perché della valutazione...",
@@ -309,7 +250,7 @@ Fornisci la valutazione didattica e incoraggiante nel formato JSON.`;
     }
 
     // -------------------------------------------------------------
-    // AZIONE 4: RISCRITTURA RAPIDA DI UNA PORZIONE DI TESTO SELEZIONATA
+    // AZIONE 3: RISCRITTURA RAPIDA DI UNA PORZIONE DI TESTO SELEZIONATA
     // -------------------------------------------------------------
     if (action === 'rewrite_selection') {
       const textToRewrite = selectedText || '';
@@ -359,7 +300,7 @@ Restituisci ESCLUSIVAMENTE il testo riscritto. Non aggiungere frasi tipo "Ecco i
     }
 
     // -------------------------------------------------------------
-    // AZIONE 5: CHATBOT DELLA LEZIONE CON MODIFICA DIRETTA DEL FILE
+    // AZIONE 4: CHATBOT DELLA LEZIONE CON MODIFICA DIRETTA DEL FILE
     // -------------------------------------------------------------
     if (action === 'lesson_chat') {
       const currentLesson = lessonContent || '';
@@ -436,7 +377,7 @@ FORMATO RISPOSTA OBBLIGATORIO JSON:
     }
 
     // -------------------------------------------------------------
-    // AZIONE 6: GENERAZIONE SYLLABUS
+    // AZIONE 5: GENERAZIONE SYLLABUS
     // -------------------------------------------------------------
     if (action === 'generate_syllabus') {
       const numDays = Math.max(3, Math.min(daysTotal || 30, 60));
@@ -548,7 +489,7 @@ Genera il piano di studio JSON.`;
     }
 
     // -------------------------------------------------------------
-    // AZIONE 7: GENERAZIONE LEZIONE DIDATTICA
+    // AZIONE 6: GENERAZIONE LEZIONE DIDATTICA
     // -------------------------------------------------------------
     if (isLessonGeneration) {
       const isStrict = sourceType === 'my_materials';
@@ -599,37 +540,21 @@ Redigi la lezione didattica in modo chiaro, schematizzato e rigorosamente fedele
     }
 
     // -------------------------------------------------------------
-    // AZIONE 8: CHAT HOMEPAGE STANDARD CON MULTI-FILE (FINO A 10 FILE)
+    // AZIONE 7: CHAT HOMEPAGE STANDARD
     // -------------------------------------------------------------
-    let chatSourcesText = '';
-    const imageParts = [];
-
-    allFiles.slice(0, 10).forEach((f, idx) => {
-      const mime = (f.mimeType || '').toLowerCase();
-      const base64 = f.base64 || '';
-
-      if (mime.startsWith('image/') && base64) {
-        imageParts.push({
-          type: 'image_url',
-          image_url: {
-            url: base64.startsWith('data:') ? base64 : `data:${mime};base64,${base64}`,
-          },
-        });
-      } else {
-        const text = (f.text || f.extractedText || '').trim();
-        if (text) {
-          chatSourcesText += `\n\n--- [FILE ALLEGATO ${idx + 1}: "${f.name}"] ---\n${text.slice(0, 10000)}\n--- [FINE FILE ${idx + 1}] ---\n`;
-        }
-      }
+    let chatSources = '';
+    allFiles.forEach(f => {
+      const text = (f.text || f.extractedText || '').trim();
+      if (text) chatSources += `\n\n--- DOCUMENTO "${f.name}" ---\n${text.slice(0, 15000)}`;
     });
 
     const userPrompt = prompt || '';
     const standardSystemInstruction = `Sei un tutor universitario e assistente allo studio avanzato.
-Rispondi in modo chiaro, approfondito, logico e pedagogico in formato Markdown con termini chiave in grassetto ed equazioni LaTeX in $ o $$ quando utili. Se l'utente allega file o immagini, analizzali attentamente per rispondere in modo preciso.`;
+Rispondi in modo chiaro, approfondito e pedagogico in formato Markdown con termini chiave in grassetto ed equazioni LaTeX in $ o $$ quando utili.`;
 
     let finalPromptText = userPrompt;
-    if (chatSourcesText) {
-      finalPromptText += `\n\n=== DOCUMENTI E FILE ALLEGATI DALL'UTENTE (${allFiles.length} file) ===${chatSourcesText.slice(0, 35000)}`;
+    if (chatSources) {
+      finalPromptText += `\n\n--- DOCUMENTI ALLEGATI DALL'UTENTE ---${chatSources.slice(0, 30000)}`;
     }
 
     const messages = [
@@ -645,20 +570,10 @@ Rispondi in modo chiaro, approfondito, logico e pedagogico in formato Markdown c
       }
     }
 
-    if (imageParts.length > 0) {
-      messages.push({
-        role: 'user',
-        content: [
-          { type: 'text', text: finalPromptText || 'Analizza questi file e immagini di studio.' },
-          ...imageParts
-        ]
-      });
-    } else {
-      messages.push({
-        role: 'user',
-        content: finalPromptText || 'Ciao!',
-      });
-    }
+    messages.push({
+      role: 'user',
+      content: finalPromptText,
+    });
 
     const { response: completion, modelUsed } = await callOpenAIWithFallback(openai, 'gpt-4o-mini', {
       messages: messages,
