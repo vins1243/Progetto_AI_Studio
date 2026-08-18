@@ -59,31 +59,7 @@ import {
   MicOff,
   Image as ImageIcon,
   Download
-,
-  User,
-  LogIn,
-  LogOut,
-  Mail,
-  Lock,
-  Key,
-  Cloud
 } from 'lucide-react';
-
-import { 
-  supabase, 
-  isSupabaseConfigured, 
-  signUpUser, 
-  signInUser, 
-  signOutUser, 
-  resetUserPassword, 
-  fetchProjectsFromCloud, 
-  saveProjectToCloud, 
-  deleteProjectFromCloud, 
-  fetchChatsFromCloud, 
-  saveChatToCloud, 
-  deleteChatFromCloud 
-} from './supabaseClient.js';
-
 
 // IndexedDB Helper
 const DB_NAME = 'StudyAIDB_V11';
@@ -370,19 +346,6 @@ function MainAppContent() {
   const [isSingleLessonQuiz, setIsSingleLessonQuiz] = useState(false);
 
   // Wizard State
-  // STATO AUTENTICAZIONE E CLOUD SYNC SUPABASE
-  const [user, setUser] = useState(null);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authMode, setAuthMode] = useState('login'); // 'login' | 'signup' | 'reset'
-  const [authEmail, setAuthEmail] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
-  const [authFullName, setAuthFullName] = useState('');
-  const [authError, setAuthError] = useState('');
-  const [authSuccess, setAuthSuccess] = useState('');
-  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
-  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
-  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
-
   const [wizardStep, setWizardStep] = useState(1);
   const [examDate, setExamDate] = useState('');
   const [prepLevel, setPrepLevel] = useState(80);
@@ -403,99 +366,6 @@ function MainAppContent() {
   const textareaRef = useRef(null);
   const wysiwygEditorRef = useRef(null);
   const lastLoadedTopicIdRef = useRef(null);
-
-  // Sincronizzazione Sessione Utente Supabase
-  useEffect(() => {
-    if (!supabase) return;
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        setUser(session.user);
-        loadCloudData(session.user.id);
-      }
-    }).catch(err => console.warn('Supabase getSession error:', err));
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        setUser(session.user);
-        loadCloudData(session.user.id);
-      } else {
-        setUser(null);
-      }
-    });
-
-    return () => {
-      subscription?.unsubscribe();
-    };
-  }, []);
-
-  const loadCloudData = async (userId) => {
-    if (!userId) return;
-    setIsCloudSyncing(true);
-    try {
-      const cloudProjects = await fetchProjectsFromCloud(userId);
-      if (cloudProjects && cloudProjects.length > 0) {
-        setSavedProjects((prev) => {
-          const map = new Map();
-          (prev || []).forEach(p => map.set(p.id, p));
-          cloudProjects.forEach(p => map.set(p.id, p));
-          return Array.from(map.values());
-        });
-      }
-      const cloudChats = await fetchChatsFromCloud(userId);
-      if (cloudChats && cloudChats.length > 0) {
-        setConversations((prev) => {
-          const map = new Map();
-          (prev || []).forEach(c => map.set(c.id, c));
-          cloudChats.forEach(c => map.set(c.id, c));
-          return Array.from(map.values());
-        });
-      }
-    } catch (err) {
-      console.warn('Errore sync dati cloud:', err);
-    } finally {
-      setIsCloudSyncing(false);
-    }
-  };
-
-  const handleAuthSubmit = async (e) => {
-    if (e) e.preventDefault();
-    setAuthError('');
-    setAuthSuccess('');
-    setIsAuthSubmitting(true);
-    try {
-      if (authMode === 'login') {
-        await signInUser(authEmail, authPassword);
-        setIsAuthModalOpen(false);
-        setAuthPassword('');
-      } else if (authMode === 'signup') {
-        await signUpUser(authEmail, authPassword, authFullName);
-        setAuthSuccess('Registrazione completata con successo! Controlla la tua email per confermare l'account o accedi con le tue credenziali.');
-        setTimeout(() => {
-          setAuthMode('login');
-          setAuthSuccess('');
-        }, 3500);
-      } else if (authMode === 'reset') {
-        await resetUserPassword(authEmail);
-        setAuthSuccess('Ti abbiamo inviato un'email con il link per reimpostare la tua password.');
-      }
-    } catch (err) {
-      console.error('Auth error:', err);
-      setAuthError(err.message || 'Si è verificato un errore durante l'operazione.');
-    } finally {
-      setIsAuthSubmitting(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    setIsProfileMenuOpen(false);
-    try {
-      await signOutUser();
-      setUser(null);
-    } catch (err) {
-      console.warn('Logout error:', err);
-    }
-  };
 
   // Storage sync
   useEffect(() => {
@@ -743,9 +613,6 @@ function MainAppContent() {
     e.stopPropagation();
     const updated = (conversations || []).filter(c => c.id !== id);
     setConversations(updated);
-    if (user) {
-      deleteChatFromCloud(user.id, id);
-    }
     if (currentChatId === id) handleNewChat();
   };
 
@@ -753,9 +620,6 @@ function MainAppContent() {
     e.stopPropagation();
     const updated = (savedProjects || []).filter(p => p.id !== id);
     setSavedProjects(updated);
-    if (user) {
-      deleteProjectFromCloud(user.id, id);
-    }
     if (activeProject?.id === id) {
       setActiveProject(null);
       setCurrentView('chat');
@@ -1266,9 +1130,6 @@ function MainAppContent() {
       };
 
       setSavedProjects(old => [newProject, ...(old || [])]);
-    if (user) {
-      saveProjectToCloud(user.id, newProject);
-    }
       setActiveProject(newProject);
       setSidebarTab('projects');
 
@@ -1341,9 +1202,6 @@ function MainAppContent() {
     const updatedProject = { ...activeProject, schedule: updatedSchedule };
     setActiveProject(updatedProject);
     setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProject : p));
-    if (user) {
-      saveProjectToCloud(user.id, updatedProject);
-    }
   };
 
   // Sincronizzazione in tempo reale durante la digitazione nell'editor WYSIWYG
@@ -1964,14 +1822,8 @@ function MainAppContent() {
         setCurrentChatId(chatId);
         const title = prompt ? (prompt.slice(0, 28) + (prompt.length > 28 ? '...' : '')) : (filesPayload[0]?.name || 'Nuova sessione');
         setConversations([{ id: chatId, title, messages: updatedMessages }, ...(conversations || [])]);
-      if (user) {
-        saveChatToCloud(user.id, { id: chatId, title, messages: updatedMessages });
-      }
       } else {
         setConversations((conversations || []).map(c => c.id === chatId ? { ...c, messages: updatedMessages } : c));
-      if (user) {
-        saveChatToCloud(user.id, { id: chatId, title: conversations.find(c => c.id === chatId)?.title || 'Conversazione', messages: updatedMessages });
-      }
       }
     } catch (err) {
       setMessages([...newMessages, { role: 'assistant', text: `Si è verificato un errore: ${err.message}` }]);
@@ -2841,41 +2693,7 @@ function MainAppContent() {
           )}
 
         </div>
-            {/* ACCOUNT / PROFILO FOOTER */}
-      <div className="p-3 border-t border-geminiBorder/60 bg-geminiDarkSecondary shrink-0">
-        {user ? (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5 truncate pr-2">
-              <div className="w-8 h-8 rounded-full bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-xs font-bold text-blue-300 shrink-0 uppercase shadow-inner">
-                {user.user_metadata?.full_name ? user.user_metadata.full_name[0] : (user.email ? user.email[0] : 'U')}
-              </div>
-              <div className="truncate">
-                <p className="text-xs font-semibold text-gray-200 truncate">{user.user_metadata?.full_name || user.email?.split('@')[0]}</p>
-                <p className="text-[10px] text-emerald-400 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                  Cloud attivo
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={handleSignOut}
-              className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-geminiHover rounded-lg transition"
-              title="Esci dall'account"
-            >
-              <LogOut size={16} />
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={() => { setIsSidebarOpen(false); setAuthMode('login'); setAuthError(''); setAuthSuccess(''); setIsAuthModalOpen(true); }}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-geminiHover hover:bg-geminiBorder text-gray-200 border border-geminiBorder rounded-xl text-xs font-semibold transition shadow-sm"
-          >
-            <LogIn size={15} className="text-blue-400" />
-            <span>Accedi o Registrati</span>
-          </button>
-        )}
-      </div>
-    </aside>
+      </aside>
 
       {/* CONTENUTO PRINCIPALE */}
       <div className="flex-1 flex flex-col h-full w-full relative overflow-hidden">
@@ -2904,56 +2722,9 @@ function MainAppContent() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
-          {/* USER PROFILE / AUTH BUTTON */}
-          {user ? (
-            <div className="relative">
-              <button
-                onClick={() => setIsProfileMenuOpen(prev => !prev)}
-                className="flex items-center gap-2 bg-geminiDarkSecondary hover:bg-geminiHover border border-geminiBorder px-3 py-1.5 rounded-full cursor-pointer transition shadow-sm"
-                title="Opzioni account"
-              >
-                <div className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white uppercase shadow-sm">
-                  {user.user_metadata?.full_name ? user.user_metadata.full_name[0] : (user.email ? user.email[0] : 'U')}
-                </div>
-                <span className="text-xs text-gray-200 hidden sm:inline max-w-[120px] truncate font-medium">
-                  {user.user_metadata?.full_name || user.email?.split('@')[0]}
-                </span>
-                <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" title="Sincronizzazione Cloud attiva"></span>
-              </button>
-
-              {isProfileMenuOpen && (
-                <div className="absolute right-0 top-11 w-64 bg-geminiDarkSecondary border border-geminiBorder rounded-2xl shadow-2xl p-3 z-50 space-y-2 animate-popup">
-                  <div className="px-2 py-1.5 border-b border-geminiBorder/60">
-                    <p className="text-xs font-bold text-gray-100 truncate">{user.user_metadata?.full_name || 'Studente'}</p>
-                    <p className="text-[11px] text-gray-400 truncate">{user.email}</p>
-                    <div className="flex items-center gap-1.5 mt-2 text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full w-fit">
-                      <Cloud size={12} />
-                      <span>Cloud Sincronizzato</span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => { setIsProfileMenuOpen(false); handleSignOut(); }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-red-400 hover:bg-red-500/10 rounded-xl transition"
-                  >
-                    <LogOut size={14} />
-                    <span>Disconnetti</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <button
-              onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess(''); setIsAuthModalOpen(true); }}
-              className="flex items-center gap-1.5 text-xs font-semibold bg-geminiDarkSecondary hover:bg-geminiHover text-gray-200 border border-geminiBorder px-3.5 py-2 rounded-full transition shadow-sm"
-            >
-              <LogIn size={14} className="text-blue-400" />
-              <span>Accedi</span>
-            </button>
-          )}
-
-          <button 
-            onClick={handleStartWizard}
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={handleStartWizard}
               className="flex items-center gap-2 text-xs sm:text-sm font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-4 py-2 rounded-full shadow-lg shadow-blue-600/20 transition transform active:scale-95"
             >
               <Sparkles size={16} />
@@ -4273,193 +4044,6 @@ function MainAppContent() {
 
           </div>
         )}
-      {/* ------------------------------------------------------------- */}
-      {/* MODALE AUTENTICAZIONE SUPABASE (ACCEDI / REGISTRATI / RECUPERA) */}
-      {/* ------------------------------------------------------------- */}
-      {isAuthModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-popup">
-          <div className="bg-geminiDarkSecondary border border-geminiBorder w-full max-w-md rounded-3xl p-6 sm:p-8 shadow-2xl relative space-y-6">
-            <button
-              onClick={() => setIsAuthModalOpen(false)}
-              className="absolute top-5 right-5 p-2 text-gray-400 hover:text-white hover:bg-geminiHover rounded-xl transition"
-              title="Chiudi"
-            >
-              <X size={18} />
-            </button>
-
-            <div className="text-center space-y-2">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 mx-auto flex items-center justify-center text-white shadow-lg shadow-blue-600/20">
-                <GraduationCap size={24} />
-              </div>
-              <h2 className="text-xl font-bold text-gray-100">
-                {authMode === 'login' && 'Accedi a Study AI'}
-                {authMode === 'signup' && 'Crea il tuo Account'}
-                {authMode === 'reset' && 'Recupera Password'}
-              </h2>
-              <p className="text-xs text-gray-400">
-                {authMode === 'login' && 'Sincronizza le tue guide e le tue chat su tutti i tuoi dispositivi.'}
-                {authMode === 'signup' && 'Unisciti a Study AI per salvare i tuoi piani di studio nel cloud.'}
-                {authMode === 'reset' && 'Inserisci la tua email per ricevere il link di ripristino.'}
-              </p>
-            </div>
-
-            {/* Switcher Tab Accedi / Registrati */}
-            {authMode !== 'reset' && (
-              <div className="flex bg-geminiDark p-1 rounded-2xl border border-geminiBorder">
-                <button
-                  onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess(''); }}
-                  className={`flex-1 py-2 text-xs font-semibold rounded-xl transition ${
-                    authMode === 'login'
-                      ? 'bg-geminiDarkSecondary text-blue-400 shadow-md border border-geminiBorder/60'
-                      : 'text-gray-400 hover:text-gray-200'
-                  }`}
-                >
-                  Accedi
-                </button>
-                <button
-                  onClick={() => { setAuthMode('signup'); setAuthError(''); setAuthSuccess(''); }}
-                  className={`flex-1 py-2 text-xs font-semibold rounded-xl transition ${
-                    authMode === 'signup'
-                      ? 'bg-geminiDarkSecondary text-blue-400 shadow-md border border-geminiBorder/60'
-                      : 'text-gray-400 hover:text-gray-200'
-                  }`}
-                >
-                  Registrati
-                </button>
-              </div>
-            )}
-
-            {/* Banner Errore / Successo */}
-            {authError && (
-              <div className="bg-red-500/10 border border-red-500/30 p-3.5 rounded-2xl flex items-center gap-2.5 text-xs text-red-400">
-                <AlertTriangle size={16} className="shrink-0" />
-                <span>{authError}</span>
-              </div>
-            )}
-            {authSuccess && (
-              <div className="bg-emerald-500/10 border border-emerald-500/30 p-3.5 rounded-2xl flex items-center gap-2.5 text-xs text-emerald-400">
-                <CheckCircle2 size={16} className="shrink-0" />
-                <span>{authSuccess}</span>
-              </div>
-            )}
-
-            {/* Form */}
-            <form onSubmit={handleAuthSubmit} className="space-y-4">
-              {authMode === 'signup' && (
-                <div className="space-y-1.5">
-                  <label className="block text-[11px] font-semibold text-gray-300 uppercase tracking-wider">
-                    Nome Completo
-                  </label>
-                  <div className="relative flex items-center">
-                    <User size={16} className="absolute left-3.5 text-gray-400" />
-                    <input
-                      type="text"
-                      required
-                      value={authFullName}
-                      onChange={(e) => setAuthFullName(e.target.value)}
-                      placeholder="es. Mario Rossi"
-                      className="w-full bg-geminiDark border border-geminiBorder rounded-2xl pl-10 pr-4 py-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <label className="block text-[11px] font-semibold text-gray-300 uppercase tracking-wider">
-                  Email
-                </label>
-                <div className="relative flex items-center">
-                  <Mail size={16} className="absolute left-3.5 text-gray-400" />
-                  <input
-                    type="email"
-                    required
-                    value={authEmail}
-                    onChange={(e) => setAuthEmail(e.target.value)}
-                    placeholder="nome@esempio.it"
-                    className="w-full bg-geminiDark border border-geminiBorder rounded-2xl pl-10 pr-4 py-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition"
-                  />
-                </div>
-              </div>
-
-              {authMode !== 'reset' && (
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-[11px] font-semibold text-gray-300 uppercase tracking-wider">
-                      Password
-                    </label>
-                    {authMode === 'login' && (
-                      <button
-                        type="button"
-                        onClick={() => { setAuthMode('reset'); setAuthError(''); setAuthSuccess(''); }}
-                        className="text-[11px] text-blue-400 hover:underline"
-                      >
-                        Password dimenticata?
-                      </button>
-                    )}
-                  </div>
-                  <div className="relative flex items-center">
-                    <Lock size={16} className="absolute left-3.5 text-gray-400" />
-                    <input
-                      type="password"
-                      required
-                      minLength={6}
-                      value={authPassword}
-                      onChange={(e) => setAuthPassword(e.target.value)}
-                      placeholder="Minimo 6 caratteri"
-                      className="w-full bg-geminiDark border border-geminiBorder rounded-2xl pl-10 pr-4 py-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isAuthSubmitting}
-                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 text-white font-semibold py-3.5 rounded-2xl shadow-lg shadow-blue-600/25 transition transform active:scale-98 flex items-center justify-center gap-2 text-sm"
-              >
-                {isAuthSubmitting ? (
-                  <>
-                    <RefreshCw size={16} className="animate-spin" />
-                    <span>Elaborazione in corso...</span>
-                  </>
-                ) : (
-                  <>
-                    {authMode === 'login' && (
-                      <>
-                        <LogIn size={16} />
-                        <span>Accedi</span>
-                      </>
-                    )}
-                    {authMode === 'signup' && (
-                      <>
-                        <Sparkles size={16} />
-                        <span>Crea Account</span>
-                      </>
-                    )}
-                    {authMode === 'reset' && (
-                      <>
-                        <Mail size={16} />
-                        <span>Invia Link di Recupero</span>
-                      </>
-                    )}
-                  </>
-                )}
-              </button>
-            </form>
-
-            {authMode === 'reset' && (
-              <div className="text-center pt-2">
-                <button
-                  onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess(''); }}
-                  className="text-xs text-blue-400 hover:underline font-semibold"
-                >
-                  Torna al Login
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       </div>
     </div>

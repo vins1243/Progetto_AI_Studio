@@ -9,7 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.1",
     "adm-zip": "^0.5.16",
     "katex": "^0.16.11",
     "lucide-react": "^0.344.0",
