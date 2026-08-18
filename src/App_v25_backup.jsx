@@ -1,4 +1,3 @@
-import logoImg from './logo.png';
 import React, { useState, useEffect, useRef, Component } from 'react';
 import { 
   Menu, 
@@ -287,14 +286,23 @@ class ErrorBoundary extends Component {
 }
 
 
-// Componente Logo Ufficiale MinervaAI
+// Componente Logo Dinamico per MinervaAI (con fallback elegante)
 function AppLogo({ className = "w-8 h-8", imgClassName = "w-full h-full object-contain" }) {
+  const [hasError, setHasError] = useState(false);
+  if (hasError) {
+    return (
+      <div className={`${className} rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-600/20`}>
+        <GraduationCap size={20} />
+      </div>
+    );
+  }
   return (
-    <div className={`${className} flex items-center justify-center shrink-0 select-none overflow-hidden`}>
+    <div className={`${className} flex items-center justify-center overflow-hidden shrink-0`}>
       <img 
-        src={logoImg} 
+        src="/logo.png" 
         alt="MinervaAI Logo" 
         className={imgClassName} 
+        onError={() => setHasError(true)} 
       />
     </div>
   );
@@ -3760,8 +3768,7 @@ function MainAppContent() {
         {/* VISTA 2: PAGINA PROGETTO CON "GRADO DI PREPARAZIONE GENERALE" */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'project' && activeProject && (
-          <main className={`flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-5xl mx-auto w-full space-y-6 transition ${theme === 'light' ? 'text-slate-800' : 'text-gray-200'}`}>
-
+          <main className="flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-5xl mx-auto w-full space-y-6">
             
             <div className="flex items-center justify-between pb-2 border-b border-geminiBorder/40">
               <button 
@@ -3778,17 +3785,11 @@ function MainAppContent() {
             </div>
 
             {/* CARD PRINCIPALE ESAME */}
-            <div className={`border p-6 sm:p-8 rounded-3xl shadow-xl space-y-4 transition ${
-              theme === 'light'
-                ? 'bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/40 border-slate-200 shadow-slate-200/50 text-slate-800'
-                : 'bg-gradient-to-br from-geminiDarkSecondary via-geminiDarkSecondary to-blue-950/20 border-geminiBorder text-gray-100'
-            }`}>
+            <div className="bg-gradient-to-br from-geminiDarkSecondary via-geminiDarkSecondary to-blue-950/20 border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-xl space-y-4">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className={`text-xs font-semibold uppercase tracking-wider ${
-                      theme === 'light' ? 'text-blue-600' : 'text-blue-400'
-                    }`}>Progetto di Studio</span>
+                    <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">Progetto di Studio</span>
                     <span className="text-gray-500">•</span>
                     <span className="text-xs text-gray-400">
                       Creato il {activeProject?.createdAt ? new Date(activeProject.createdAt).toLocaleDateString('it-IT') : new Date().toLocaleDateString('it-IT')}
@@ -3811,44 +3812,30 @@ function MainAppContent() {
               </div>
 
               {/* WIDGET GRADO DI PREPARAZIONE GENERALE */}
-              <div className={`mt-4 p-4 rounded-2xl border space-y-2.5 transition ${
-                theme === 'light'
-                  ? 'bg-white border-blue-200 shadow-sm'
-                  : 'bg-geminiDark/80 border-blue-500/30 shadow-inner'
-              }`}>
+              <div className="mt-4 p-4 rounded-2xl bg-geminiDark/80 border border-blue-500/30 space-y-2.5 shadow-inner">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <Activity className={theme === 'light' ? 'text-blue-600' : 'text-blue-400'} size={18} />
-                    <span className={`text-xs font-bold uppercase tracking-wider ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>
-                      Grado di Preparazione Generale:
-                    </span>
-                    <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-lg border ${
-                      theme === 'light'
-                        ? 'text-blue-700 bg-blue-50 border-blue-200'
-                        : 'text-blue-300 bg-blue-500/20 border-blue-500/30'
-                    }`}>
+                    <Activity className="text-blue-400" size={18} />
+                    <span className="text-xs font-bold text-gray-100 uppercase tracking-wider">Grado di Preparazione Generale:</span>
+                    <span className="text-xs font-semibold text-blue-300 bg-blue-500/20 px-2.5 py-0.5 rounded-lg border border-blue-500/30">
                       {readiness.label}
                     </span>
                   </div>
-                  <span className="text-base font-extrabold text-blue-500">
+                  <span className="text-base font-extrabold text-blue-400">
                     {readiness.percentage}%
                   </span>
                 </div>
 
-                <div className={`w-full h-2.5 rounded-full overflow-hidden border ${
-                  theme === 'light' ? 'bg-slate-100 border-slate-200' : 'bg-geminiDarkSecondary border-geminiBorder/60'
-                }`}>
+                <div className="w-full bg-geminiDarkSecondary h-2.5 rounded-full overflow-hidden border border-geminiBorder/60">
                   <div 
                     className="bg-gradient-to-r from-blue-600 via-indigo-500 to-emerald-400 h-full rounded-full transition-all duration-500"
                     style={{ width: `${readiness.percentage}%` }}
                   />
                 </div>
 
-                <div className={`flex flex-wrap items-center justify-between text-[11px] pt-0.5 ${
-                  theme === 'light' ? 'text-slate-600' : 'text-gray-400'
-                }`}>
-                  <span>📖 Lezioni studiate: <strong className={theme === 'light' ? 'text-slate-900' : 'text-gray-200'}>{calculateGlobalProgress().completed}/{calculateGlobalProgress().total}</strong> ({calculateGlobalProgress().percent}%)</span>
-                  <span>🏆 Verifiche svolte: <strong className={theme === 'light' ? 'text-slate-900' : 'text-gray-200'}>{readiness.testsCount}</strong> {readiness.testsCount > 0 && `(Media voto: ${readiness.averageQuizScore}/30)`}</span>
+                <div className="flex flex-wrap items-center justify-between text-[11px] text-gray-400 pt-0.5">
+                  <span>📖 Lezioni studiate: <strong>{calculateGlobalProgress().completed}/{calculateGlobalProgress().total}</strong> ({calculateGlobalProgress().percent}%)</span>
+                  <span>🏆 Verifiche svolte: <strong>{readiness.testsCount}</strong> {readiness.testsCount > 0 && `(Media voto: ${readiness.averageQuizScore}/30)`}</span>
                 </div>
               </div>
             </div>
@@ -4062,8 +4049,7 @@ function MainAppContent() {
         {/* VISTA 4: DETTAGLIO GIORNO CON EXPORT PDF E RESIZE IMMAGINI    */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'day_detail' && activeProject && currentDayData && (
-          <main className={`flex-1 flex flex-col h-full w-full overflow-hidden ${theme === 'light' ? 'bg-white text-slate-800' : 'bg-geminiDark text-gray-200'}`}>
-
+          <main className="flex-1 flex flex-col h-full w-full overflow-hidden">
             
             <div className={`flex items-center justify-between px-4 sm:px-6 py-2.5 border-b shrink-0 transition ${
               theme === 'light' 
