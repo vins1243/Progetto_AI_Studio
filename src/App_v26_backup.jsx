@@ -3281,15 +3281,12 @@ function MainAppContent() {
             
             <div 
               onClick={() => setCurrentView('chat')}
-              className="flex items-center gap-2.5 cursor-pointer group select-none"
-              title="MinervaAI"
+              className="flex items-center gap-2.5 cursor-pointer"
             >
-              <img 
-                src={logoImg} 
-                alt="MinervaAI Logo" 
-                className="w-8 h-8 object-contain rounded-lg shadow-sm" 
-              />
-              <span className="font-bold text-lg tracking-tight bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 bg-clip-text text-transparent">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white font-bold shadow-md">
+                <GraduationCap size={18} />
+              </div>
+              <span className="font-semibold text-lg tracking-tight bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent">
                 MinervaAI
               </span>
             </div>
@@ -4576,8 +4573,8 @@ function MainAppContent() {
                       className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                     >
                       {msg.role === 'assistant' && (
-                        <div className="w-8 h-8 rounded-lg bg-blue-600/10 border border-blue-500/30 flex items-center justify-center shrink-0 mt-1 shadow-sm overflow-hidden p-1">
-                          <img src={logoImg} alt="MinervaAI" className="w-full h-full object-contain" />
+                        <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0 mt-1 shadow-sm">
+                          <GraduationCap size={16} />
                         </div>
                       )}
 
@@ -4607,8 +4604,8 @@ function MainAppContent() {
 
                 {isLoading && (
                   <div className="flex gap-3 justify-start">
-                    <div className="w-8 h-8 rounded-lg bg-blue-600/10 border border-blue-500/30 flex items-center justify-center shrink-0 mt-1 overflow-hidden p-1">
-                      <img src={logoImg} alt="MinervaAI" className="w-full h-full object-contain" />
+                    <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0 mt-1">
+                      <GraduationCap size={16} />
                     </div>
                     <div className="bg-geminiDarkSecondary border border-geminiBorder px-4 py-3 rounded-2xl rounded-tl-sm text-sm text-gray-400 flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
@@ -4754,8 +4751,8 @@ function MainAppContent() {
             </button>
 
             <div className="text-center space-y-2">
-              <div className="w-14 h-14 mx-auto flex items-center justify-center overflow-hidden">
-                <img src={logoImg} alt="MinervaAI Logo" className="w-14 h-14 object-contain drop-shadow-xl" />
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 mx-auto flex items-center justify-center text-white shadow-lg shadow-blue-600/20">
+                <GraduationCap size={24} />
               </div>
               <h2 className="text-xl font-bold text-gray-100">
                 {authMode === 'login' && 'Accedi a MinervaAI'}
