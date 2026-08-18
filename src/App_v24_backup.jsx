@@ -358,18 +358,11 @@ function MainAppContent() {
   const [lessonChatMessages, setLessonChatMessages] = useState([]);
   const [lessonChatInput, setLessonChatInput] = useState('');
   const [isLessonChatLoading, setIsLessonChatLoading] = useState(false);
-  useEffect(() => {
-    if (typeof document !== 'undefined') {
-      document.title = "MinervaAI";
-    }
-  }, []);
-
-  // STATO TEMA GIORNO / NOTTE (DEFAULT: SEGUE IL SISTEMA OPERATIVO IN TEMPO REALE)
+  // STATO TEMA GIORNO / NOTTE (DEFAULT: IMPOSTAZIONI DI SISTEMA DEL DISPOSITIVO)
   const [theme, setTheme] = useState(() => {
     try {
-      const manual = localStorage.getItem('minerva_theme_manual');
       const saved = localStorage.getItem('minerva_theme');
-      if (manual && (saved === 'light' || saved === 'dark')) return saved;
+      if (saved === 'light' || saved === 'dark') return saved;
       if (typeof window !== 'undefined' && window.matchMedia) {
         return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
       }
@@ -377,7 +370,7 @@ function MainAppContent() {
     return 'dark';
   });
 
-  // Sincronizzazione immediata su DOM (html e body)
+  // Sincronizzazione tema sul DOM, HTML e Body
   useEffect(() => {
     try {
       if (typeof document !== 'undefined') {
@@ -396,7 +389,7 @@ function MainAppContent() {
     }
   }, [theme]);
 
-  // Ascolto in tempo reale dei cambiamenti del tema del dispositivo (es. macOS/iOS/Windows Night Mode)
+  // Ascolto in tempo reale dei cambiamenti del tema del dispositivo / sistema operativo
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return;
     const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -408,16 +401,12 @@ function MainAppContent() {
       }
     };
 
-    try {
-      if (darkQuery.addEventListener) {
-        darkQuery.addEventListener('change', handleSystemThemeChange);
-        return () => darkQuery.removeEventListener('change', handleSystemThemeChange);
-      } else if (darkQuery.addListener) {
-        darkQuery.addListener(handleSystemThemeChange);
-        return () => darkQuery.removeListener(handleSystemThemeChange);
-      }
-    } catch (e) {
-      console.warn('Media query listener error:', e);
+    if (darkQuery.addEventListener) {
+      darkQuery.addEventListener('change', handleSystemThemeChange);
+      return () => darkQuery.removeEventListener('change', handleSystemThemeChange);
+    } else if (darkQuery.addListener) {
+      darkQuery.addListener(handleSystemThemeChange);
+      return () => darkQuery.removeListener(handleSystemThemeChange);
     }
   }, []);
 
@@ -4051,29 +4040,17 @@ function MainAppContent() {
         {currentView === 'day_detail' && activeProject && currentDayData && (
           <main className="flex-1 flex flex-col h-full w-full overflow-hidden">
             
-            <div className={`flex items-center justify-between px-4 sm:px-6 py-2.5 border-b shrink-0 transition ${
-              theme === 'light' 
-                ? 'bg-white border-slate-200 shadow-sm text-slate-800' 
-                : 'bg-geminiDarkSecondary border-geminiBorder/60 text-gray-200'
-            }`}>
+            <div className="flex items-center justify-between px-4 sm:px-6 py-2 border-b border-geminiBorder/40 bg-geminiDarkSecondary/70 shrink-0">
               <button 
                 onClick={() => setCurrentView('study_plan')}
-                className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border transition ${
-                  theme === 'light'
-                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
-                    : 'bg-geminiDark hover:bg-geminiHover text-gray-300 border-geminiBorder'
-                }`}
+                className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white transition"
               >
                 <ArrowLeft size={14} />
                 <span>Torna al Piano Giornaliero</span>
               </button>
               
-              <div className={`flex items-center gap-2 text-xs font-medium px-3 py-1 rounded-xl border ${
-                theme === 'light'
-                  ? 'bg-blue-50/70 border-blue-100 text-blue-900'
-                  : 'bg-blue-950/40 border-blue-900/50 text-blue-200'
-              }`}>
-                <CalendarIcon size={14} className="text-blue-500 shrink-0" />
+              <div className="flex items-center gap-2 text-xs text-gray-300">
+                <CalendarIcon size={14} className="text-blue-400" />
                 <span>{currentDayData?.date} • {currentDayData?.dayTitle}</span>
               </div>
             </div>

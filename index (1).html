@@ -1,10 +1,35 @@
 <!DOCTYPE html>
-<html lang="it" class="dark">
+<html lang="it">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- Titolo MinervaAI e Icone per Safari / iOS / Web -->
     <title>MinervaAI</title>
-    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/logo.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/logo.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/logo.png" />
+    <link rel="shortcut icon" href="/logo.png" />
+    
+    <meta name="apple-mobile-web-app-title" content="MinervaAI" />
+    <meta name="application-name" content="MinervaAI" />
+    <meta name="theme-color" content="#131314" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" />
+
+    <!-- Script immediato anti-flash per applicare il tema di sistema / salvato prima del rendering -->
+    <script>
+      (function() {
+        try {
+          var manual = localStorage.getItem('minerva_theme_manual');
+          var saved = localStorage.getItem('minerva_theme');
+          var isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var theme = (manual && (saved === 'light' || saved === 'dark')) ? saved : (isDark ? 'dark' : 'light');
+          document.documentElement.classList.remove('dark', 'light');
+          document.documentElement.classList.add(theme);
+          document.documentElement.style.colorScheme = theme;
+        } catch (e) {}
+      })();
+    </script>
     
     <!-- KaTeX CSS e JS per il rendering delle formule matematiche e scientifiche -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
@@ -21,7 +46,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.7.2/mammoth.browser.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   </head>
-  <body class="bg-geminiDark text-gray-100 antialiased selection:bg-blue-600 selection:text-white">
+  <body class="antialiased selection:bg-blue-600 selection:text-white">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
