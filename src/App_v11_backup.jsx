@@ -34,20 +34,11 @@ import {
   AlertTriangle,
   FileSearch,
   ShieldCheck,
-  Check,
-  Edit3,
-  Eye,
-  Wand2,
-  CornerDownLeft,
-  Bot,
-  HelpCircle,
-  Maximize2,
-  Minimize2,
-  Copy
+  Check
 } from 'lucide-react';
 
-// IndexedDB Helper per memorizzare progetti, file e lezioni
-const DB_NAME = 'StudyAIDB_V4';
+// IndexedDB Helper per memorizzare documenti e testi estratti
+const DB_NAME = 'StudyAIDB_V3';
 const STORE_NAME = 'project_data_store';
 
 function getDB() {
@@ -93,7 +84,7 @@ async function getProjectDataFromDB(projectId) {
   }
 }
 
-// Estrazione testo client-side nel browser
+// Estrazione testo client-side robusta
 async function extractTextFromPdf(arrayBuffer) {
   if (typeof window === 'undefined' || !window.pdfjsLib) {
     throw new Error("Libreria PDF.js non pronta.");
@@ -167,7 +158,7 @@ class ErrorBoundary extends Component {
             <AlertTriangle size={36} className="text-red-400 mx-auto" />
             <h2 className="text-lg font-bold text-gray-100">Si è verificato un problema</h2>
             <p className="text-xs text-gray-400">
-              I tuoi dati sono protetti. Clicca qui sotto per ricaricare la schermata.
+              I tuoi dati sono al sicuro. Clicca qui sotto per ricaricare.
             </p>
             <button 
               onClick={() => {
@@ -237,7 +228,7 @@ function MainAppContent() {
   const [currentView, setCurrentView] = useState('chat');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // Chat Homepage
+  // Chat
   const [conversations, setConversations] = useState(() => {
     try {
       const saved = localStorage.getItem('study_ai_chats');
@@ -266,17 +257,6 @@ function MainAppContent() {
   const [selectedTopicId, setSelectedTopicId] = useState(null);
   const [isGeneratingLesson, setIsGeneratingLesson] = useState(false);
 
-  // Modalità modifica testo lezione & Riscrittura selezione
-  const [isLessonEditingMode, setIsLessonEditingMode] = useState(false);
-  const [currentSelectionText, setCurrentSelectionText] = useState('');
-  const [isRewritingSelection, setIsRewritingSelection] = useState(false);
-
-  // Chatbot dedicato alla lezione
-  const [lessonChatMessages, setLessonChatMessages] = useState([]);
-  const [lessonChatInput, setLessonChatInput] = useState('');
-  const [isLessonChatLoading, setIsLessonChatLoading] = useState(false);
-  const [pendingIntegration, setPendingIntegration] = useState(null); // { proposedText, explanation }
-
   // Wizard State
   const [wizardStep, setWizardStep] = useState(1);
   const [examDate, setExamDate] = useState('');
@@ -286,7 +266,7 @@ function MainAppContent() {
   const [languageStyle, setLanguageStyle] = useState('automatico');
   const [sourceType, setSourceType] = useState('my_materials');
   const [wizardUploadedFiles, setWizardUploadedFiles] = useState([]);
-  const [extractingCount, setExtractingCount] = useState(0);
+  const [extractingCount, setExtractingCount] = useState(0); // Quanti file stanno estraendo in questo momento
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [loadingStatusText, setLoadingStatusText] = useState('Inizializzazione...');
 
@@ -294,10 +274,7 @@ function MainAppContent() {
   const wizardFileInputRef = useRef(null);
   const projectAddFileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
-  const lessonChatEndRef = useRef(null);
   const textareaRef = useRef(null);
-  const lessonTextareaRef = useRef(null);
-  const lessonViewerRef = useRef(null);
 
   // Storage sync
   useEffect(() => {
@@ -331,23 +308,6 @@ function MainAppContent() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
-
-  useEffect(() => {
-    lessonChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [lessonChatMessages, isLessonChatLoading]);
-
-  // Listener selezione testo per la lezione
-  useEffect(() => {
-    const handleMouseUp = () => {
-      const selection = window.getSelection();
-      const selectedStr = selection ? selection.toString().trim() : '';
-      if (selectedStr && selectedStr.length > 3) {
-        setCurrentSelectionText(selectedStr);
-      }
-    };
-    document.addEventListener('mouseup', handleMouseUp);
-    return () => document.removeEventListener('mouseup', handleMouseUp);
-  }, []);
 
   const loadProjectWithFiles = async (proj) => {
     setActiveProject(proj);
@@ -426,11 +386,12 @@ function MainAppContent() {
     e.target.value = '';
   };
 
-  // Caricamento e parsing multi-file per il Wizard
+  // GESTIONE CARICAMENTO MULTIPLO CON STATO DI ESTRAZIONE PARALLELA
   const handleWizardFilesChange = async (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
 
+    // Crea subito le voci con stato 'extracting' per bloccare il tasto Avanti
     const newFileEntries = files.map(file => ({
       id: Date.now() + Math.random(),
       fileRef: file,
@@ -447,6 +408,7 @@ function MainAppContent() {
     setExtractingCount(prev => prev + newFileEntries.length);
     e.target.value = '';
 
+    // Estrazione asincrona per ciascun file
     for (const entry of newFileEntries) {
       const file = entry.fileRef;
       const name = file.name.toLowerCase();
@@ -516,48 +478,45 @@ function MainAppContent() {
     }
   };
 
-  // FINALIZZAZIONE WIZARD (CON SUPPORTO "CERCA ONLINE" E "USA FONTI")
+  // FINALIZZAZIONE CON CIRCUITO DI VERIFICA DI TUTTI I FILE CARICATI
   const handleFinalizeGuide = async () => {
-    const isOnlineSearch = sourceType === 'search_online';
+    // 1. Verifica che nessun file sia ancora in caricamento/estrazione
+    const stillExtracting = wizardUploadedFiles.some(f => f.status === 'extracting');
+    if (stillExtracting || extractingCount > 0) {
+      alert("Attendi il completamento della lettura di tutti i file prima di proseguire.");
+      return;
+    }
 
-    if (!isOnlineSearch) {
-      const stillExtracting = wizardUploadedFiles.some(f => f.status === 'extracting');
-      if (stillExtracting || extractingCount > 0) {
-        alert("Attendi il completamento della lettura di tutti i file prima di proseguire.");
-        return;
-      }
+    // 2. Filtra i file pronti e verifica il testo complessivo
+    const readyFiles = wizardUploadedFiles.filter(f => f.status === 'ready' && f.wordsCount > 0);
+    const totalWordsCount = readyFiles.reduce((acc, f) => acc + (f.wordsCount || 0), 0);
 
-      const readyFiles = wizardUploadedFiles.filter(f => f.status === 'ready' && f.wordsCount > 0);
-      if (readyFiles.length === 0) {
-        alert("Nessun testo è stato estratto dai file caricati. Assicurati che i documenti contengano testo selezionabile.");
-        return;
-      }
+    if (sourceType === 'my_materials' && readyFiles.length === 0) {
+      alert("Nessun testo è stato estratto dai file caricati. Assicurati che i documenti contengano testo selezionabile e riprova.");
+      return;
     }
 
     setWizardStep(4);
-    setLoadingProgress(15);
-    setLoadingStatusText(isOnlineSearch 
-      ? `Ricerca e strutturazione accademica online per "${examDescription || 'Esame'}"...`
-      : `Analisi delle fonti caricate...`
-    );
+    setLoadingProgress(10);
+    setLoadingStatusText(`Circuito di verifica attivo: analisi di tutti i ${readyFiles.length} file (${totalWordsCount.toLocaleString()} parole)...`);
 
     const daysTotal = calculateDaysLeft(examDate);
     const projectId = Date.now().toString();
 
-    let currentPct = 15;
+    // Timer fluido
+    let currentPct = 10;
     const progressInterval = setInterval(() => {
-      if (currentPct < 90) {
-        currentPct += 3;
+      if (currentPct < 92) {
+        currentPct += 2;
         setLoadingProgress(currentPct);
-        if (currentPct === 35) setLoadingStatusText('Mappatura dei capitoli e concetti chiave...');
-        if (currentPct === 65) setLoadingStatusText('Organizzazione logica del piano didattico...');
-        if (currentPct === 85) setLoadingStatusText('Finalizzazione delle giornate di studio...');
+        if (currentPct === 30) setLoadingStatusText(`Mappatura dei capitoli di ciascun file (1 a ${readyFiles.length})...`);
+        if (currentPct === 60) setLoadingStatusText(`Verifica di inclusione del 100% degli argomenti caricati...`);
+        if (currentPct === 80) setLoadingStatusText(`Distribuzione logica e progressiva nel calendario di ${daysTotal} giorni...`);
       }
-    }, 280);
+    }, 300);
 
     try {
-      const readyFiles = wizardUploadedFiles.filter(f => f.status === 'ready');
-
+      // Invio dei file strutturati uno per uno con il relativo testo estratto
       const response = await fetch('/.netlify/functions/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -566,10 +525,9 @@ function MainAppContent() {
           examDescription: examDescription,
           daysTotal: daysTotal,
           prepLevel: prepLevel,
-          examType: examType,
           languageStyle: languageStyle,
           sourceType: sourceType,
-          files: isOnlineSearch ? [] : readyFiles.map(f => ({
+          files: readyFiles.map(f => ({
             name: f.name,
             size: f.size,
             mimeType: f.mimeType,
@@ -583,15 +541,16 @@ function MainAppContent() {
       clearInterval(progressInterval);
 
       if (!response.ok || !data.schedule || !Array.isArray(data.schedule) || data.schedule.length === 0) {
-        throw new Error(data.error || "Impossibile generare il piano di studio.");
+        throw new Error(data.error || "L'AI non è riuscita a strutturare il piano dai file caricati.");
       }
 
       setLoadingProgress(100);
-      setLoadingStatusText('Piano di studio creato con successo!');
+      setLoadingStatusText(`Piano generato con successo coprendo tutti i ${readyFiles.length} documenti!`);
 
-      if (!isOnlineSearch) {
-        await saveProjectDataToDB(projectId, { files: readyFiles });
-      }
+      // Salva tutti i file e i testi completi in IndexedDB
+      await saveProjectDataToDB(projectId, {
+        files: readyFiles,
+      });
 
       const newProject = {
         id: projectId,
@@ -602,7 +561,7 @@ function MainAppContent() {
         examType: examType,
         languageStyle: languageStyle,
         sourceType: sourceType,
-        files: isOnlineSearch ? [] : readyFiles.map(f => ({
+        files: readyFiles.map(f => ({
           id: f.id,
           name: f.name,
           size: f.size,
@@ -622,13 +581,13 @@ function MainAppContent() {
 
     } catch (err) {
       clearInterval(progressInterval);
-      console.error("Errore generazione syllabus:", err);
-      alert(`Errore: ${err.message}`);
+      console.error("Errore generazione syllabus reale:", err);
+      alert(`Errore nell'analisi dei documenti: ${err.message}`);
       setWizardStep(3);
     }
   };
 
-  // Generazione Lezione
+  // Generazione Lezione RIGOROSAMENTE basata sulle fonti
   const handleGenerateLesson = async (dayNum, topic) => {
     if (isGeneratingLesson || !activeProject) return;
     setIsGeneratingLesson(true);
@@ -655,136 +614,28 @@ function MainAppContent() {
       if (!res.ok) throw new Error(data.error || 'Errore nella generazione della lezione.');
 
       const lessonContent = data.reply;
-      updateTopicLessonContent(dayNum, topic.id, lessonContent);
+
+      const updatedSchedule = (activeProject.schedule || []).map(d => {
+        if (d.dayNumber === dayNum) {
+          const updatedTopics = (d.topics || []).map(t => {
+            if (t.id === topic.id) {
+              return { ...t, lesson: lessonContent };
+            }
+            return t;
+          });
+          return { ...d, topics: updatedTopics };
+        }
+        return d;
+      });
+
+      const updatedProject = { ...activeProject, schedule: updatedSchedule };
+      setActiveProject(updatedProject);
+      setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProject : p));
     } catch (err) {
       alert(`Errore nella generazione: ${err.message}`);
     } finally {
       setIsGeneratingLesson(false);
     }
-  };
-
-  // Aggiornamento testo della lezione (per editing manuale o AI)
-  const updateTopicLessonContent = (dayNum, topicId, newContent) => {
-    if (!activeProject) return;
-    const updatedSchedule = (activeProject.schedule || []).map(d => {
-      if (d.dayNumber === dayNum) {
-        const updatedTopics = (d.topics || []).map(t => {
-          if (t.id === topicId) {
-            return { ...t, lesson: newContent };
-          }
-          return t;
-        });
-        return { ...d, topics: updatedTopics };
-      }
-      return d;
-    });
-
-    const updatedProject = { ...activeProject, schedule: updatedSchedule };
-    setActiveProject(updatedProject);
-    setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProject : p));
-  };
-
-  // RISCRITTURA PORZIONE DI TESTO SELEZIONATA (Riassumi / Approfondisci / Più chiaro)
-  const handleRewriteSelection = async (mode) => {
-    const textToProcess = currentSelectionText.trim();
-    if (!textToProcess || !currentDayData || !currentSelectedTopic?.lesson) {
-      alert("Seleziona prima una porzione di testo all'interno della lezione con il cursore.");
-      return;
-    }
-
-    setIsRewritingSelection(true);
-    try {
-      const res = await fetch('/.netlify/functions/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'rewrite_selection',
-          selectedText: textToProcess,
-          rewriteMode: mode,
-          fullContext: currentSelectedTopic.title,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Errore nella riscrittura.');
-
-      const rewritten = data.rewrittenText;
-      const fullLesson = currentSelectedTopic.lesson;
-
-      // Sostituisce la prima occorrenza del testo selezionato
-      if (fullLesson.includes(textToProcess)) {
-        const updatedLesson = fullLesson.replace(textToProcess, rewritten);
-        updateTopicLessonContent(currentDayData.dayNumber, currentSelectedTopic.id, updatedLesson);
-        setCurrentSelectionText('');
-      } else {
-        alert("Modifica completata:\n\n" + rewritten);
-      }
-    } catch (err) {
-      alert(`Errore: ${err.message}`);
-    } finally {
-      setIsRewritingSelection(false);
-    }
-  };
-
-  // CHATBOT DEDICATO ALLA LEZIONE CON INTEGRAZIONE DI TESTO
-  const handleSendLessonChatMessage = async (presetText = null) => {
-    const promptToSend = (presetText || lessonChatInput).trim();
-    if (!promptToSend || isLessonChatLoading || !currentSelectedTopic?.lesson) return;
-
-    const userMsg = { role: 'user', text: promptToSend };
-    const updatedHistory = [...lessonChatMessages, userMsg];
-    setLessonChatMessages(updatedHistory);
-    setLessonChatInput('');
-    setIsLessonChatLoading(true);
-
-    try {
-      const res = await fetch('/.netlify/functions/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'lesson_chat',
-          prompt: promptToSend,
-          lessonText: currentSelectedTopic.lesson,
-          lessonChatHistory: updatedHistory,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Errore risposta tutor');
-
-      const aiMsg = {
-        role: 'assistant',
-        text: data.reply,
-        hasProposedChange: data.hasProposedChange,
-        proposedLessonText: data.proposedLessonText,
-      };
-
-      setLessonChatMessages([...updatedHistory, aiMsg]);
-
-      // Se c'è una proposta di integrazione nel testo, imposta la notifica di approvazione
-      if (data.hasProposedChange && data.proposedLessonText) {
-        setPendingIntegration({
-          proposedText: data.proposedLessonText,
-          explanation: data.reply
-        });
-      }
-    } catch (err) {
-      setLessonChatMessages([...updatedHistory, { role: 'assistant', text: `Si è verificato un errore: ${err.message}` }]);
-    } finally {
-      setIsLessonChatLoading(false);
-    }
-  };
-
-  // Accetta o rifiuta integrazione testo proposta dall'AI
-  const handleAcceptIntegration = () => {
-    if (!pendingIntegration || !currentDayData || !currentSelectedTopic) return;
-    updateTopicLessonContent(currentDayData.dayNumber, currentSelectedTopic.id, pendingIntegration.proposedText);
-    setPendingIntegration(null);
-    alert("Modifica integrata con successo nel testo della lezione!");
-  };
-
-  const handleRejectIntegration = () => {
-    setPendingIntegration(null);
   };
 
   const handleToggleTopicComplete = (dayNum, topicId) => {
@@ -825,7 +676,6 @@ function MainAppContent() {
     return { completed, total, percent };
   };
 
-  // Chat Homepage (allineamento corretto e non spaginato)
   const handleSendMessage = async (textToSend = inputPrompt) => {
     const prompt = textToSend.trim();
     if (!prompt && !attachedFile) return;
@@ -910,7 +760,7 @@ function MainAppContent() {
   const isAnyFileExtracting = extractingCount > 0 || wizardUploadedFiles.some(f => f.status === 'extracting');
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-geminiDark text-gray-200 relative font-sans">
+    <div className="flex h-screen w-screen overflow-hidden bg-geminiDark text-gray-200 relative">
       
       {/* OVERLAY SIDEBAR */}
       {isSidebarOpen && (
@@ -920,7 +770,7 @@ function MainAppContent() {
         />
       )}
 
-      {/* SIDEBAR RETRATTILE */}
+      {/* SIDEBAR */}
       <aside 
         className={`fixed inset-y-0 left-0 z-50 flex flex-col w-80 max-w-[85vw] bg-geminiDarkSecondary border-r border-geminiBorder shadow-2xl transition-transform duration-300 ease-in-out overflow-hidden ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -1022,7 +872,7 @@ function MainAppContent() {
       <div className="flex-1 flex flex-col h-full w-full relative overflow-hidden">
         
         {/* HEADER */}
-        <header className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-geminiBorder/40 bg-geminiDark z-20 shrink-0">
+        <header className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-geminiBorder/40 bg-geminiDark z-20">
           <div className="flex items-center gap-3">
             <button 
               onClick={() => setIsSidebarOpen(true)}
@@ -1062,7 +912,7 @@ function MainAppContent() {
         {currentView === 'wizard' && (
           <main className="flex-1 overflow-y-auto px-4 md:px-8 py-8 max-w-2xl mx-auto w-full flex flex-col justify-center">
             
-            {/* STEP 1: CALENDARIO ESAME */}
+            {/* STEP 1 */}
             {wizardStep === 1 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
                 <div className="flex items-center gap-3">
@@ -1117,7 +967,7 @@ function MainAppContent() {
               </div>
             )}
 
-            {/* STEP 2: DETTAGLI ESAME */}
+            {/* STEP 2 */}
             {wizardStep === 2 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
                 <div className="flex items-center gap-3">
@@ -1159,7 +1009,7 @@ function MainAppContent() {
                     rows={2}
                     value={examDescription}
                     onChange={(e) => setExamDescription(e.target.value)}
-                    placeholder="Es. Anatomia Patologica, Fisiologia Clinica, Diritto Privato..."
+                    placeholder="Es. Anatomia Patologica: segui l'ordine dei file caricati, approfondisci infiammazione e tumori..."
                     className="w-full bg-geminiDark border border-geminiBorder rounded-2xl p-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition resize-none"
                   />
                 </div>
@@ -1247,7 +1097,7 @@ function MainAppContent() {
               </div>
             )}
 
-            {/* STEP 3: FONTI (SUPPORTO PERFETTO PER "CERCA ONLINE" E "USA IL MIO MATERIALE") */}
+            {/* STEP 3: FONTI CON BLOCCO TASTO FINO A ESTRAZIONE 100% DI TUTTI I FILE */}
             {wizardStep === 3 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
                 <div className="flex items-center gap-3">
@@ -1256,7 +1106,7 @@ function MainAppContent() {
                   </div>
                   <div>
                     <h2 className="text-xl font-bold text-gray-100">Fonti di Studio</h2>
-                    <p className="text-xs text-gray-400">Scegli come strutturare il tuo materiale di studio.</p>
+                    <p className="text-xs text-gray-400">Carica tutti i documenti: l'AI verificherà l'inclusione di ogni file.</p>
                   </div>
                 </div>
 
@@ -1283,7 +1133,7 @@ function MainAppContent() {
                     </div>
                     <div>
                       <div className="font-semibold text-sm text-gray-100">Usa il mio materiale</div>
-                      <div className="text-[11px] text-gray-400 mt-0.5">Carica PDF, Word, PPTX o appunti. L'AI estrarrà solo questi contenuti.</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">Carica PDF, Word, PPTX o appunti (anche 20 o 40 file).</div>
                     </div>
                   </div>
 
@@ -1309,18 +1159,17 @@ function MainAppContent() {
                     </div>
                     <div>
                       <div className="font-semibold text-sm text-gray-100">Cerca online</div>
-                      <div className="text-[11px] text-gray-400 mt-0.5">Nessun file necessario: l'AI strutturerà il programma accademico completo.</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">L'AI ricercherà nozioni accademiche online.</div>
                     </div>
                   </div>
                 </div>
 
-                {/* Sezione per "Usa il mio materiale" */}
-                {sourceType === 'my_materials' ? (
+                {sourceType === 'my_materials' && (
                   <div className="space-y-3 pt-2 bg-geminiDark/60 p-4 rounded-2xl border border-geminiBorder/70">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
                         <FileText size={14} className="text-blue-400" />
-                        <span>Carica i tuoi documenti</span>
+                        <span>Carica tutti i documenti (PDF, Word, PPTX, TXT)</span>
                       </label>
                       <span className="text-[11px] text-blue-400 font-semibold">
                         {totalFilesReady} di {totalFilesSelected} pronti
@@ -1341,19 +1190,20 @@ function MainAppContent() {
                       className="border-2 border-dashed border-geminiBorder hover:border-blue-500 rounded-2xl p-4 text-center cursor-pointer transition bg-geminiDarkSecondary/40 hover:bg-geminiDarkSecondary group"
                     >
                       <UploadCloud size={26} className="mx-auto text-blue-400 mb-1.5 group-hover:scale-110 transition" />
-                      <div className="text-xs font-medium text-gray-200">Seleziona i tuoi file (PDF, Word, Slide, TXT)</div>
-                      <div className="text-[10px] text-gray-500 mt-0.5">Lettura istantanea ed esaustiva di tutti i capitoli</div>
+                      <div className="text-xs font-medium text-gray-200">Seleziona tutti i file che desideri</div>
+                      <div className="text-[10px] text-gray-500 mt-0.5">Puoi caricare file multipli insieme o aggiungerne altri in blocchi successivi</div>
                     </div>
 
                     {isAnyFileExtracting && (
                       <div className="flex items-center justify-center gap-2 p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-xs text-blue-300 animate-pulse">
                         <RefreshCw size={14} className="animate-spin text-blue-400" />
-                        <span>Estrazione testo in corso per {extractingCount} file...</span>
+                        <span>Lettura del testo in corso per {extractingCount} file... Attendi il completamento prima di generare.</span>
                       </div>
                     )}
 
+                    {/* LISTA FILE CON STATO DI ESTRAZIONE E VERIFICA CHIARA */}
                     {wizardUploadedFiles.length > 0 && (
-                      <div className="max-h-52 overflow-y-auto space-y-2 pr-1">
+                      <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
                         {wizardUploadedFiles.map(file => (
                           <div 
                             key={file.id}
@@ -1387,6 +1237,12 @@ function MainAppContent() {
                                       {file.pagesCount > 1 && <span>({file.pagesCount} pag.)</span>}
                                     </>
                                   )}
+                                  {file.status === 'extracting' && (
+                                    <>
+                                      <span>•</span>
+                                      <span className="text-blue-400 font-medium">Estrazione testo in corso...</span>
+                                    </>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -1403,17 +1259,6 @@ function MainAppContent() {
                       </div>
                     )}
                   </div>
-                ) : (
-                  // Sezione per "Cerca online"
-                  <div className="p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-200 space-y-2">
-                    <div className="flex items-center gap-2 font-bold text-indigo-300">
-                      <Globe size={16} />
-                      <span>Ricerca e Strutturazione Online Attiva</span>
-                    </div>
-                    <p className="text-[11px] leading-relaxed text-indigo-200/80">
-                      L'AI costruirà il piano di studio basandosi sui programmi di corso universitari e sui concetti di riferimento per <strong>"{examDescription || 'la materia scelta'}"</strong>, senza richiedere il caricamento di file.
-                    </p>
-                  </div>
                 )}
 
                 <div className="flex justify-between items-center pt-4 border-t border-geminiBorder/60">
@@ -1425,23 +1270,26 @@ function MainAppContent() {
                     <span>Indietro</span>
                   </button>
 
+                  {/* IL TASTO È RIGOROSAMENTE BLOCCATO FINO A CHE TUTTI I FILE SONO PRONTI */}
                   <button 
                     onClick={handleFinalizeGuide}
-                    disabled={sourceType === 'my_materials' && (isAnyFileExtracting || totalFilesReady === 0 || totalFilesSelected === 0)}
+                    disabled={isAnyFileExtracting || (sourceType === 'my_materials' && (totalFilesReady === 0 || totalFilesSelected === 0))}
                     className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold transition shadow-lg ${
-                      sourceType === 'my_materials' && (isAnyFileExtracting || totalFilesReady === 0 || totalFilesSelected === 0)
+                      isAnyFileExtracting || (sourceType === 'my_materials' && (totalFilesReady === 0 || totalFilesSelected === 0))
                         ? 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700'
                         : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/30'
                     }`}
                   >
                     <Sparkles size={16} />
-                    <span>Genera Guida e Piano</span>
+                    <span>
+                      {isAnyFileExtracting ? 'Caricamento file in corso...' : 'Genera Guida e Piano'}
+                    </span>
                   </button>
                 </div>
               </div>
             )}
 
-            {/* STEP 4: CARICAMENTO PROGRESSIVO */}
+            {/* STEP 4: CARICAMENTO */}
             {wizardStep === 4 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-8 sm:p-12 rounded-3xl shadow-2xl text-center space-y-6 max-w-md mx-auto w-full">
                 <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
@@ -1450,7 +1298,7 @@ function MainAppContent() {
                 </div>
 
                 <div className="space-y-2">
-                  <h3 className="text-xl font-bold text-gray-100">Generazione del Piano</h3>
+                  <h3 className="text-xl font-bold text-gray-100">Verifica ed Elaborazione Fonti</h3>
                   <p className="text-xs text-gray-400 h-6 transition-all">{loadingStatusText}</p>
                 </div>
 
@@ -1485,7 +1333,7 @@ function MainAppContent() {
               </button>
               <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded-full flex items-center gap-1.5 font-medium">
                 <ShieldCheck size={13} />
-                <span>Guida attiva</span>
+                <span>Fonti verificate al 100%</span>
               </span>
             </div>
 
@@ -1537,10 +1385,10 @@ function MainAppContent() {
                 <div className="flex items-center justify-between border-b border-geminiBorder/60 pb-3">
                   <div className="flex items-center gap-2.5 font-bold text-base text-gray-100">
                     <FileText size={18} className="text-blue-400" />
-                    <span>Fonti e Materiali</span>
+                    <span>Materiali Inclusi nel Piano</span>
                   </div>
-                  <span className="text-xs text-gray-400">
-                    {activeProject?.sourceType === 'my_materials' ? `${activeProject?.files?.length || 0} file caricati` : 'Online'}
+                  <span className="text-xs text-emerald-400 font-semibold">
+                    {activeProject?.sourceType === 'my_materials' ? `${activeProject?.files?.length || 0} file indicizzati` : 'Online'}
                   </span>
                 </div>
 
@@ -1563,11 +1411,27 @@ function MainAppContent() {
                     ) : (
                       <div className="text-xs text-gray-500 py-2 text-center">Nessun file presente.</div>
                     )}
+
+                    <input 
+                      type="file" 
+                      ref={projectAddFileInputRef}
+                      multiple
+                      onChange={handleWizardFilesChange}
+                      accept=".pdf,.txt,.doc,.docx,.ppt,.pptx,image/*"
+                      className="hidden"
+                    />
+                    <button 
+                      onClick={() => projectAddFileInputRef.current?.click()}
+                      className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-geminiDark hover:bg-geminiHover border border-dashed border-geminiBorder hover:border-blue-500 text-xs font-medium text-blue-400 transition"
+                    >
+                      <Plus size={14} />
+                      <span>Aggiungi altre fonti / file</span>
+                    </button>
                   </div>
                 ) : (
                   <div className="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300 flex items-center gap-3">
                     <Globe size={20} className="shrink-0" />
-                    <span>Programma basato sulla ricerca e strutturazione didattica accademica.</span>
+                    <span>La guida utilizza ricerche accademiche online per strutturare le lezioni.</span>
                   </div>
                 )}
               </div>
@@ -1576,14 +1440,14 @@ function MainAppContent() {
                 <div>
                   <div className="flex items-center gap-2.5 font-bold text-base text-gray-100 border-b border-geminiBorder/60 pb-3">
                     <Sparkles size={18} className="text-indigo-400" />
-                    <span>Piano Didattico Giornaliero</span>
+                    <span>Piano di Studio Giornaliero</span>
                   </div>
                   <p className="text-xs text-gray-400 mt-3 leading-relaxed">
-                    Accedi alle singole giornate per generare, modificare e approfondire le lezioni con il chatbot dedicato.
+                    Il piano copre il 100% degli argomenti estratti da tutti i tuoi documenti. Accedi per studiare giorno dopo giorno.
                   </p>
                   
                   <div className="mt-4 p-3 bg-geminiDark rounded-2xl border border-geminiBorder flex items-center justify-between text-xs">
-                    <span className="text-gray-400">Progresso piano:</span>
+                    <span className="text-gray-400">Progresso studio:</span>
                     <span className="font-bold text-emerald-400">
                       {calculateGlobalProgress().completed} / {calculateGlobalProgress().total} argomenti ({calculateGlobalProgress().percent}%)
                     </span>
@@ -1632,7 +1496,7 @@ function MainAppContent() {
                   <span>Programma Giornaliero di Studio</span>
                 </h2>
                 <p className="text-xs text-gray-400 mt-1">
-                  Seleziona una giornata per consultare, personalizzare o generare lezioni.
+                  Piano didattico estratto al 100% dalle tue fonti. Clicca su un giorno per generare le lezioni.
                 </p>
               </div>
 
@@ -1659,8 +1523,6 @@ function MainAppContent() {
                     onClick={() => {
                       setSelectedDayNumber(day.dayNumber);
                       setSelectedTopicId(day.topics?.[0]?.id || null);
-                      setLessonChatMessages([]);
-                      setPendingIntegration(null);
                       setCurrentView('day_detail');
                     }}
                     className={`p-4 sm:p-5 rounded-2xl border cursor-pointer transition flex items-center justify-between group ${
@@ -1710,13 +1572,12 @@ function MainAppContent() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* VISTA 4: DETTAGLIO GIORNO CON EDITING LIVE, RISCRITTURA E CHATBOT LATERALE */}
+        {/* VISTA 4: DETTAGLIO GIORNO & GENERATORE LEZIONE                */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'day_detail' && activeProject && currentDayData && (
-          <main className="flex-1 overflow-hidden flex flex-col h-full w-full">
+          <main className="flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-4xl mx-auto w-full space-y-6">
             
-            {/* Sottotitolo navigazione */}
-            <div className="flex items-center justify-between px-4 sm:px-6 py-2.5 border-b border-geminiBorder/40 bg-geminiDarkSecondary/60 shrink-0">
+            <div className="flex items-center justify-between pb-2 border-b border-geminiBorder/40">
               <button 
                 onClick={() => setCurrentView('study_plan')}
                 className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white transition"
@@ -1725,360 +1586,205 @@ function MainAppContent() {
                 <span>Torna al Piano Giornaliero</span>
               </button>
               
-              <div className="flex items-center gap-2 text-xs text-gray-300">
+              <div className="flex items-center gap-2 text-xs text-gray-400">
                 <CalendarIcon size={14} className="text-blue-400" />
-                <span>{currentDayData?.date} • {currentDayData?.dayTitle}</span>
+                <span>{currentDayData?.date}</span>
               </div>
             </div>
 
-            {/* Layout a 2 colonne: Sinistra Lezione (Editor/Viewer) - Destra Chatbot Assistente */}
-            <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
-              
-              {/* COLONNA SINISTRA: LEZIONE, LIVE EDIT E TOOLBAR DI RISCRITTURA */}
-              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
-                
-                {/* Selettore Argomenti del giorno */}
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  {(currentDayData?.topics || []).map(topic => (
-                    <button
-                      key={topic.id}
-                      onClick={() => {
-                        setSelectedTopicId(topic.id);
-                        setPendingIntegration(null);
-                      }}
-                      className={`px-3.5 py-2 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-2 border ${
-                        currentSelectedTopic?.id === topic.id
-                          ? 'bg-blue-600 text-white border-blue-500 shadow-md'
-                          : 'bg-geminiDarkSecondary text-gray-400 border-geminiBorder hover:text-gray-200'
-                      }`}
-                    >
-                      <span>{topic.title}</span>
-                      {topic.lesson && <span className="w-2 h-2 rounded-full bg-emerald-400" />}
-                    </button>
-                  ))}
-                </div>
+            <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 rounded-3xl shadow-lg space-y-2">
+              <div className="text-xs font-semibold text-blue-400 uppercase tracking-wider">{currentDayData?.phase}</div>
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-100">
+                {currentDayData?.dayTitle}
+              </h2>
+              <p className="text-xs text-gray-400">
+                Seleziona un argomento per consultare la lezione estratta {activeProject?.sourceType === 'my_materials' ? 'esclusivamente dai tuoi file' : 'dalle fonti online'}.
+              </p>
+            </div>
 
-                {/* BANNER DI PROPOSTA MODIFICA IN ATTESA DI CONFERMA */}
-                {pendingIntegration && (
-                  <div className="p-4 bg-gradient-to-r from-blue-950/80 to-indigo-950/80 border-2 border-blue-500 rounded-2xl shadow-xl space-y-3 animate-fadeIn">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-2 text-blue-300 text-xs font-bold uppercase tracking-wider">
-                        <Sparkles size={16} />
-                        <span>Modifica Proposta dal Chatbot:</span>
-                      </div>
-                    </div>
-                    <p className="text-xs text-gray-300 leading-relaxed italic">
-                      "{pendingIntegration.explanation}"
-                    </p>
-                    <div className="flex items-center gap-2 pt-1">
-                      <button
-                        onClick={handleAcceptIntegration}
-                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center gap-1.5"
-                      >
-                        <Check size={14} />
-                        <span>Accetta e Salva nel Testo</span>
-                      </button>
-                      <button
-                        onClick={handleRejectIntegration}
-                        className="px-3.5 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl text-xs font-medium transition"
-                      >
-                        Annulla Modifica
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* HEADER DELLA LEZIONE CON PULSANTI LIVE EDIT E RISCRITTURA */}
-                {currentSelectedTopic && (
-                  <div className="bg-geminiDarkSecondary border border-geminiBorder p-5 rounded-3xl shadow-xl space-y-4">
-                    
-                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-geminiBorder/60 pb-3">
-                      <div>
-                        <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">Lezione Didattica</span>
-                        <h3 className="text-base sm:text-lg font-bold text-gray-100">{currentSelectedTopic.title}</h3>
-                      </div>
-
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {currentSelectedTopic.lesson && (
-                          <>
-                            {/* Toggle Modalità Visualizza / Modifica Direttamente */}
-                            <button
-                              onClick={() => setIsLessonEditingMode(!isLessonEditingMode)}
-                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
-                                isLessonEditingMode 
-                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' 
-                                  : 'bg-geminiHover text-gray-300 border-geminiBorder hover:text-white'
-                              }`}
-                              title={isLessonEditingMode ? "Torna alla visualizzazione formattata" : "Modifica il testo direttamente"}
-                            >
-                              {isLessonEditingMode ? <Eye size={14} /> : <Edit3 size={14} />}
-                              <span>{isLessonEditingMode ? 'Visualizza' : 'Modifica testo'}</span>
-                            </button>
-
-                            {/* Menu Riscrivi Selezione se del testo è evidenziato */}
-                            {currentSelectionText && (
-                              <div className="flex items-center gap-1 bg-indigo-600/20 border border-indigo-500/40 px-2.5 py-1 rounded-xl animate-fadeIn">
-                                <Wand2 size={13} className="text-indigo-400" />
-                                <span className="text-[11px] text-indigo-200 mr-1 font-medium">Riscrivi selezione:</span>
-                                <button
-                                  onClick={() => handleRewriteSelection('riassumi')}
-                                  disabled={isRewritingSelection}
-                                  className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[10px] font-bold transition"
-                                >
-                                  Riassumi
-                                </button>
-                                <button
-                                  onClick={() => handleRewriteSelection('approfondisci')}
-                                  disabled={isRewritingSelection}
-                                  className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[10px] font-bold transition"
-                                >
-                                  Approfondisci
-                                </button>
-                                <button
-                                  onClick={() => handleRewriteSelection('chiaro')}
-                                  disabled={isRewritingSelection}
-                                  className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[10px] font-bold transition"
-                                >
-                                  Più chiaro
-                                </button>
-                              </div>
-                            )}
-                          </>
-                        )}
-
-                        <button
-                          onClick={() => handleGenerateLesson(currentDayData.dayNumber, currentSelectedTopic)}
-                          disabled={isGeneratingLesson}
-                          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold transition shadow-md ${
-                            isGeneratingLesson 
-                              ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
-                              : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/30'
-                          }`}
-                        >
-                          {isGeneratingLesson ? <RefreshCw size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                          <span>{currentSelectedTopic.lesson ? 'Rigenera' : 'Genera lezione'}</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* CORPO DELLA LEZIONE (VISUALIZZAZIONE O MODIFICA DIRETTA) */}
-                    {isGeneratingLesson ? (
-                      <div className="py-16 text-center space-y-3">
-                        <Sparkles size={28} className="text-blue-400 mx-auto animate-bounce" />
-                        <div className="text-sm font-semibold text-gray-200">Elaborazione della lezione in corso...</div>
-                        <div className="text-xs text-gray-400">Creazione di spiegazioni, tabelle e formule matematiche/scientifiche</div>
-                      </div>
-                    ) : currentSelectedTopic.lesson ? (
-                      <div className="space-y-3">
-                        {isLessonEditingMode ? (
-                          // Modalità Editor Diretta
-                          <div className="space-y-2">
-                            <div className="text-[11px] text-amber-400 flex items-center gap-1.5">
-                              <Edit3 size={13} />
-                              <span>Modalità Modifica attiva: puoi digitare, incollare o cancellare qualsiasi paragrafo.</span>
-                            </div>
-                            <textarea
-                              ref={lessonTextareaRef}
-                              value={currentSelectedTopic.lesson}
-                              onChange={(e) => updateTopicLessonContent(currentDayData.dayNumber, currentSelectedTopic.id, e.target.value)}
-                              rows={16}
-                              className="w-full bg-geminiDark border border-geminiBorder rounded-2xl p-4 text-xs font-mono text-gray-100 focus:outline-none focus:border-blue-500 transition leading-relaxed resize-y"
-                              placeholder="Scrivi o incolla qui i tuoi appunti..."
-                            />
-                          </div>
-                        ) : (
-                          // Modalità Visualizzatore Formattato con selezione attiva
-                          <div 
-                            ref={lessonViewerRef}
-                            className="p-5 bg-geminiDark rounded-2xl border border-geminiBorder/70 shadow-inner select-text"
-                          >
-                            <MarkdownRenderer content={currentSelectedTopic.lesson} />
-                          </div>
-                        )}
-
-                        <div className="flex items-center justify-between pt-2 border-t border-geminiBorder/40 text-xs text-gray-400">
-                          <span className="text-[11px]">
-                            {currentSelectedTopic.lesson.split(/\s+/).length} parole • Modifiche salvate automaticamente
-                          </span>
-                          <button
-                            onClick={() => handleToggleTopicComplete(currentDayData.dayNumber, currentSelectedTopic.id)}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                              currentSelectedTopic.completed 
-                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
-                                : 'bg-geminiHover text-gray-300 hover:text-white border border-geminiBorder'
-                            }`}
-                          >
-                            {currentSelectedTopic.completed ? <CheckCircle2 size={14} /> : <CheckSquare size={14} />}
-                            <span>{currentSelectedTopic.completed ? 'Studiato' : 'Segna come studiato'}</span>
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="py-12 text-center bg-geminiDark/40 rounded-2xl border border-dashed border-geminiBorder p-6 space-y-3">
-                        <BookOpen size={28} className="mx-auto text-gray-500" />
-                        <div className="text-xs text-gray-300 font-medium">Nessuna lezione presente per questo argomento</div>
-                        <p className="text-[11px] text-gray-500 max-w-sm mx-auto">
-                          Clicca su <strong>"Genera lezione"</strong> in alto per ricevere una sintesi didattica completa con formule e tabelle.
-                        </p>
-                      </div>
-                    )}
-
-                  </div>
-                )}
-
+            <div className="space-y-3">
+              <div className="text-xs font-semibold text-gray-300 uppercase tracking-wider">
+                Argomenti da studiare oggi:
               </div>
 
-              {/* COLONNA DESTRA: CHATBOT DEDICATO ALLA LEZIONE CON INTEGRAZIONE NEL TESTO */}
-              <div className="w-full lg:w-96 border-t lg:border-t-0 lg:border-l border-geminiBorder/60 bg-geminiDarkSecondary/40 flex flex-col h-80 lg:h-full shrink-0">
-                
-                <div className="px-4 py-3 border-b border-geminiBorder/40 bg-geminiDarkSecondary flex items-center justify-between shrink-0">
-                  <div className="flex items-center gap-2 text-xs font-bold text-gray-100">
-                    <Bot size={16} className="text-blue-400" />
-                    <span>Tutor della Lezione</span>
-                  </div>
-                  <span className="text-[10px] text-gray-400 bg-geminiDark px-2 py-0.5 rounded-md border border-geminiBorder">
-                    Contestuale
-                  </span>
-                </div>
-
-                {/* Messaggi Chatbot Lezione */}
-                <div className="flex-1 overflow-y-auto p-3 space-y-3 text-xs">
-                  {lessonChatMessages.length === 0 ? (
-                    <div className="h-full flex flex-col justify-center text-center p-3 text-gray-400 space-y-2">
-                      <Sparkles size={20} className="mx-auto text-blue-400 mb-1" />
-                      <p className="font-semibold text-gray-300">Chiedi chiarimenti o modifiche</p>
-                      <p className="text-[11px] text-gray-500 leading-relaxed">
-                        Questo tutor conosce l'intero testo della lezione. Puoi fare domande o chiedergli di inserire nuove informazioni.
-                      </p>
-                      <div className="space-y-1.5 pt-2 text-left">
-                        <button
-                          onClick={() => handleSendLessonChatMessage("Aggiungi una tabella di riassunto dei punti chiave")}
-                          className="w-full text-[11px] p-2 rounded-xl bg-geminiDark hover:bg-geminiHover border border-geminiBorder text-gray-300 text-left transition"
-                        >
-                          + "Aggiungi una tabella di riassunto"
-                        </button>
-                        <button
-                          onClick={() => handleSendLessonChatMessage("Spiegami questo argomento con un esempio pratico")}
-                          className="w-full text-[11px] p-2 rounded-xl bg-geminiDark hover:bg-geminiHover border border-geminiBorder text-gray-300 text-left transition"
-                        >
-                          + "Spiegami con un esempio pratico"
-                        </button>
-                        <button
-                          onClick={() => handleSendLessonChatMessage("Fammi 3 domande d'esame su questa lezione")}
-                          className="w-full text-[11px] p-2 rounded-xl bg-geminiDark hover:bg-geminiHover border border-geminiBorder text-gray-300 text-left transition"
-                        >
-                          + "Fammi 3 domande d'esame"
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    lessonChatMessages.map((msg, i) => (
-                      <div 
-                        key={i} 
-                        className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
-                      >
-                        <div className={`p-3 rounded-2xl max-w-[90%] leading-relaxed ${
-                          msg.role === 'user'
-                            ? 'bg-blue-600 text-white rounded-br-none'
-                            : 'bg-geminiDark border border-geminiBorder text-gray-200 rounded-tl-none'
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {(currentDayData?.topics || []).map(topic => (
+                  <div
+                    key={topic.id}
+                    onClick={() => setSelectedTopicId(topic.id)}
+                    className={`p-4 rounded-2xl border cursor-pointer transition flex items-start justify-between ${
+                      currentSelectedTopic?.id === topic.id
+                        ? 'bg-blue-600/15 border-blue-500 shadow-md ring-1 ring-blue-500/50'
+                        : 'bg-geminiDarkSecondary border-geminiBorder hover:border-gray-500'
+                    }`}
+                  >
+                    <div className="space-y-1.5 pr-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                          topic.difficulty === 'Avanzato' ? 'bg-red-500/15 text-red-400 border border-red-500/20' :
+                          topic.difficulty === 'Intermedio' ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20' :
+                          'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
                         }`}>
-                          <MarkdownRenderer content={msg.text} />
-                        </div>
+                          {topic.difficulty || 'Accademico'}
+                        </span>
+                        {topic.lesson && (
+                          <span className="text-[10px] bg-blue-500/15 text-blue-400 px-2 py-0.5 rounded-md border border-blue-500/20">
+                            Lezione pronta
+                          </span>
+                        )}
                       </div>
-                    ))
-                  )}
-
-                  {isLessonChatLoading && (
-                    <div className="flex items-center gap-2 p-2 text-[11px] text-gray-400 bg-geminiDark rounded-xl w-fit">
-                      <RefreshCw size={12} className="animate-spin text-blue-400" />
-                      <span>Il tutor sta rispondendo...</span>
+                      <div className="text-xs font-bold text-gray-200 leading-relaxed">
+                        {topic.title}
+                      </div>
                     </div>
-                  )}
-                  <div ref={lessonChatEndRef} />
-                </div>
 
-                {/* Input Chatbot Lezione */}
-                <div className="p-3 border-t border-geminiBorder/40 bg-geminiDarkSecondary shrink-0">
-                  <div className="flex items-center gap-1.5 bg-geminiDark border border-geminiBorder rounded-2xl px-3 py-1.5 focus-within:border-blue-500 transition">
-                    <input
-                      type="text"
-                      value={lessonChatInput}
-                      onChange={(e) => setLessonChatInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleSendLessonChatMessage();
-                        }
-                      }}
-                      placeholder="Chiedi o aggiungi info al testo..."
-                      className="flex-1 bg-transparent text-xs text-gray-100 placeholder-gray-500 focus:outline-none"
-                    />
                     <button
-                      onClick={() => handleSendLessonChatMessage()}
-                      disabled={!lessonChatInput.trim() || isLessonChatLoading}
-                      className={`p-1.5 rounded-full transition ${
-                        lessonChatInput.trim() && !isLessonChatLoading 
-                          ? 'bg-blue-600 text-white hover:bg-blue-500' 
-                          : 'text-gray-600 cursor-not-allowed'
-                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleTopicComplete(currentDayData.dayNumber, topic.id);
+                      }}
+                      className="p-1 text-gray-400 hover:text-emerald-400 transition"
+                      title={topic.completed ? "Segna come da fare" : "Segna come completato"}
                     >
-                      <Send size={13} />
+                      {topic.completed ? (
+                        <CheckSquare size={18} className="text-emerald-400" />
+                      ) : (
+                        <Square size={18} />
+                      )}
                     </button>
                   </div>
+                ))}
+              </div>
+            </div>
+
+            {currentSelectedTopic && (
+              <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-xl space-y-6">
+                
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-geminiBorder/60 pb-4">
+                  <div>
+                    <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">Lezione Didattica</span>
+                    <h3 className="text-lg font-bold text-gray-100 mt-0.5">{currentSelectedTopic?.title}</h3>
+                  </div>
+
+                  <button
+                    onClick={() => handleGenerateLesson(currentDayData.dayNumber, currentSelectedTopic)}
+                    disabled={isGeneratingLesson}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition shadow-lg ${
+                      isGeneratingLesson 
+                        ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
+                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/30'
+                    }`}
+                  >
+                    {isGeneratingLesson ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" />
+                        <span>Estrazione e sintesi in corso...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles size={15} />
+                        <span>{currentSelectedTopic?.lesson ? 'Rigenera lezione' : 'Genera lezione'}</span>
+                      </>
+                    )}
+                  </button>
                 </div>
 
-              </div>
+                {isGeneratingLesson ? (
+                  <div className="py-16 text-center space-y-4">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 mx-auto animate-bounce">
+                      <Sparkles size={24} />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-sm font-semibold text-gray-200">Elaborazione della lezione dai tuoi documenti...</div>
+                      <div className="text-xs text-gray-400">
+                        {activeProject?.sourceType === 'my_materials' 
+                          ? 'Estrazione fedele dei concetti dai file caricati, riorganizzati con chiarezza e schemi.' 
+                          : 'Elaborazione pedagogica con nozioni e formule scientifiche.'}
+                      </div>
+                    </div>
+                  </div>
+                ) : currentSelectedTopic?.lesson ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between text-xs text-gray-400 bg-geminiDark p-3 rounded-2xl border border-geminiBorder">
+                      <div className="flex items-center gap-2">
+                        <BookOpen size={15} className="text-blue-400" />
+                        <span>Fonte: <strong>{activeProject?.sourceType === 'my_materials' ? 'Esclusivamente dai tuoi file caricati' : 'Ricerca accademica online'}</strong></span>
+                      </div>
+                      <button
+                        onClick={() => handleToggleTopicComplete(currentDayData.dayNumber, currentSelectedTopic.id)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                          currentSelectedTopic.completed 
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                            : 'bg-geminiHover text-gray-300 hover:text-white border border-geminiBorder'
+                        }`}
+                      >
+                        {currentSelectedTopic.completed ? <CheckCircle2 size={14} /> : <CheckSquare size={14} />}
+                        <span>{currentSelectedTopic.completed ? 'Studiato' : 'Segna come studiato'}</span>
+                      </button>
+                    </div>
 
-            </div>
+                    <div className="p-6 bg-geminiDark rounded-2xl border border-geminiBorder/70 shadow-inner">
+                      <MarkdownRenderer content={currentSelectedTopic.lesson} />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-12 text-center bg-geminiDark/50 rounded-2xl border border-dashed border-geminiBorder p-6 space-y-3">
+                    <BookOpen size={28} className="mx-auto text-gray-500" />
+                    <div className="text-xs text-gray-300 font-medium">Nessuna lezione generata per questo argomento</div>
+                    <p className="text-[11px] text-gray-500 max-w-sm mx-auto">
+                      Clicca su <strong>"Genera lezione"</strong> in alto per ricevere una sintesi didattica basata {activeProject?.sourceType === 'my_materials' ? 'esclusivamente sui tuoi file' : 'sulle fonti online'}.
+                    </p>
+                  </div>
+                )}
+
+              </div>
+            )}
 
           </main>
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* VISTA 5: CHAT HOMEPAGE CORRETTA (NON SPAGINATA)              */}
+        {/* VISTA 5: CHAT CLASSICA                                        */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'chat' && (
-          <div className="flex-1 flex flex-col h-full w-full overflow-hidden relative">
-            
-            {/* Scrollable Messages Container con layout centrato e padding protetto */}
-            <div className="flex-1 overflow-y-auto w-full px-4 sm:px-6">
-              <div className="max-w-3xl mx-auto py-6 space-y-6 pb-36">
-                
-                {messages.length === 0 ? (
-                  <div className="min-h-[55vh] flex flex-col items-center justify-center text-center">
-                    <div className="w-14 h-14 rounded-2xl bg-geminiDarkSecondary border border-geminiBorder flex items-center justify-center text-blue-400 mb-6 shadow-lg">
-                      <Sparkles size={28} />
-                    </div>
-                    
-                    <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-gray-100 mb-3">
-                      Cosa vuoi studiare oggi?
-                    </h1>
-                    <p className="text-gray-400 text-sm md:text-base max-w-md mb-8">
-                      Fai una domanda libera, oppure clicca su <strong>"Crea guida allo studio"</strong> in alto per pianificare il tuo prossimo esame.
-                    </p>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg">
-                      {[
-                        { icon: BookOpen, text: "Spiegami un argomento complesso con parole semplici" },
-                        { icon: FileText, text: "Crea uno schema riassuntivo con i punti chiave" },
-                        { icon: GraduationCap, text: "Fammi 5 domande a risposta multipla per testarmi" },
-                        { icon: Sparkles, text: "Analizza e sintetizza il materiale che carico" }
-                      ].map((item, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => handleSendMessage(item.text)}
-                          className="flex items-start gap-3 p-3.5 rounded-xl bg-geminiDarkSecondary/70 hover:bg-geminiDarkSecondary border border-geminiBorder/60 hover:border-gray-500 text-left transition group"
-                        >
-                          <item.icon size={18} className="text-blue-400 shrink-0 mt-0.5" />
-                          <span className="text-xs text-gray-300 group-hover:text-white leading-relaxed">
-                            {item.text}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
+          <>
+            <main className="flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-4xl mx-auto w-full">
+              {messages.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center pb-24">
+                  <div className="w-14 h-14 rounded-2xl bg-geminiDarkSecondary border border-geminiBorder flex items-center justify-center text-blue-400 mb-6 shadow-lg">
+                    <Sparkles size={28} />
                   </div>
-                ) : (
-                  messages.map((msg, idx) => (
+                  
+                  <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-gray-100 mb-3">
+                    Cosa vuoi studiare oggi?
+                  </h1>
+                  <p className="text-gray-400 text-sm md:text-base max-w-md mb-8">
+                    Fai una domanda libera, oppure clicca su <strong>"Crea guida allo studio"</strong> in alto per pianificare il tuo prossimo esame.
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg">
+                    {[
+                      { icon: BookOpen, text: "Spiegami un argomento complesso con parole semplici" },
+                      { icon: FileText, text: "Crea uno schema riassuntivo con i punti chiave" },
+                      { icon: GraduationCap, text: "Fammi 5 domande a risposta multipla per testarmi" },
+                      { icon: Sparkles, text: "Analizza e sintetizza il materiale che carico" }
+                    ].map((item, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => handleSendMessage(item.text)}
+                        className="flex items-start gap-3 p-3.5 rounded-xl bg-geminiDarkSecondary/70 hover:bg-geminiDarkSecondary border border-geminiBorder/60 hover:border-gray-500 text-left transition group"
+                      >
+                        <item.icon size={18} className="text-blue-400 shrink-0 mt-0.5" />
+                        <span className="text-xs text-gray-300 group-hover:text-white leading-relaxed">
+                          {item.text}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-6 pb-28">
+                  {messages.map((msg, idx) => (
                     <div 
                       key={idx} 
                       className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -2089,7 +1795,7 @@ function MainAppContent() {
                         </div>
                       )}
 
-                      <div className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed break-words overflow-hidden ${
+                      <div className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                         msg.role === 'user' 
                           ? 'bg-blue-600 text-white rounded-br-sm shadow-md whitespace-pre-wrap' 
                           : 'bg-geminiDarkSecondary border border-geminiBorder text-gray-200 rounded-tl-sm shadow-sm'
@@ -2109,28 +1815,27 @@ function MainAppContent() {
                         )}
                       </div>
                     </div>
-                  ))
-                )}
+                  ))}
 
-                {isLoading && (
-                  <div className="flex gap-3 justify-start">
-                    <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0 mt-1">
-                      <GraduationCap size={16} />
+                  {isLoading && (
+                    <div className="flex gap-3 justify-start">
+                      <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0 mt-1">
+                        <GraduationCap size={16} />
+                      </div>
+                      <div className="bg-geminiDarkSecondary border border-geminiBorder px-4 py-3 rounded-2xl rounded-tl-sm text-sm text-gray-400 flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+                        <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse delay-150" />
+                        <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse delay-300" />
+                        <span className="ml-1 text-xs">L'AI sta elaborando la risposta...</span>
+                      </div>
                     </div>
-                    <div className="bg-geminiDarkSecondary border border-geminiBorder px-4 py-3 rounded-2xl rounded-tl-sm text-sm text-gray-400 flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
-                      <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse delay-150" />
-                      <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse delay-300" />
-                      <span className="ml-1 text-xs">L'AI sta elaborando la risposta...</span>
-                    </div>
-                  </div>
-                )}
-                <div ref={messagesEndRef} />
-              </div>
-            </div>
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+              )}
+            </main>
 
-            {/* Input Bar Fisso in Basso */}
-            <footer className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-geminiDark via-geminiDark to-transparent z-10">
+            <footer className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-geminiDark via-geminiDark to-transparent">
               <div className="max-w-3xl mx-auto">
                 
                 {attachedFile && (
@@ -2148,7 +1853,7 @@ function MainAppContent() {
                   </div>
                 )}
 
-                <div className="flex items-end gap-2 bg-geminiDarkSecondary border border-geminiBorder rounded-3xl px-4 py-2.5 shadow-xl focus-within:border-blue-500 transition">
+                <div className="flex items-end gap-2 bg-geminiDarkSecondary border border-geminiBorder rounded-3xl px-4 py-2.5 shadow-xl focus-within:border-gray-500 transition">
                   <input 
                     type="file" 
                     ref={fileInputRef}
@@ -2195,8 +1900,7 @@ function MainAppContent() {
                 </div>
               </div>
             </footer>
-
-          </div>
+          </>
         )}
 
       </div>
