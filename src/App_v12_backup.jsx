@@ -1,4 +1,8 @@
 import React, { useState, useEffect, useRef, Component } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { 
   Menu, 
   X, 
@@ -31,27 +35,19 @@ import {
   FileSearch,
   ShieldCheck,
   Check,
-  Bot,
-  Bold,
-  Italic,
-  Underline as UnderlineIcon,
-  AlignLeft,
-  AlignCenter,
-  AlignRight,
-  AlignJustify,
-  List,
-  ListOrdered,
-  Heading1,
-  Heading2,
-  Heading3,
-  Type,
+  Edit3,
+  Eye,
   Wand2,
-  Undo2,
-  CornerDownLeft
+  CornerDownLeft,
+  Bot,
+  HelpCircle,
+  Maximize2,
+  Minimize2,
+  Copy
 } from 'lucide-react';
 
-// IndexedDB Helper
-const DB_NAME = 'StudyAIDB_V5';
+// IndexedDB Helper per memorizzare progetti, file e lezioni
+const DB_NAME = 'StudyAIDB_V4';
 const STORE_NAME = 'project_data_store';
 
 function getDB() {
@@ -151,30 +147,6 @@ async function extractTextFromPptx(arrayBuffer) {
   return { text: text.trim(), pagesCount: slideFiles.length };
 }
 
-// Convertitore Markdown di base a HTML per visualizzazione modificabile WYSIWYG
-function markdownToHtml(md) {
-  if (!md) return '';
-  let html = md;
-  // Intestazioni
-  html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
-  html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
-  html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
-  // Grassetto e Corsivo
-  html = html.replace(/\*\*\*(.*?)\*\*\*/gim, '<b><i>$1</i></b>');
-  html = html.replace(/\*\*(.*?)\*\*/gim, '<b>$1</b>');
-  html = html.replace(/\*(.*?)\*/gim, '<i>$1</i>');
-  // Elenchi puntati
-  html = html.replace(/^\s*-\s+(.*$)/gim, '<ul><li>$1</li></ul>');
-  html = html.replace(/<\/ul>\s*<ul>/gim, '');
-  // Paragrafi e a capo
-  html = html.replace(/\n\n/gim, '</p><p>');
-  html = html.replace(/\n/gim, '<br/>');
-  if (!html.startsWith('<h') && !html.startsWith('<p') && !html.startsWith('<ul')) {
-    html = '<p>' + html + '</p>';
-  }
-  return html;
-}
-
 // Error Boundary
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -195,7 +167,7 @@ class ErrorBoundary extends Component {
             <AlertTriangle size={36} className="text-red-400 mx-auto" />
             <h2 className="text-lg font-bold text-gray-100">Si è verificato un problema</h2>
             <p className="text-xs text-gray-400">
-              I tuoi dati sono al sicuro. Clicca qui sotto per ricaricare l'app.
+              I tuoi dati sono protetti. Clicca qui sotto per ricaricare la schermata.
             </p>
             <button 
               onClick={() => {
@@ -211,6 +183,45 @@ class ErrorBoundary extends Component {
       );
     }
     return this.props.children;
+  }
+}
+
+// Markdown & LaTeX Renderer
+function MarkdownRenderer({ content }) {
+  if (!content) return null;
+  try {
+    return (
+      <div className="prose prose-invert max-w-none text-sm leading-relaxed text-gray-200">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false }]]}
+          components={{
+            h1: ({node, ...props}) => <h1 className="text-xl font-bold text-gray-100 mt-5 mb-3 pb-1 border-b border-geminiBorder/60" {...props} />,
+            h2: ({node, ...props}) => <h2 className="text-lg font-bold text-blue-400 mt-5 mb-2.5 flex items-center gap-2" {...props} />,
+            h3: ({node, ...props}) => <h3 className="text-base font-semibold text-indigo-300 mt-4 mb-1.5" {...props} />,
+            p: ({node, ...props}) => <p className="mb-3 leading-relaxed text-gray-200" {...props} />,
+            ul: ({node, ...props}) => <ul className="list-disc list-outside ml-5 space-y-1.5 mb-3 text-gray-200" {...props} />,
+            ol: ({node, ...props}) => <ol className="list-decimal list-outside ml-5 space-y-1.5 mb-3 text-gray-200" {...props} />,
+            li: ({node, ...props}) => <li className="text-gray-200 leading-relaxed" {...props} />,
+            strong: ({node, ...props}) => <strong className="font-bold text-white bg-blue-500/15 text-blue-200 px-1 py-0.5 rounded border border-blue-500/30" {...props} />,
+            em: ({node, ...props}) => <em className="italic text-gray-300" {...props} />,
+            blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-blue-500 pl-4 py-2 my-3 bg-geminiDarkSecondary/60 rounded-r-xl italic text-gray-300" {...props} />,
+            code: ({node, inline, ...props}) => inline 
+              ? <code className="bg-geminiDarkSecondary px-1.5 py-0.5 rounded text-blue-300 font-mono text-xs border border-geminiBorder" {...props} />
+              : <pre className="bg-geminiDarkSecondary p-4 rounded-2xl overflow-x-auto text-xs font-mono text-gray-200 my-3 border border-geminiBorder"><code {...props} /></pre>,
+            table: ({node, ...props}) => <div className="overflow-x-auto my-4 rounded-xl border border-geminiBorder"><table className="min-w-full divide-y divide-geminiBorder text-xs text-left" {...props} /></div>,
+            thead: ({node, ...props}) => <thead className="bg-geminiDarkSecondary text-gray-300 font-bold uppercase" {...props} />,
+            tbody: ({node, ...props}) => <tbody className="divide-y divide-geminiBorder/50 bg-geminiDark/40" {...props} />,
+            th: ({node, ...props}) => <th className="px-4 py-2.5 text-xs font-bold text-gray-200" {...props} />,
+            td: ({node, ...props}) => <td className="px-4 py-2.5 text-xs text-gray-200" {...props} />,
+          }}
+        >
+          {content}
+        </ReactMarkdown>
+      </div>
+    );
+  } catch (err) {
+    return <div className="text-xs text-gray-300 whitespace-pre-wrap">{content}</div>;
   }
 }
 
@@ -255,19 +266,16 @@ function MainAppContent() {
   const [selectedTopicId, setSelectedTopicId] = useState(null);
   const [isGeneratingLesson, setIsGeneratingLesson] = useState(false);
 
-  // POPUP FLUTTUANTE SU SELEZIONE TESTO
-  const [floatingPopup, setFloatingPopup] = useState(null); // { x, y, text }
-  const [isRewriting, setIsRewriting] = useState(false);
+  // Modalità modifica testo lezione & Riscrittura selezione
+  const [isLessonEditingMode, setIsLessonEditingMode] = useState(false);
+  const [currentSelectionText, setCurrentSelectionText] = useState('');
+  const [isRewritingSelection, setIsRewritingSelection] = useState(false);
 
-  // CHATBOT DEDICATO ALLA LEZIONE CON MODIFICA DIRETTA
+  // Chatbot dedicato alla lezione
   const [lessonChatMessages, setLessonChatMessages] = useState([]);
   const [lessonChatInput, setLessonChatInput] = useState('');
   const [isLessonChatLoading, setIsLessonChatLoading] = useState(false);
-  const [previousLessonBackup, setPreviousLessonBackup] = useState(null);
-
-  // Toolbar state
-  const [activeFont, setActiveFont] = useState('sans');
-  const [activeFontSize, setActiveFontSize] = useState('15px');
+  const [pendingIntegration, setPendingIntegration] = useState(null); // { proposedText, explanation }
 
   // Wizard State
   const [wizardStep, setWizardStep] = useState(1);
@@ -288,14 +296,15 @@ function MainAppContent() {
   const messagesEndRef = useRef(null);
   const lessonChatEndRef = useRef(null);
   const textareaRef = useRef(null);
-  const wysiwygEditorRef = useRef(null);
+  const lessonTextareaRef = useRef(null);
+  const lessonViewerRef = useRef(null);
 
-  // Sync Storage
+  // Storage sync
   useEffect(() => {
     try {
       localStorage.setItem('study_ai_chats', JSON.stringify(conversations));
     } catch (e) {
-      console.warn("Storage chat quota", e);
+      console.warn("Quota chat", e);
     }
   }, [conversations]);
 
@@ -315,7 +324,7 @@ function MainAppContent() {
       }));
       localStorage.setItem('study_ai_projects', JSON.stringify(sanitized));
     } catch (e) {
-      console.warn("Storage projects quota", e);
+      console.warn("Quota projects", e);
     }
   }, [savedProjects]);
 
@@ -327,63 +336,18 @@ function MainAppContent() {
     lessonChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [lessonChatMessages, isLessonChatLoading]);
 
-  // Gestione selezione testo per far apparire automaticamente il popup fluttuante
+  // Listener selezione testo per la lezione
   useEffect(() => {
-    const handleSelectionChange = () => {
-      if (currentView !== 'day_detail') return;
-
+    const handleMouseUp = () => {
       const selection = window.getSelection();
-      if (!selection || selection.isCollapsed || !selection.rangeCount) {
-        // Nessuna selezione attiva
-        return;
-      }
-
-      const text = selection.toString().trim();
-      if (text.length < 3) {
-        setFloatingPopup(null);
-        return;
-      }
-
-      // Verifica che la selezione si trovi dentro l'editor WYSIWYG
-      const editorEl = wysiwygEditorRef.current;
-      if (!editorEl) return;
-
-      const anchorNode = selection.anchorNode;
-      if (!editorEl.contains(anchorNode)) {
-        setFloatingPopup(null);
-        return;
-      }
-
-      try {
-        const range = selection.getRangeAt(0);
-        const rect = range.getBoundingClientRect();
-
-        if (rect && rect.width > 0) {
-          setFloatingPopup({
-            x: Math.max(10, rect.left + rect.width / 2),
-            y: Math.max(10, rect.top - 10),
-            text: text,
-            range: range.cloneRange()
-          });
-        }
-      } catch (err) {
-        console.warn("Range rect error:", err);
+      const selectedStr = selection ? selection.toString().trim() : '';
+      if (selectedStr && selectedStr.length > 3) {
+        setCurrentSelectionText(selectedStr);
       }
     };
-
-    const handleMouseDown = (e) => {
-      // Se clicchi fuori dal popup, chiudilo
-      if (e.target.closest('#floating-selection-popup')) return;
-      setTimeout(handleSelectionChange, 150);
-    };
-
-    document.addEventListener('mouseup', handleSelectionChange);
-    document.addEventListener('mousedown', handleMouseDown);
-    return () => {
-      document.removeEventListener('mouseup', handleSelectionChange);
-      document.removeEventListener('mousedown', handleMouseDown);
-    };
-  }, [currentView]);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => document.removeEventListener('mouseup', handleMouseUp);
+  }, []);
 
   const loadProjectWithFiles = async (proj) => {
     setActiveProject(proj);
@@ -462,6 +426,7 @@ function MainAppContent() {
     e.target.value = '';
   };
 
+  // Caricamento e parsing multi-file per il Wizard
   const handleWizardFilesChange = async (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
@@ -551,7 +516,7 @@ function MainAppContent() {
     }
   };
 
-  // FINALIZZAZIONE WIZARD
+  // FINALIZZAZIONE WIZARD (CON SUPPORTO "CERCA ONLINE" E "USA FONTI")
   const handleFinalizeGuide = async () => {
     const isOnlineSearch = sourceType === 'search_online';
 
@@ -698,7 +663,7 @@ function MainAppContent() {
     }
   };
 
-  // Aggiornamento testo della lezione (salva in state e IndexedDB)
+  // Aggiornamento testo della lezione (per editing manuale o AI)
   const updateTopicLessonContent = (dayNum, topicId, newContent) => {
     if (!activeProject) return;
     const updatedSchedule = (activeProject.schedule || []).map(d => {
@@ -719,74 +684,54 @@ function MainAppContent() {
     setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProject : p));
   };
 
-  // COMANDI DI FORMATTAZIONE WYSIWYG
-  const executeEditorCommand = (command, value = null) => {
-    if (typeof document !== 'undefined') {
-      document.execCommand(command, false, value);
-      if (wysiwygEditorRef.current) {
-        wysiwygEditorRef.current.focus();
-        handleEditorInput();
-      }
+  // RISCRITTURA PORZIONE DI TESTO SELEZIONATA (Riassumi / Approfondisci / Più chiaro)
+  const handleRewriteSelection = async (mode) => {
+    const textToProcess = currentSelectionText.trim();
+    if (!textToProcess || !currentDayData || !currentSelectedTopic?.lesson) {
+      alert("Seleziona prima una porzione di testo all'interno della lezione con il cursore.");
+      return;
     }
-  };
 
-  // Sincronizzazione input da ContentEditable
-  const handleEditorInput = () => {
-    if (!wysiwygEditorRef.current || !currentDayData || !currentSelectedTopic) return;
-    const innerText = wysiwygEditorRef.current.innerText || '';
-    updateTopicLessonContent(currentDayData.dayNumber, currentSelectedTopic.id, innerText);
-  };
-
-  // RISCRITTURA DA POPUP AUTOMATICO SULLA SELEZIONE DEL TESTO
-  const handleRewriteFromPopup = async (mode) => {
-    if (!floatingPopup || !floatingPopup.text || isRewriting) return;
-
-    const selectedText = floatingPopup.text;
-    setIsRewriting(true);
-
+    setIsRewritingSelection(true);
     try {
       const res = await fetch('/.netlify/functions/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'rewrite_selection',
-          selectedText: selectedText,
+          selectedText: textToProcess,
           rewriteMode: mode,
-          fullContext: currentSelectedTopic?.title || '',
+          fullContext: currentSelectedTopic.title,
         }),
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Errore riscrittura.');
+      if (!res.ok) throw new Error(data.error || 'Errore nella riscrittura.');
 
-      const newRewrittenText = data.rewrittenText;
+      const rewritten = data.rewrittenText;
+      const fullLesson = currentSelectedTopic.lesson;
 
-      // Sostituzione diretta nel ContentEditable o nel testo
-      if (wysiwygEditorRef.current) {
-        const currentFullText = wysiwygEditorRef.current.innerText || '';
-        if (currentFullText.includes(selectedText)) {
-          const updatedFull = currentFullText.replace(selectedText, newRewrittenText);
-          wysiwygEditorRef.current.innerText = updatedFull;
-          updateTopicLessonContent(currentDayData.dayNumber, currentSelectedTopic.id, updatedFull);
-        }
+      // Sostituisce la prima occorrenza del testo selezionato
+      if (fullLesson.includes(textToProcess)) {
+        const updatedLesson = fullLesson.replace(textToProcess, rewritten);
+        updateTopicLessonContent(currentDayData.dayNumber, currentSelectedTopic.id, updatedLesson);
+        setCurrentSelectionText('');
+      } else {
+        alert("Modifica completata:\n\n" + rewritten);
       }
-
-      setFloatingPopup(null);
     } catch (err) {
       alert(`Errore: ${err.message}`);
     } finally {
-      setIsRewriting(false);
+      setIsRewritingSelection(false);
     }
   };
 
-  // CHATBOT LEZIONE: MODIFICA DIRETTA DEL TESTO DELLA LEZIONE
-  const handleSendLessonChatMessage = async (preset = null) => {
-    const promptText = (preset || lessonChatInput).trim();
-    if (!promptText || isLessonChatLoading || !currentSelectedTopic?.lesson) return;
+  // CHATBOT DEDICATO ALLA LEZIONE CON INTEGRAZIONE DI TESTO
+  const handleSendLessonChatMessage = async (presetText = null) => {
+    const promptToSend = (presetText || lessonChatInput).trim();
+    if (!promptToSend || isLessonChatLoading || !currentSelectedTopic?.lesson) return;
 
-    const currentDocText = wysiwygEditorRef.current ? (wysiwygEditorRef.current.innerText || currentSelectedTopic.lesson) : currentSelectedTopic.lesson;
-
-    const userMsg = { role: 'user', text: promptText };
+    const userMsg = { role: 'user', text: promptToSend };
     const updatedHistory = [...lessonChatMessages, userMsg];
     setLessonChatMessages(updatedHistory);
     setLessonChatInput('');
@@ -798,8 +743,8 @@ function MainAppContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'lesson_chat',
-          prompt: promptText,
-          lessonContent: currentDocText,
+          prompt: promptToSend,
+          lessonText: currentSelectedTopic.lesson,
           lessonChatHistory: updatedHistory,
         }),
       });
@@ -807,22 +752,22 @@ function MainAppContent() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Errore risposta tutor');
 
-      // Se l'AI ha modificato direttamente il documento, applichiamo subito la modifica al file!
-      if (data.hasUpdatedLesson && data.updatedLessonContent) {
-        setPreviousLessonBackup(currentDocText); // salva per eventuale annulla
-        updateTopicLessonContent(currentDayData.dayNumber, currentSelectedTopic.id, data.updatedLessonContent);
-        if (wysiwygEditorRef.current) {
-          wysiwygEditorRef.current.innerText = data.updatedLessonContent;
-        }
-      }
-
       const aiMsg = {
         role: 'assistant',
         text: data.reply,
-        hasUpdatedLesson: data.hasUpdatedLesson,
+        hasProposedChange: data.hasProposedChange,
+        proposedLessonText: data.proposedLessonText,
       };
 
       setLessonChatMessages([...updatedHistory, aiMsg]);
+
+      // Se c'è una proposta di integrazione nel testo, imposta la notifica di approvazione
+      if (data.hasProposedChange && data.proposedLessonText) {
+        setPendingIntegration({
+          proposedText: data.proposedLessonText,
+          explanation: data.reply
+        });
+      }
     } catch (err) {
       setLessonChatMessages([...updatedHistory, { role: 'assistant', text: `Si è verificato un errore: ${err.message}` }]);
     } finally {
@@ -830,16 +775,16 @@ function MainAppContent() {
     }
   };
 
-  // Annulla ultima modifica del chatbot
-  const handleUndoChatbotChange = () => {
-    if (previousLessonBackup && currentDayData && currentSelectedTopic) {
-      updateTopicLessonContent(currentDayData.dayNumber, currentSelectedTopic.id, previousLessonBackup);
-      if (wysiwygEditorRef.current) {
-        wysiwygEditorRef.current.innerText = previousLessonBackup;
-      }
-      setPreviousLessonBackup(null);
-      alert("Modifica del chatbot annullata.");
-    }
+  // Accetta o rifiuta integrazione testo proposta dall'AI
+  const handleAcceptIntegration = () => {
+    if (!pendingIntegration || !currentDayData || !currentSelectedTopic) return;
+    updateTopicLessonContent(currentDayData.dayNumber, currentSelectedTopic.id, pendingIntegration.proposedText);
+    setPendingIntegration(null);
+    alert("Modifica integrata con successo nel testo della lezione!");
+  };
+
+  const handleRejectIntegration = () => {
+    setPendingIntegration(null);
   };
 
   const handleToggleTopicComplete = (dayNum, topicId) => {
@@ -880,7 +825,7 @@ function MainAppContent() {
     return { completed, total, percent };
   };
 
-  // Chat Homepage (Layout centrato e stabile)
+  // Chat Homepage (allineamento corretto e non spaginato)
   const handleSendMessage = async (textToSend = inputPrompt) => {
     const prompt = textToSend.trim();
     if (!prompt && !attachedFile) return;
@@ -967,51 +912,6 @@ function MainAppContent() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-geminiDark text-gray-200 relative font-sans">
       
-      {/* POPUP FLUTTUANTE AUTOMATICO SU SELEZIONE TESTO */}
-      {floatingPopup && (
-        <div 
-          id="floating-selection-popup"
-          className="fixed z-50 transform -translate-x-1/2 -translate-y-full mb-2 bg-geminiDarkSecondary border border-indigo-500/60 shadow-2xl rounded-2xl p-1.5 flex items-center gap-1 animate-popup text-xs backdrop-blur-md"
-          style={{
-            left: `${floatingPopup.x}px`,
-            top: `${floatingPopup.y}px`,
-          }}
-        >
-          {isRewriting ? (
-            <div className="flex items-center gap-2 px-3 py-1 text-xs text-indigo-300">
-              <RefreshCw size={13} className="animate-spin text-indigo-400" />
-              <span>Elaborazione testo in corso...</span>
-            </div>
-          ) : (
-            <>
-              <button
-                onClick={() => handleRewriteFromPopup('riassumi')}
-                className="flex items-center gap-1 px-2.5 py-1.5 hover:bg-indigo-600/30 text-gray-200 hover:text-white rounded-xl transition text-xs font-semibold"
-                title="Sintetizza il passaggio selezionato"
-              >
-                <span>📝 Riassumi</span>
-              </button>
-              <div className="w-[1px] h-4 bg-geminiBorder" />
-              <button
-                onClick={() => handleRewriteFromPopup('approfondisci')}
-                className="flex items-center gap-1 px-2.5 py-1.5 hover:bg-indigo-600/30 text-gray-200 hover:text-white rounded-xl transition text-xs font-semibold"
-                title="Aggiungi dettagli, spiegazioni ed esempi"
-              >
-                <span>🔍 Approfondisci</span>
-              </button>
-              <div className="w-[1px] h-4 bg-geminiBorder" />
-              <button
-                onClick={() => handleRewriteFromPopup('chiaro')}
-                className="flex items-center gap-1 px-2.5 py-1.5 hover:bg-indigo-600/30 text-gray-200 hover:text-white rounded-xl transition text-xs font-semibold"
-                title="Riscrivi con parole più chiare e semplici"
-              >
-                <span>💡 Riscrivi meglio</span>
-              </button>
-            </>
-          )}
-        </div>
-      )}
-
       {/* OVERLAY SIDEBAR */}
       {isSidebarOpen && (
         <div 
@@ -1020,7 +920,7 @@ function MainAppContent() {
         />
       )}
 
-      {/* SIDEBAR */}
+      {/* SIDEBAR RETRATTILE */}
       <aside 
         className={`fixed inset-y-0 left-0 z-50 flex flex-col w-80 max-w-[85vw] bg-geminiDarkSecondary border-r border-geminiBorder shadow-2xl transition-transform duration-300 ease-in-out overflow-hidden ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -1118,11 +1018,11 @@ function MainAppContent() {
         </div>
       </aside>
 
-      {/* CONTENITORE PRINCIPALE */}
+      {/* CONTENUTO PRINCIPALE */}
       <div className="flex-1 flex flex-col h-full w-full relative overflow-hidden">
         
-        {/* HEADER FISSO */}
-        <header className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-geminiBorder/40 bg-geminiDark z-20 shrink-0">
+        {/* HEADER */}
+        <header className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-geminiBorder/40 bg-geminiDark z-20 shrink-0">
           <div className="flex items-center gap-3">
             <button 
               onClick={() => setIsSidebarOpen(true)}
@@ -1259,7 +1159,7 @@ function MainAppContent() {
                     rows={2}
                     value={examDescription}
                     onChange={(e) => setExamDescription(e.target.value)}
-                    placeholder="Es. Anatomia Patologica, Fisiologia, Diritto..."
+                    placeholder="Es. Anatomia Patologica, Fisiologia Clinica, Diritto Privato..."
                     className="w-full bg-geminiDark border border-geminiBorder rounded-2xl p-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition resize-none"
                   />
                 </div>
@@ -1347,7 +1247,7 @@ function MainAppContent() {
               </div>
             )}
 
-            {/* STEP 3: FONTI */}
+            {/* STEP 3: FONTI (SUPPORTO PERFETTO PER "CERCA ONLINE" E "USA IL MIO MATERIALE") */}
             {wizardStep === 3 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
                 <div className="flex items-center gap-3">
@@ -1414,6 +1314,7 @@ function MainAppContent() {
                   </div>
                 </div>
 
+                {/* Sezione per "Usa il mio materiale" */}
                 {sourceType === 'my_materials' ? (
                   <div className="space-y-3 pt-2 bg-geminiDark/60 p-4 rounded-2xl border border-geminiBorder/70">
                     <div className="flex items-center justify-between">
@@ -1482,7 +1383,7 @@ function MainAppContent() {
                                   {file.status === 'ready' && file.wordsCount > 0 && (
                                     <>
                                       <span>•</span>
-                                      <span className="text-emerald-400 font-bold">{file.wordsCount.toLocaleString()} parole</span>
+                                      <span className="text-emerald-400 font-bold">{file.wordsCount.toLocaleString()} parole lette</span>
                                       {file.pagesCount > 1 && <span>({file.pagesCount} pag.)</span>}
                                     </>
                                   )}
@@ -1503,13 +1404,14 @@ function MainAppContent() {
                     )}
                   </div>
                 ) : (
+                  // Sezione per "Cerca online"
                   <div className="p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-200 space-y-2">
                     <div className="flex items-center gap-2 font-bold text-indigo-300">
                       <Globe size={16} />
                       <span>Ricerca e Strutturazione Online Attiva</span>
                     </div>
                     <p className="text-[11px] leading-relaxed text-indigo-200/80">
-                      L'AI costruirà il piano di studio basandosi sui programmi accademici per <strong>"{examDescription || 'la materia scelta'}"</strong> senza richiedere file.
+                      L'AI costruirà il piano di studio basandosi sui programmi di corso universitari e sui concetti di riferimento per <strong>"{examDescription || 'la materia scelta'}"</strong>, senza richiedere il caricamento di file.
                     </p>
                   </div>
                 )}
@@ -1677,7 +1579,7 @@ function MainAppContent() {
                     <span>Piano Didattico Giornaliero</span>
                   </div>
                   <p className="text-xs text-gray-400 mt-3 leading-relaxed">
-                    Accedi alle singole giornate per consultare, personalizzare o generare lezioni con il chatbot dedicato.
+                    Accedi alle singole giornate per generare, modificare e approfondire le lezioni con il chatbot dedicato.
                   </p>
                   
                   <div className="mt-4 p-3 bg-geminiDark rounded-2xl border border-geminiBorder flex items-center justify-between text-xs">
@@ -1758,8 +1660,7 @@ function MainAppContent() {
                       setSelectedDayNumber(day.dayNumber);
                       setSelectedTopicId(day.topics?.[0]?.id || null);
                       setLessonChatMessages([]);
-                      setFloatingPopup(null);
-                      setPreviousLessonBackup(null);
+                      setPendingIntegration(null);
                       setCurrentView('day_detail');
                     }}
                     className={`p-4 sm:p-5 rounded-2xl border cursor-pointer transition flex items-center justify-between group ${
@@ -1809,13 +1710,13 @@ function MainAppContent() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* VISTA 4: DETTAGLIO GIORNO WYSIWYG CON TOOLBAR & CHATBOT FISSO */}
+        {/* VISTA 4: DETTAGLIO GIORNO CON EDITING LIVE, RISCRITTURA E CHATBOT LATERALE */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'day_detail' && activeProject && currentDayData && (
-          <main className="flex-1 flex flex-col h-full w-full overflow-hidden">
+          <main className="flex-1 overflow-hidden flex flex-col h-full w-full">
             
-            {/* Top Bar 1: Breadcrumbs e selezione argomento */}
-            <div className="flex items-center justify-between px-4 sm:px-6 py-2 border-b border-geminiBorder/40 bg-geminiDarkSecondary/70 shrink-0">
+            {/* Sottotitolo navigazione */}
+            <div className="flex items-center justify-between px-4 sm:px-6 py-2.5 border-b border-geminiBorder/40 bg-geminiDarkSecondary/60 shrink-0">
               <button 
                 onClick={() => setCurrentView('study_plan')}
                 className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white transition"
@@ -1830,254 +1731,205 @@ function MainAppContent() {
               </div>
             </div>
 
-            {/* Layout Rigido a Due Colonne: Nessun traboccamento o spaginatura */}
-            <div className="flex-1 flex flex-col md:flex-row h-full w-full overflow-hidden">
+            {/* Layout a 2 colonne: Sinistra Lezione (Editor/Viewer) - Destra Chatbot Assistente */}
+            <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
               
-              {/* COLONNA SINISTRA: EDITOR WYSIWYG FORMATTATO E MODIFICABILE NATIVAMENTE */}
-              <div className="flex-1 flex flex-col h-full overflow-hidden border-r border-geminiBorder/40">
+              {/* COLONNA SINISTRA: LEZIONE, LIVE EDIT E TOOLBAR DI RISCRITTURA */}
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
                 
-                {/* Selettore Argomenti e Toolbar Superiore */}
-                <div className="px-4 py-2 border-b border-geminiBorder/40 bg-geminiDarkSecondary/30 shrink-0 space-y-2">
-                  
-                  <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1">
-                    <div className="flex items-center gap-1.5">
-                      {(currentDayData?.topics || []).map(topic => (
-                        <button
-                          key={topic.id}
-                          onClick={() => {
-                            setSelectedTopicId(topic.id);
-                            setFloatingPopup(null);
-                          }}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 border ${
-                            currentSelectedTopic?.id === topic.id
-                              ? 'bg-blue-600 text-white border-blue-500 shadow-sm'
-                              : 'bg-geminiDarkSecondary text-gray-400 border-geminiBorder hover:text-gray-200'
-                          }`}
-                        >
-                          <span>{topic.title}</span>
-                          {topic.lesson && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
-                        </button>
-                      ))}
-                    </div>
+                {/* Selettore Argomenti del giorno */}
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {(currentDayData?.topics || []).map(topic => (
+                    <button
+                      key={topic.id}
+                      onClick={() => {
+                        setSelectedTopicId(topic.id);
+                        setPendingIntegration(null);
+                      }}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-2 border ${
+                        currentSelectedTopic?.id === topic.id
+                          ? 'bg-blue-600 text-white border-blue-500 shadow-md'
+                          : 'bg-geminiDarkSecondary text-gray-400 border-geminiBorder hover:text-gray-200'
+                      }`}
+                    >
+                      <span>{topic.title}</span>
+                      {topic.lesson && <span className="w-2 h-2 rounded-full bg-emerald-400" />}
+                    </button>
+                  ))}
+                </div>
 
-                    {currentSelectedTopic && (
+                {/* BANNER DI PROPOSTA MODIFICA IN ATTESA DI CONFERMA */}
+                {pendingIntegration && (
+                  <div className="p-4 bg-gradient-to-r from-blue-950/80 to-indigo-950/80 border-2 border-blue-500 rounded-2xl shadow-xl space-y-3 animate-fadeIn">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2 text-blue-300 text-xs font-bold uppercase tracking-wider">
+                        <Sparkles size={16} />
+                        <span>Modifica Proposta dal Chatbot:</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-300 leading-relaxed italic">
+                      "{pendingIntegration.explanation}"
+                    </p>
+                    <div className="flex items-center gap-2 pt-1">
                       <button
-                        onClick={() => handleGenerateLesson(currentDayData.dayNumber, currentSelectedTopic)}
-                        disabled={isGeneratingLesson}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition shadow-sm shrink-0 ${
-                          isGeneratingLesson 
-                            ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
-                            : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/20'
-                        }`}
+                        onClick={handleAcceptIntegration}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center gap-1.5"
                       >
-                        {isGeneratingLesson ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                        <span>{currentSelectedTopic.lesson ? 'Rigenera lezione' : 'Genera lezione'}</span>
+                        <Check size={14} />
+                        <span>Accetta e Salva nel Testo</span>
                       </button>
-                    )}
+                      <button
+                        onClick={handleRejectIntegration}
+                        className="px-3.5 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl text-xs font-medium transition"
+                      >
+                        Annulla Modifica
+                      </button>
+                    </div>
                   </div>
+                )}
 
-                  {/* BARRA FORMATTAZIONE RICCA (Font, Dimensione, B/I/U, Allineamento, Elenchi) */}
-                  {currentSelectedTopic?.lesson && (
-                    <div className="flex items-center gap-1 pt-1 overflow-x-auto text-xs text-gray-300 border-t border-geminiBorder/40">
-                      
-                      {/* Carattere del testo */}
-                      <select 
-                        value={activeFont}
-                        onChange={(e) => {
-                          setActiveFont(e.target.value);
-                          executeEditorCommand('fontName', e.target.value);
-                        }}
-                        className="bg-geminiDark border border-geminiBorder rounded-lg px-2 py-1 text-[11px] text-gray-200 focus:outline-none"
-                      >
-                        <option value="sans">Sans-serif</option>
-                        <option value="serif">Serif</option>
-                        <option value="monospace">Monospace</option>
-                        <option value="Georgia">Georgia</option>
-                        <option value="Arial">Arial</option>
-                      </select>
+                {/* HEADER DELLA LEZIONE CON PULSANTI LIVE EDIT E RISCRITTURA */}
+                {currentSelectedTopic && (
+                  <div className="bg-geminiDarkSecondary border border-geminiBorder p-5 rounded-3xl shadow-xl space-y-4">
+                    
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-geminiBorder/60 pb-3">
+                      <div>
+                        <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">Lezione Didattica</span>
+                        <h3 className="text-base sm:text-lg font-bold text-gray-100">{currentSelectedTopic.title}</h3>
+                      </div>
 
-                      {/* Dimensione del testo */}
-                      <select 
-                        value={activeFontSize}
-                        onChange={(e) => {
-                          setActiveFontSize(e.target.value);
-                          executeEditorCommand('fontSize', e.target.value === '12px' ? '2' : e.target.value === '14px' ? '3' : e.target.value === '18px' ? '5' : '4');
-                        }}
-                        className="bg-geminiDark border border-geminiBorder rounded-lg px-2 py-1 text-[11px] text-gray-200 focus:outline-none"
-                      >
-                        <option value="12px">Piccolo (12px)</option>
-                        <option value="15px">Normale (15px)</option>
-                        <option value="18px">Grande (18px)</option>
-                        <option value="22px">Titolo (22px)</option>
-                      </select>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {currentSelectedTopic.lesson && (
+                          <>
+                            {/* Toggle Modalità Visualizza / Modifica Direttamente */}
+                            <button
+                              onClick={() => setIsLessonEditingMode(!isLessonEditingMode)}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
+                                isLessonEditingMode 
+                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' 
+                                  : 'bg-geminiHover text-gray-300 border-geminiBorder hover:text-white'
+                              }`}
+                              title={isLessonEditingMode ? "Torna alla visualizzazione formattata" : "Modifica il testo direttamente"}
+                            >
+                              {isLessonEditingMode ? <Eye size={14} /> : <Edit3 size={14} />}
+                              <span>{isLessonEditingMode ? 'Visualizza' : 'Modifica testo'}</span>
+                            </button>
 
-                      <div className="w-[1px] h-4 bg-geminiBorder mx-1" />
+                            {/* Menu Riscrivi Selezione se del testo è evidenziato */}
+                            {currentSelectionText && (
+                              <div className="flex items-center gap-1 bg-indigo-600/20 border border-indigo-500/40 px-2.5 py-1 rounded-xl animate-fadeIn">
+                                <Wand2 size={13} className="text-indigo-400" />
+                                <span className="text-[11px] text-indigo-200 mr-1 font-medium">Riscrivi selezione:</span>
+                                <button
+                                  onClick={() => handleRewriteSelection('riassumi')}
+                                  disabled={isRewritingSelection}
+                                  className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[10px] font-bold transition"
+                                >
+                                  Riassumi
+                                </button>
+                                <button
+                                  onClick={() => handleRewriteSelection('approfondisci')}
+                                  disabled={isRewritingSelection}
+                                  className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[10px] font-bold transition"
+                                >
+                                  Approfondisci
+                                </button>
+                                <button
+                                  onClick={() => handleRewriteSelection('chiaro')}
+                                  disabled={isRewritingSelection}
+                                  className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[10px] font-bold transition"
+                                >
+                                  Più chiaro
+                                </button>
+                              </div>
+                            )}
+                          </>
+                        )}
 
-                      {/* Stili base */}
-                      <button 
-                        onClick={() => executeEditorCommand('bold')}
-                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-                        title="Grassetto (Cmd+B)"
-                      >
-                        <Bold size={13} />
-                      </button>
-                      <button 
-                        onClick={() => executeEditorCommand('italic')}
-                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-                        title="Corsivo (Cmd+I)"
-                      >
-                        <Italic size={13} />
-                      </button>
-                      <button 
-                        onClick={() => executeEditorCommand('underline')}
-                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-                        title="Sottolineato (Cmd+U)"
-                      >
-                        <UnderlineIcon size={13} />
-                      </button>
-
-                      <div className="w-[1px] h-4 bg-geminiBorder mx-1" />
-
-                      {/* Allineamento */}
-                      <button 
-                        onClick={() => executeEditorCommand('justifyLeft')}
-                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-                        title="Allinea a sinistra"
-                      >
-                        <AlignLeft size={13} />
-                      </button>
-                      <button 
-                        onClick={() => executeEditorCommand('justifyCenter')}
-                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-                        title="Centra"
-                      >
-                        <AlignCenter size={13} />
-                      </button>
-                      <button 
-                        onClick={() => executeEditorCommand('justifyRight')}
-                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-                        title="Allinea a destra"
-                      >
-                        <AlignRight size={13} />
-                      </button>
-                      <button 
-                        onClick={() => executeEditorCommand('justifyFull')}
-                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-                        title="Giustifica"
-                      >
-                        <AlignJustify size={13} />
-                      </button>
-
-                      <div className="w-[1px] h-4 bg-geminiBorder mx-1" />
-
-                      {/* Elenchi */}
-                      <button 
-                        onClick={() => executeEditorCommand('insertUnorderedList')}
-                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-                        title="Elenco puntato"
-                      >
-                        <List size={13} />
-                      </button>
-                      <button 
-                        onClick={() => executeEditorCommand('insertOrderedList')}
-                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-                        title="Elenco numerato"
-                      >
-                        <ListOrdered size={13} />
-                      </button>
-
-                      <div className="w-[1px] h-4 bg-geminiBorder mx-1" />
-
-                      {/* Intestazioni */}
-                      <button 
-                        onClick={() => executeEditorCommand('formatBlock', '<h2>')}
-                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition text-[11px] font-bold"
-                        title="Titolo H2"
-                      >
-                        H2
-                      </button>
-                      <button 
-                        onClick={() => executeEditorCommand('formatBlock', '<h3>')}
-                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition text-[11px] font-bold"
-                        title="Titolo H3"
-                      >
-                        H3
-                      </button>
-                      <button 
-                        onClick={() => executeEditorCommand('formatBlock', '<p>')}
-                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition text-[11px]"
-                        title="Paragrafo normale"
-                      >
-                        P
-                      </button>
-                    </div>
-                  )}
-
-                </div>
-
-                {/* CORPO DOCUMENTO: SCROLLABILE E TOTALMENTE MODIFICABILE WYSIWYG */}
-                <div className="flex-1 overflow-y-auto p-4 md:p-6 relative">
-                  
-                  {isGeneratingLesson ? (
-                    <div className="h-full flex flex-col items-center justify-center text-center space-y-3 py-16">
-                      <Sparkles size={28} className="text-blue-400 animate-bounce" />
-                      <div className="text-sm font-semibold text-gray-200">Generazione della lezione in corso...</div>
-                      <div className="text-xs text-gray-400">Creazione di spiegazioni, tabelle e formule didattiche</div>
-                    </div>
-                  ) : currentSelectedTopic?.lesson ? (
-                    <div className="max-w-3xl mx-auto space-y-4">
-                      
-                      {/* Badge info e stato studiato */}
-                      <div className="flex items-center justify-between text-xs text-gray-400 bg-geminiDarkSecondary/60 px-4 py-2 rounded-2xl border border-geminiBorder">
-                        <span className="text-[11px]">
-                          ✏️ <strong>Documento modificabile</strong>: puoi cliccare e digitare direttamente sopra il testo.
-                        </span>
                         <button
-                          onClick={() => handleToggleTopicComplete(currentDayData.dayNumber, currentSelectedTopic.id)}
-                          className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition ${
-                            currentSelectedTopic.completed 
-                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
-                              : 'bg-geminiHover text-gray-300 hover:text-white border border-geminiBorder'
+                          onClick={() => handleGenerateLesson(currentDayData.dayNumber, currentSelectedTopic)}
+                          disabled={isGeneratingLesson}
+                          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold transition shadow-md ${
+                            isGeneratingLesson 
+                              ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
+                              : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/30'
                           }`}
                         >
-                          {currentSelectedTopic.completed ? <CheckCircle2 size={13} /> : <CheckSquare size={13} />}
-                          <span>{currentSelectedTopic.completed ? 'Studiato' : 'Segna studiato'}</span>
+                          {isGeneratingLesson ? <RefreshCw size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                          <span>{currentSelectedTopic.lesson ? 'Rigenera' : 'Genera lezione'}</span>
                         </button>
                       </div>
+                    </div>
 
-                      {/* FOGLIO WYSIWYG EDITABLE IN-PLACE SENZA CODICE MARKDOWN */}
-                      <div className="bg-geminiDarkSecondary/70 border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-xl min-h-[500px]">
-                        <div
-                          ref={wysiwygEditorRef}
-                          contentEditable="true"
-                          suppressContentEditableWarning={true}
-                          onInput={handleEditorInput}
-                          className="wysiwyg-editor focus:outline-none"
-                          style={{
-                            fontFamily: activeFont === 'serif' ? 'Georgia, serif' : activeFont === 'monospace' ? 'monospace' : 'inherit',
-                            fontSize: activeFontSize
-                          }}
-                          dangerouslySetInnerHTML={{ __html: markdownToHtml(currentSelectedTopic.lesson) }}
-                        />
+                    {/* CORPO DELLA LEZIONE (VISUALIZZAZIONE O MODIFICA DIRETTA) */}
+                    {isGeneratingLesson ? (
+                      <div className="py-16 text-center space-y-3">
+                        <Sparkles size={28} className="text-blue-400 mx-auto animate-bounce" />
+                        <div className="text-sm font-semibold text-gray-200">Elaborazione della lezione in corso...</div>
+                        <div className="text-xs text-gray-400">Creazione di spiegazioni, tabelle e formule matematiche/scientifiche</div>
                       </div>
+                    ) : currentSelectedTopic.lesson ? (
+                      <div className="space-y-3">
+                        {isLessonEditingMode ? (
+                          // Modalità Editor Diretta
+                          <div className="space-y-2">
+                            <div className="text-[11px] text-amber-400 flex items-center gap-1.5">
+                              <Edit3 size={13} />
+                              <span>Modalità Modifica attiva: puoi digitare, incollare o cancellare qualsiasi paragrafo.</span>
+                            </div>
+                            <textarea
+                              ref={lessonTextareaRef}
+                              value={currentSelectedTopic.lesson}
+                              onChange={(e) => updateTopicLessonContent(currentDayData.dayNumber, currentSelectedTopic.id, e.target.value)}
+                              rows={16}
+                              className="w-full bg-geminiDark border border-geminiBorder rounded-2xl p-4 text-xs font-mono text-gray-100 focus:outline-none focus:border-blue-500 transition leading-relaxed resize-y"
+                              placeholder="Scrivi o incolla qui i tuoi appunti..."
+                            />
+                          </div>
+                        ) : (
+                          // Modalità Visualizzatore Formattato con selezione attiva
+                          <div 
+                            ref={lessonViewerRef}
+                            className="p-5 bg-geminiDark rounded-2xl border border-geminiBorder/70 shadow-inner select-text"
+                          >
+                            <MarkdownRenderer content={currentSelectedTopic.lesson} />
+                          </div>
+                        )}
 
-                    </div>
-                  ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-center py-16 space-y-3">
-                      <BookOpen size={32} className="mx-auto text-gray-500" />
-                      <div className="text-sm font-semibold text-gray-300">Nessuna lezione presente per questo argomento</div>
-                      <p className="text-xs text-gray-500 max-w-sm">
-                        Clicca su <strong>"Genera lezione"</strong> in alto a destra per creare la sintesi didattica.
-                      </p>
-                    </div>
-                  )}
+                        <div className="flex items-center justify-between pt-2 border-t border-geminiBorder/40 text-xs text-gray-400">
+                          <span className="text-[11px]">
+                            {currentSelectedTopic.lesson.split(/\s+/).length} parole • Modifiche salvate automaticamente
+                          </span>
+                          <button
+                            onClick={() => handleToggleTopicComplete(currentDayData.dayNumber, currentSelectedTopic.id)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                              currentSelectedTopic.completed 
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                                : 'bg-geminiHover text-gray-300 hover:text-white border border-geminiBorder'
+                            }`}
+                          >
+                            {currentSelectedTopic.completed ? <CheckCircle2 size={14} /> : <CheckSquare size={14} />}
+                            <span>{currentSelectedTopic.completed ? 'Studiato' : 'Segna come studiato'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="py-12 text-center bg-geminiDark/40 rounded-2xl border border-dashed border-geminiBorder p-6 space-y-3">
+                        <BookOpen size={28} className="mx-auto text-gray-500" />
+                        <div className="text-xs text-gray-300 font-medium">Nessuna lezione presente per questo argomento</div>
+                        <p className="text-[11px] text-gray-500 max-w-sm mx-auto">
+                          Clicca su <strong>"Genera lezione"</strong> in alto per ricevere una sintesi didattica completa con formule e tabelle.
+                        </p>
+                      </div>
+                    )}
 
-                </div>
+                  </div>
+                )}
 
               </div>
 
-              {/* COLONNA DESTRA: CHATBOT DEDICATO ALLA LEZIONE CON MODIFICA DIRETTA */}
-              <div className="w-full md:w-80 lg:w-96 h-80 md:h-full flex flex-col bg-geminiDarkSecondary border-l border-geminiBorder/60 shrink-0 overflow-hidden">
+              {/* COLONNA DESTRA: CHATBOT DEDICATO ALLA LEZIONE CON INTEGRAZIONE NEL TESTO */}
+              <div className="w-full lg:w-96 border-t lg:border-t-0 lg:border-l border-geminiBorder/60 bg-geminiDarkSecondary/40 flex flex-col h-80 lg:h-full shrink-0">
                 
                 <div className="px-4 py-3 border-b border-geminiBorder/40 bg-geminiDarkSecondary flex items-center justify-between shrink-0">
                   <div className="flex items-center gap-2 text-xs font-bold text-gray-100">
@@ -2089,14 +1941,14 @@ function MainAppContent() {
                   </span>
                 </div>
 
-                {/* MESSAGGI CHATBOT LEZIONE */}
+                {/* Messaggi Chatbot Lezione */}
                 <div className="flex-1 overflow-y-auto p-3 space-y-3 text-xs">
                   {lessonChatMessages.length === 0 ? (
                     <div className="h-full flex flex-col justify-center text-center p-3 text-gray-400 space-y-2">
                       <Sparkles size={20} className="mx-auto text-blue-400 mb-1" />
-                      <p className="font-semibold text-gray-200">Chiedi o modifica il testo</p>
+                      <p className="font-semibold text-gray-300">Chiedi chiarimenti o modifiche</p>
                       <p className="text-[11px] text-gray-500 leading-relaxed">
-                        Chiedi spiegazioni oppure istruisci il tutor a inserire nuove informazioni direttamente nel documento.
+                        Questo tutor conosce l'intero testo della lezione. Puoi fare domande o chiedergli di inserire nuove informazioni.
                       </p>
                       <div className="space-y-1.5 pt-2 text-left">
                         <button
@@ -2106,7 +1958,7 @@ function MainAppContent() {
                           + "Aggiungi una tabella di riassunto"
                         </button>
                         <button
-                          onClick={() => handleSendLessonChatMessage("Spiegami questo passaggio con un esempio pratico")}
+                          onClick={() => handleSendLessonChatMessage("Spiegami questo argomento con un esempio pratico")}
                           className="w-full text-[11px] p-2 rounded-xl bg-geminiDark hover:bg-geminiHover border border-geminiBorder text-gray-300 text-left transition"
                         >
                           + "Spiegami con un esempio pratico"
@@ -2130,20 +1982,7 @@ function MainAppContent() {
                             ? 'bg-blue-600 text-white rounded-br-none'
                             : 'bg-geminiDark border border-geminiBorder text-gray-200 rounded-tl-none'
                         }`}>
-                          <p className="whitespace-pre-wrap">{msg.text}</p>
-                          {msg.hasUpdatedLesson && (
-                            <div className="mt-2 pt-2 border-t border-geminiBorder/60 flex items-center justify-between text-[10px] text-emerald-400 font-semibold">
-                              <span>✨ Documento aggiornato</span>
-                              {previousLessonBackup && (
-                                <button
-                                  onClick={handleUndoChatbotChange}
-                                  className="text-gray-400 hover:text-red-300 underline font-normal"
-                                >
-                                  Annulla
-                                </button>
-                              )}
-                            </div>
-                          )}
+                          <MarkdownRenderer content={msg.text} />
                         </div>
                       </div>
                     ))
@@ -2152,7 +1991,7 @@ function MainAppContent() {
                   {isLessonChatLoading && (
                     <div className="flex items-center gap-2 p-2 text-[11px] text-gray-400 bg-geminiDark rounded-xl w-fit">
                       <RefreshCw size={12} className="animate-spin text-blue-400" />
-                      <span>Il tutor sta elaborando...</span>
+                      <span>Il tutor sta rispondendo...</span>
                     </div>
                   )}
                   <div ref={lessonChatEndRef} />
@@ -2171,7 +2010,7 @@ function MainAppContent() {
                           handleSendLessonChatMessage();
                         }
                       }}
-                      placeholder="Chiedi o aggiungi info alla lezione..."
+                      placeholder="Chiedi o aggiungi info al testo..."
                       className="flex-1 bg-transparent text-xs text-gray-100 placeholder-gray-500 focus:outline-none"
                     />
                     <button
@@ -2196,12 +2035,12 @@ function MainAppContent() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* VISTA 5: CHAT HOMEPAGE CORRETTA (CENTRATA E NON SPAGINATA)   */}
+        {/* VISTA 5: CHAT HOMEPAGE CORRETTA (NON SPAGINATA)              */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'chat' && (
           <div className="flex-1 flex flex-col h-full w-full overflow-hidden relative">
             
-            {/* Scrollable Container centrato */}
+            {/* Scrollable Messages Container con layout centrato e padding protetto */}
             <div className="flex-1 overflow-y-auto w-full px-4 sm:px-6">
               <div className="max-w-3xl mx-auto py-6 space-y-6 pb-36">
                 
@@ -2263,9 +2102,11 @@ function MainAppContent() {
                           </div>
                         )}
                         
-                        <div className="prose prose-invert max-w-none text-sm leading-relaxed text-gray-200">
-                          <p className="whitespace-pre-wrap">{msg.text}</p>
-                        </div>
+                        {msg.role === 'assistant' ? (
+                          <MarkdownRenderer content={msg.text} />
+                        ) : (
+                          msg.text
+                        )}
                       </div>
                     </div>
                   ))

@@ -13,7 +13,7 @@ function createSmartFileDigest(rawText, maxChars) {
   return `${head}\n[... SEZIONI INTERMEDIE ...]\n${tail}`;
 }
 
-// Chiamata sicura con fallback automatico su gpt-4o-mini
+// Chiamata sicura con fallback su gpt-4o-mini
 async function callOpenAIWithFallback(openai, primaryModel, params) {
   const modelsToTry = [primaryModel];
   if (primaryModel !== 'gpt-4o-mini') {
@@ -59,8 +59,8 @@ export const handler = async (event) => {
       selectedText,
       rewriteMode,
       fullContext,
-      // Parametri per chatbot dedicato con modifica diretta del testo
-      lessonContent,
+      // Parametri per chat dedicata della lezione con integrazione testo
+      lessonText,
       lessonChatHistory
     } = payload;
 
@@ -77,7 +77,7 @@ export const handler = async (event) => {
     const allFiles = Array.isArray(files) ? files : [];
 
     // -------------------------------------------------------------
-    // AZIONE 1: RISCRITTURA RAPIDA DI UNA PORZIONE DI TESTO SELEZIONATA
+    // AZIONE 1: RISCRITTURA DI UNA PORZIONE DI TESTO SELEZIONATA
     // -------------------------------------------------------------
     if (action === 'rewrite_selection') {
       const textToRewrite = selectedText || '';
@@ -91,24 +91,24 @@ export const handler = async (event) => {
 
       let instruction = '';
       if (rewriteMode === 'riassumi') {
-        instruction = 'Riassumi e sintetizza in modo conciso e schematico questo passaggio selezionato, mantenendo i concetti chiave evidenziati in grassetto (**termine**).';
+        instruction = 'Riassumi e sintetizza questo passaggio in modo conciso e schematico, mantenendo i concetti chiave essenziali evidenziati in grassetto (**concetto**).';
       } else if (rewriteMode === 'approfondisci') {
-        instruction = 'Approfondisci questo passaggio selezionato fornendo dettagli rigorosi, spiegazioni dei meccanismi, terminologia specialistica, definizioni ed eventuali formule LaTeX ($...$) o tabelle.';
+        instruction = 'Approfondisci questo passaggio fornendo spiegazioni più dettagliate dei meccanismi, terminologia specialistica, definizioni rigorose ed eventuali formule LaTeX ($...$) o tabelle di confronto.';
       } else {
-        // 'chiaro' o 'riscrivi meglio'
-        instruction = 'Riscrivi questo testo in modo molto più chiaro, scorrevole, immediato e logico, eliminando complessità inutili ma preservando tutto il rigore concettuale.';
+        // 'chiaro' / semplifica
+        instruction = 'Riscrivi questo testo rendendolo estremamente più chiaro, scorrevole, intuitivo e comprensibile, eliminando ambiguità ma mantenendo il rigore accademico.';
       }
 
       const rewritePrompt = `${instruction}
 
-TESTO SELEZIONATO DALLO STUDENTE:
+TESTO ORIGINALE SELEZIONATO DALLO STUDENTE:
 """
 ${textToRewrite}
 """
 
 ${fullContext ? `CONTESTO DELLA LEZIONE:\n${fullContext.slice(0, 3000)}` : ''}
 
-Restituisci ESCLUSIVAMENTE il testo riscritto (con grassetti, elenchi o formule se opportune). Non aggiungere frasi introduttive tipo "Ecco il testo riscritto:".`;
+Restituisci ESCLUSIVAMENTE il testo riscritto e formattato in Markdown, senza preamboli o commenti iniziali/finali.`;
 
       const { response: completion } = await callOpenAIWithFallback(openai, 'gpt-4o-mini', {
         messages: [
@@ -118,7 +118,7 @@ Restituisci ESCLUSIVAMENTE il testo riscritto (con grassetti, elenchi o formule 
         temperature: 0.3,
       });
 
-      const rewrittenText = completion.choices[0]?.message?.content?.trim() || textToRewrite;
+      const rewrittenText = completion.choices[0]?.message?.content || textToRewrite;
 
       return {
         statusCode: 200,
@@ -128,38 +128,34 @@ Restituisci ESCLUSIVAMENTE il testo riscritto (con grassetti, elenchi o formule 
     }
 
     // -------------------------------------------------------------
-    // AZIONE 2: CHATBOT DELLA LEZIONE CON MODIFICA DIRETTA DEL FILE
+    // AZIONE 2: CHATBOT DEDICATO ALLA LEZIONE CON PROPOSTA INTEGRAZIONE
     // -------------------------------------------------------------
     if (action === 'lesson_chat') {
-      const currentLesson = lessonContent || '';
+      const currentLesson = lessonText || '';
       const userQuestion = prompt || '';
 
-      const lessonChatSystemPrompt = `Sei il Tutor Accademico dedicato a QUESTA SPECIFICA LEZIONE.
-Hai accesso completo al testo attuale della lezione dello studente:
+      const lessonChatSystemPrompt = `Sei il Tutor Accademico personale dedicato a QUESTA SPECIFICA LEZIONE.
+Hai la visione completa del testo attualmente presente nella lezione:
 
 --- INIZIO TESTO ATTUALE DELLA LEZIONE ---
 ${currentLesson.slice(0, 45000)}
 --- FINE TESTO ATTUALE DELLA LEZIONE ---
 
-ISTRUZIONI OPERATIVE:
-1. RISPOSTA DISCORSIVA: Rispondi con tono chiaro, accademico e utile per lo studio.
-2. MODIFICA DIRETTA DEL TESTO DELLA LEZIONE:
-   Se lo studente ti chiede di:
-   - "Aggiungere", "inserire" o "integrare" una nozione, formula, capitolo o tabella
-   - "Riscrivere", "correggere", "semplificare" o "espandere" una parte della lezione
-   - "Rimuovere" o "sostituire" qualcosa nel testo
-   ALLORA:
-   - Trova la posizione logica ottimale e applica la modifica direttamente su tutto il testo della lezione.
-   - Restituisci l'INTERO TESTO AGGIORNATO DELLA LEZIONE mantenendo la formattazione pulita (titoli, grassetti **...**, elenchi, tabelle e formule LaTeX $...$).
-   - Imposta "hasUpdatedLesson" su true e inserisci il testo aggiornato in "updatedLessonContent".
-   - Nel campo "reply", spiega brevemente che hai aggiornato il documento e cosa hai inserito/modificato.
-3. Se lo studente fa solo una domanda di chiarimento senza richiedere modifiche al testo, imposta "hasUpdatedLesson" su false e "updatedLessonContent" a null.
+COMPITI:
+1. Rispondi alle domande dello studente con massima chiarezza pedagogica, citando nozioni ed esempi pertinenti.
+2. RICHIESTE DI MODIFICA O INTEGRAZIONE DEL TESTO:
+   Se lo studente ti chiede di "inserire", "aggiungere", "integrare", "modificare" o "completare" il testo della lezione con una nuova nozione, tabella, formula o spiegazione:
+   - Individua il punto migliore e più logico all'interno della lezione in cui integrare l'informazione.
+   - Crea il TESTO COMPLETO DELLA LEZIONE AGGIORNATO (preservando tutto il resto della lezione e integrando armoniosamente la nuova parte in Markdown/LaTeX).
+   - Nel tuo messaggio di risposta in chat, spiega brevemente dove e cosa hai integrato.
+   - Imposta "hasProposedChange" su true e inserisci l'intero testo aggiornato in "proposedLessonText".
+3. Se lo studente fa una semplice domanda o richiesta di spiegazione senza chiedere modifiche al documento, rispondi normalmente in chat e imposta "hasProposedChange" su false con "proposedLessonText" a null.
 
-FORMATO RISPOSTA OBBLIGATORIO JSON:
+FORMATO DI RISPOSTA OBBLIGATORIO (JSON):
 {
-  "reply": "Messaggio di risposta per la chat...",
-  "hasUpdatedLesson": true | false,
-  "updatedLessonContent": "Testo completo della lezione con le modifiche apportate (oppure null)"
+  "reply": "Risposta discorsiva per la chat...",
+  "hasProposedChange": true | false,
+  "proposedLessonText": "Testo Markdown completo della lezione aggiornata (oppure null se non richiesta modifica)"
 }`;
 
       const messagesList = [
@@ -186,7 +182,7 @@ FORMATO RISPOSTA OBBLIGATORIO JSON:
         response_format: { type: 'json_object' }
       });
 
-      let parsed = { reply: "Risposta elaborata.", hasUpdatedLesson: false, updatedLessonContent: null };
+      let parsed = { reply: "Risposta elaborata.", hasProposedChange: false, proposedLessonText: null };
       try {
         parsed = JSON.parse(completion.choices[0]?.message?.content || '{}');
       } catch (err) {
@@ -198,14 +194,14 @@ FORMATO RISPOSTA OBBLIGATORIO JSON:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           reply: parsed.reply || 'Informazione elaborata.',
-          hasUpdatedLesson: Boolean(parsed.hasUpdatedLesson && parsed.updatedLessonContent),
-          updatedLessonContent: parsed.updatedLessonContent || null
+          hasProposedChange: Boolean(parsed.hasProposedChange && parsed.proposedLessonText),
+          proposedLessonText: parsed.proposedLessonText || null
         }),
       };
     }
 
     // -------------------------------------------------------------
-    // AZIONE 3: GENERAZIONE SYLLABUS (CON SUPPORTO COMPLETO "CERCA ONLINE")
+    // AZIONE 3: GENERAZIONE SYLLABUS (CON SUPPORTO "CERCA ONLINE" E "USA FONTI")
     // -------------------------------------------------------------
     if (action === 'generate_syllabus') {
       const numDays = Math.max(3, Math.min(daysTotal || 30, 60));
