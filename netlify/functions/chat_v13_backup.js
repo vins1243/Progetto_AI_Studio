@@ -59,19 +59,9 @@ export const handler = async (event) => {
       selectedText,
       rewriteMode,
       fullContext,
-      // Parametri per chatbot dedicato con modifica diretta
+      // Parametri per chatbot dedicato con modifica diretta del testo
       lessonContent,
-      lessonChatHistory,
-      // Parametri per generazione quiz / verifica competenze
-      topicsList,
-      questionTypes,
-      numQuestions,
-      difficulty,
-      // Parametri per valutazione risposte aperte
-      question,
-      idealAnswerCriteria,
-      studentAnswer,
-      lessonContext
+      lessonChatHistory
     } = payload;
 
     const apiKey = process.env.OPENAI_API_KEY;
@@ -87,168 +77,7 @@ export const handler = async (event) => {
     const allFiles = Array.isArray(files) ? files : [];
 
     // -------------------------------------------------------------
-    // AZIONE 1: GENERAZIONE VERIFICA COMPETENZE (QUIZ MULTI-TIPOLOGIA)
-    // -------------------------------------------------------------
-    if (action === 'generate_quiz') {
-      const targetCount = Math.max(5, Math.min(Number(numQuestions) || 10, 80));
-      const types = Array.isArray(questionTypes) && questionTypes.length > 0 
-        ? questionTypes 
-        : ['scelta_multipla', 'completamento', 'accoppiamento', 'aperta'];
-      
-      const topics = Array.isArray(topicsList) && topicsList.length > 0
-        ? topicsList
-        : ['Argomenti Generali'];
-
-      let sourcesContext = '';
-      allFiles.forEach((f, idx) => {
-        const text = (f.text || f.extractedText || '').trim();
-        if (text) {
-          sourcesContext += `\n[Doc ${idx + 1}: ${f.name}]: ${text.slice(0, 8000)}\n`;
-        }
-      });
-
-      const quizSystemPrompt = `Sei un professore universitario esaminatore e autore di test accademici ufficiali.
-Il tuo compito è generare una prova di verifica delle competenze rigorosa, impeccabile e perfettamente bilanciata composta da esattamente ${targetCount} domande.
-
-TIPOLOGIE RICHIESTE: ${types.join(', ')}
-LIVELLO DI DIFFICOLTÀ: ${difficulty || 'automatico'}
-MATERIA: "${examDescription || 'Esame Universitario'}"
-ARGOMENTI DA COPRIRE: ${topics.join('; ')}
-
-FORMATO DI RISPOSTA OBBLIGATORIO (JSON con chiave "questions"):
-{
-  "questions": [
-    {
-      "id": "q1",
-      "type": "scelta_multipla" | "completamento" | "accoppiamento" | "aperta",
-      "question": "Testo chiaro, specifico e accademico della domanda...",
-      "options": ["Opzione A...", "Opzione B...", "Opzione C...", "Opzione D..."], // Solo se type === 'scelta_multipla' (4 opzioni chiare, 1 sola corretta)
-      "correctAnswer": "Testo esatto dell'opzione corretta (oppure parola/frase esatta per il completamento)",
-      "matchingPairs": [
-        { "left": "Concetto 1", "right": "Definizione/Associazione 1" },
-        { "left": "Concetto 2", "right": "Definizione/Associazione 2" },
-        { "left": "Concetto 3", "right": "Definizione/Associazione 3" }
-      ], // Solo se type === 'accoppiamento' (3 o 4 coppie logiche)
-      "idealAnswerCriteria": "Criteri precisi, definizioni, passaggi e nozioni che una risposta aperta perfetta deve contenere", // Solo se type === 'aperta'
-      "explanation": "Spiegazione didattica approfondita che illustra perché la risposta è corretta e chiarisce i dettagli tecnici/scientifici",
-      "topicTitle": "Titolo argomento specifico",
-      "difficulty": "Facile" | "Intermedia" | "Difficile"
-    }
-  ]
-}
-
-REGOLE ESSENZIALI:
-1. DISTRIBUISCI le domande in modo bilanciato tra tutti gli argomenti indicati.
-2. Varia le tipologie includendo quelle richieste (${types.join(', ')}).
-3. Per le formule scientifiche/matematiche usa la notazione LaTeX ($...$ o $$...$$).
-4. Restituisci ESCLUSIVAMENTE il JSON valido.`;
-
-      const quizUserPrompt = `Genera la prova di verifica di ${targetCount} domande per gli argomenti selezionati:
-${topics.map((t, i) => `${i + 1}. ${t}`).join('\n')}
-
-${sourcesContext ? `FONTI DELLO STUDENTE:\n${sourcesContext.slice(0, 25000)}` : ''}`;
-
-      const { response: completion } = await callOpenAIWithFallback(openai, 'gpt-4o-mini', {
-        messages: [
-          { role: 'system', content: quizSystemPrompt },
-          { role: 'user', content: quizUserPrompt }
-        ],
-        temperature: 0.3,
-        response_format: { type: 'json_object' }
-      });
-
-      let parsed = { questions: [] };
-      try {
-        parsed = JSON.parse(completion.choices[0]?.message?.content || '{}');
-        if (parsed && Array.isArray(parsed.questions)) {
-          parsed.questions = parsed.questions.map((q, idx) => ({
-            ...q,
-            id: q.id || `q_${idx + 1}`,
-          }));
-        }
-      } catch (err) {
-        console.error("Errore parsing JSON quiz:", err);
-      }
-
-      return {
-        statusCode: 200,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          questions: Array.isArray(parsed.questions) ? parsed.questions : []
-        }),
-      };
-    }
-
-    // -------------------------------------------------------------
-    // AZIONE 2: VALUTAZIONE RIGOROSA DI UNA RISPOSTA APERTA
-    // -------------------------------------------------------------
-    if (action === 'evaluate_open_answer') {
-      const evaluationSystemPrompt = `Sei un professore universitario esaminatore inflessibile ed esperto.
-Il tuo compito è valutare con estremo rigore accademico la risposta aperta fornita da uno studente universitario a una domanda d'esame.
-
-VALUTAZIONE:
-1. Analizza la correttezza concettuale, l'uso della corretta terminologia specialistica, la presenza di passaggi logici e la completezza rispetto ai criteri ideali.
-2. Assegna un voto in trentesimi (da 0 a 30):
-   - 28-30: Risposta eccellente, completa, precisa e rigorosa.
-   - 24-27: Buona risposta, concetti corretti con lievi omissioni o imprecisioni minori.
-   - 18-23: Risposta sufficiente ma lacunosa o poco approfondita.
-   - < 18: Risposta insufficiente, errata o gravemente incompleta.
-3. Fornisci un feedback analitico e costruttivo evidenziando sia i punti centrati sia le lacune.
-
-FORMATO RISPOSTA OBBLIGATORIO (JSON):
-{
-  "score": 28, // Intero da 0 a 30
-  "maxScore": 30,
-  "isCorrect": true | false, // true se score >= 18
-  "feedback": "Giudizio analitico dettagliato e spiegazione del voto...",
-  "strengths": ["Concetto centrato 1", "Buona terminologia su X"],
-  "missedPoints": ["Mancava la spiegazione di Y", "Omessa la classificazione Z"]
-}`;
-
-      const evaluationUserPrompt = `DOMANDA D'ESAME: "${question}"
-ARGOMENTO: "${topicTitle || ''}"
-CRITERI DI CORRETTEZZA ATTESI: "${idealAnswerCriteria || ''}"
-
-RISPOSTA DELLO STUDENTE:
-"""
-${studentAnswer || '[Nessuna risposta fornita]'}
-"""
-
-Valuta la risposta dello studente e restituisci il JSON.`;
-
-      const { response: completion } = await callOpenAIWithFallback(openai, 'gpt-4o-mini', {
-        messages: [
-          { role: 'system', content: evaluationSystemPrompt },
-          { role: 'user', content: evaluationUserPrompt }
-        ],
-        temperature: 0.2,
-        response_format: { type: 'json_object' }
-      });
-
-      let evaluationResult = {
-        score: 18,
-        maxScore: 30,
-        isCorrect: true,
-        feedback: "Valutazione completata.",
-        strengths: [],
-        missedPoints: []
-      };
-
-      try {
-        evaluationResult = JSON.parse(completion.choices[0]?.message?.content || '{}');
-      } catch (e) {
-        console.error("Errore parsing evaluation:", e);
-      }
-
-      return {
-        statusCode: 200,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(evaluationResult),
-      };
-    }
-
-    // -------------------------------------------------------------
-    // AZIONE 3: RISCRITTURA RAPIDA DI UNA PORZIONE DI TESTO SELEZIONATA
+    // AZIONE 1: RISCRITTURA RAPIDA DI UNA PORZIONE DI TESTO SELEZIONATA
     // -------------------------------------------------------------
     if (action === 'rewrite_selection') {
       const textToRewrite = selectedText || '';
@@ -266,6 +95,7 @@ Valuta la risposta dello studente e restituisci il JSON.`;
       } else if (rewriteMode === 'approfondisci') {
         instruction = 'Approfondisci questo passaggio selezionato fornendo dettagli rigorosi, spiegazioni dei meccanismi, terminologia specialistica, definizioni ed eventuali formule LaTeX ($...$) o tabelle.';
       } else {
+        // 'chiaro' o 'riscrivi meglio'
         instruction = 'Riscrivi questo testo in modo molto più chiaro, scorrevole, immediato e logico, eliminando complessità inutili ma preservando tutto il rigore concettuale.';
       }
 
@@ -278,7 +108,7 @@ ${textToRewrite}
 
 ${fullContext ? `CONTESTO DELLA LEZIONE:\n${fullContext.slice(0, 3000)}` : ''}
 
-Restituisci ESCLUSIVAMENTE il testo riscritto. Non aggiungere frasi tipo "Ecco il testo riscritto:".`;
+Restituisci ESCLUSIVAMENTE il testo riscritto (con grassetti, elenchi o formule se opportune). Non aggiungere frasi introduttive tipo "Ecco il testo riscritto:".`;
 
       const { response: completion } = await callOpenAIWithFallback(openai, 'gpt-4o-mini', {
         messages: [
@@ -298,7 +128,7 @@ Restituisci ESCLUSIVAMENTE il testo riscritto. Non aggiungere frasi tipo "Ecco i
     }
 
     // -------------------------------------------------------------
-    // AZIONE 4: CHATBOT DELLA LEZIONE CON MODIFICA DIRETTA DEL FILE
+    // AZIONE 2: CHATBOT DELLA LEZIONE CON MODIFICA DIRETTA DEL FILE
     // -------------------------------------------------------------
     if (action === 'lesson_chat') {
       const currentLesson = lessonContent || '';
@@ -375,7 +205,7 @@ FORMATO RISPOSTA OBBLIGATORIO JSON:
     }
 
     // -------------------------------------------------------------
-    // AZIONE 5: GENERAZIONE SYLLABUS (CON SUPPORTO "CERCA ONLINE")
+    // AZIONE 3: GENERAZIONE SYLLABUS (CON SUPPORTO COMPLETO "CERCA ONLINE")
     // -------------------------------------------------------------
     if (action === 'generate_syllabus') {
       const numDays = Math.max(3, Math.min(daysTotal || 30, 60));
@@ -487,7 +317,7 @@ Genera il piano di studio JSON.`;
     }
 
     // -------------------------------------------------------------
-    // AZIONE 6: GENERAZIONE LEZIONE DIDATTICA
+    // AZIONE 4: GENERAZIONE LEZIONE DIDATTICA
     // -------------------------------------------------------------
     if (isLessonGeneration) {
       const isStrict = sourceType === 'my_materials';
@@ -538,7 +368,7 @@ Redigi la lezione didattica in modo chiaro, schematizzato e rigorosamente fedele
     }
 
     // -------------------------------------------------------------
-    // AZIONE 7: CHAT HOMEPAGE STANDARD
+    // AZIONE 5: CHAT STANDARD HOMEPAGE
     // -------------------------------------------------------------
     let chatSources = '';
     allFiles.forEach(f => {

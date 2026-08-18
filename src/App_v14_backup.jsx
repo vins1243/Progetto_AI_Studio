@@ -45,18 +45,11 @@ import {
   Heading2,
   Heading3,
   Wand2,
-  Undo2,
-  Award,
-  BarChart3,
-  Layers,
-  HelpCircle,
-  CheckCircle,
-  XCircle,
-  ChevronDown
+  Undo2
 } from 'lucide-react';
 
 // IndexedDB Helper
-const DB_NAME = 'StudyAIDB_V7';
+const DB_NAME = 'StudyAIDB_V6';
 const STORE_NAME = 'project_data_store';
 
 function getDB() {
@@ -156,7 +149,7 @@ async function extractTextFromPptx(arrayBuffer) {
   return { text: text.trim(), pagesCount: slideFiles.length };
 }
 
-// RENDERING MARKDOWN + LATEX KATEX VERSO HTML WYSIWYG
+// RENDERING AUTOMATICO MARKDOWN + LATEX KATEX VERSO HTML WYSIWYG
 function renderMarkdownAndLatexToHtml(md) {
   if (!md) return '';
   let html = md;
@@ -294,11 +287,11 @@ function MainAppContent() {
   const [selectedTopicId, setSelectedTopicId] = useState(null);
   const [isGeneratingLesson, setIsGeneratingLesson] = useState(false);
 
-  // POPUP FLUTTUANTE SU SELEZIONE TESTO
-  const [floatingPopup, setFloatingPopup] = useState(null);
+  // POPUP FLUTTUANTE AUTOMATICO SU SELEZIONE TESTO
+  const [floatingPopup, setFloatingPopup] = useState(null); // { x, y, text, range }
   const [isRewriting, setIsRewriting] = useState(false);
 
-  // CHATBOT LEZIONE CON MODIFICA DIRETTA
+  // CHATBOT LEZIONE DEDICATO CON MODIFICA DIRETTA
   const [lessonChatMessages, setLessonChatMessages] = useState([]);
   const [lessonChatInput, setLessonChatInput] = useState('');
   const [isLessonChatLoading, setIsLessonChatLoading] = useState(false);
@@ -307,22 +300,6 @@ function MainAppContent() {
   // Toolbar stato
   const [selectedFontSize, setSelectedFontSize] = useState('15');
   const [selectedFontFamily, setSelectedFontFamily] = useState('sans-serif');
-
-  // MODULO VERIFICA COMPETENZE (STATI)
-  const [isQuizModalOpen, setIsQuizModalOpen] = useState(false);
-  const [quizStep, setQuizStep] = useState(1); // 1: Seleziona lezioni, 2: Configura, 3: Generazione, 4: Svolgimento, 5: Report
-  const [selectedTopicsForQuiz, setSelectedTopicsForQuiz] = useState([]);
-  const [quizQuestionTypes, setQuizQuestionTypes] = useState(['scelta_multipla', 'completamento', 'accoppiamento', 'aperta']);
-  const [quizNumQuestions, setQuizNumQuestions] = useState(10);
-  const [quizDifficulty, setQuizDifficulty] = useState('automatico');
-  const [quizFeedbackMode, setQuizFeedbackMode] = useState('immediato'); // 'immediato' | 'finale'
-  const [quizQuestions, setQuizQuestions] = useState([]);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [userAnswers, setUserAnswers] = useState({}); // { [qId]: answer }
-  const [matchingSelections, setMatchingSelections] = useState({}); // { [qId]: { [leftIndex]: rightText } }
-  const [immediateEvaluations, setImmediateEvaluations] = useState({}); // { [qId]: evaluationResult }
-  const [isEvaluatingOpen, setIsEvaluatingOpen] = useState(false);
-  const [quizHistory, setQuizHistory] = useState([]);
 
   // Wizard State
   const [wizardStep, setWizardStep] = useState(1);
@@ -385,10 +362,11 @@ function MainAppContent() {
   const currentDayData = activeProject?.schedule?.find(d => d.dayNumber === selectedDayNumber) || activeProject?.schedule?.[0];
   const currentSelectedTopic = currentDayData?.topics?.find(t => t.id === selectedTopicId) || currentDayData?.topics?.[0];
 
-  // Inizializza il contenuto dell'editor WYSIWYG
+  // Inizializza il contenuto dell'editor WYSIWYG solo al cambio di argomento o nuova generazione
   useEffect(() => {
     if (currentView === 'day_detail' && currentSelectedTopic && wysiwygEditorRef.current) {
       const currentId = currentSelectedTopic.id;
+      // Se l'argomento è cambiato o l'editor è vuoto, popola con l'HTML formattato
       if (lastLoadedTopicIdRef.current !== currentId || !wysiwygEditorRef.current.innerHTML.trim()) {
         lastLoadedTopicIdRef.current = currentId;
         const html = renderMarkdownAndLatexToHtml(currentSelectedTopic.lesson || '');
@@ -397,7 +375,7 @@ function MainAppContent() {
     }
   }, [currentView, currentSelectedTopic?.id, currentSelectedTopic?.lesson]);
 
-  // Rilevamento selezione testo per popup fluttuante
+  // RILEVAMENTO SELEZIONE TESTO PER FAR APPARIRE IL POPUP AUTOMATICO
   useEffect(() => {
     const handleSelection = () => {
       if (currentView !== 'day_detail') return;
@@ -616,7 +594,7 @@ function MainAppContent() {
     }
   };
 
-  // FINALIZZAZIONE WIZARD
+  // FINALIZZAZIONE WIZARD (CON SUPPORTO "CERCA ONLINE" E "USA IL MIO MATERIALE")
   const handleFinalizeGuide = async () => {
     const isOnlineSearch = sourceType === 'search_online';
 
@@ -766,7 +744,7 @@ function MainAppContent() {
     }
   };
 
-  // Aggiornamento testo della lezione
+  // Aggiornamento testo della lezione (salva in state e IndexedDB)
   const updateTopicLessonContent = (dayNum, topicId, newContent) => {
     if (!activeProject) return;
     const updatedSchedule = (activeProject.schedule || []).map(d => {
@@ -791,6 +769,7 @@ function MainAppContent() {
   const handleEditorInput = () => {
     if (!wysiwygEditorRef.current || !currentDayData || !currentSelectedTopic) return;
     const rawText = wysiwygEditorRef.current.innerText || '';
+    // Salva il testo senza forzare ri-render React sul DOM attivo
     updateTopicLessonContent(currentDayData.dayNumber, currentSelectedTopic.id, rawText);
   };
 
@@ -806,7 +785,7 @@ function MainAppContent() {
     }
   };
 
-  // DIMENSIONE TESTO (DA 4 A 32 PX) SUL TESTO SELEZIONATO
+  // APPLICAZIONE DIMENSIONE TESTO (DA 4 A 32 PX) SUL TESTO SELEZIONATO
   const applyCustomFontSize = (sizePx) => {
     setSelectedFontSize(sizePx);
     const selection = window.getSelection();
@@ -829,7 +808,7 @@ function MainAppContent() {
     }
   };
 
-  // CARATTERE TESTO (FONT FAMILY) SUL TESTO SELEZIONATO
+  // APPLICAZIONE CARATTERE DEL TESTO SUL TESTO SELEZIONATO
   const applyCustomFontFamily = (fontName) => {
     setSelectedFontFamily(fontName);
     const selection = window.getSelection();
@@ -862,7 +841,7 @@ function MainAppContent() {
     handleEditorInput();
   };
 
-  // RISCRITTURA DA POPUP FLUTTUANTE
+  // RISCRITTURA DA POPUP AUTOMATICO SULLA SELEZIONE DEL TESTO
   const handleRewriteFromPopup = async (mode) => {
     if (!floatingPopup || !floatingPopup.text || isRewriting) return;
 
@@ -888,6 +867,7 @@ function MainAppContent() {
       const newRewrittenText = data.rewrittenText;
       const formattedHtmlReplacement = renderMarkdownAndLatexToHtml(newRewrittenText);
 
+      // Sostituzione in-place esatta nel DOM dell'editor
       if (targetRange) {
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = formattedHtmlReplacement;
@@ -908,7 +888,7 @@ function MainAppContent() {
     }
   };
 
-  // CHATBOT LEZIONE: MODIFICA DIRETTA DEL TESTO
+  // CHATBOT LEZIONE: MODIFICA DIRETTA DEL TESTO DELLA LEZIONE
   const handleSendLessonChatMessage = async (preset = null) => {
     const promptText = (preset || lessonChatInput).trim();
     if (!promptText || isLessonChatLoading || !currentSelectedTopic?.lesson) return;
@@ -936,6 +916,7 @@ function MainAppContent() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Errore risposta tutor');
 
+      // Se l'AI ha modificato direttamente il documento, aggiorniamo subito il file e la visualizzazione!
       if (data.hasUpdatedLesson && data.updatedLessonContent) {
         setPreviousLessonBackup(currentDocText);
         updateTopicLessonContent(currentDayData.dayNumber, currentSelectedTopic.id, data.updatedLessonContent);
@@ -968,220 +949,6 @@ function MainAppContent() {
       setPreviousLessonBackup(null);
       alert("Modifica del chatbot annullata.");
     }
-  };
-
-  // -----------------------------------------------------------------
-  // LOGICA MODULO "VERIFICA COMPETENZE"
-  // -----------------------------------------------------------------
-  const getAllProjectTopics = () => {
-    if (!activeProject || !Array.isArray(activeProject.schedule)) return [];
-    const list = [];
-    activeProject.schedule.forEach(d => {
-      if (Array.isArray(d.topics)) {
-        d.topics.forEach(t => {
-          list.push({
-            id: t.id,
-            title: t.title,
-            dayNumber: d.dayNumber,
-            dayTitle: d.dayTitle,
-            hasLesson: Boolean(t.lesson)
-          });
-        });
-      }
-    });
-    return list;
-  };
-
-  const handleOpenQuizModal = () => {
-    const allTopics = getAllProjectTopics();
-    // Di default seleziona tutte le lezioni
-    setSelectedTopicsForQuiz(allTopics.map(t => t.title));
-    setQuizStep(1);
-    setIsQuizModalOpen(true);
-    setQuizQuestions([]);
-    setUserAnswers({});
-    setMatchingSelections({});
-    setImmediateEvaluations({});
-  };
-
-  const handleToggleSelectAllTopics = () => {
-    const allTopics = getAllProjectTopics();
-    if (selectedTopicsForQuiz.length === allTopics.length) {
-      setSelectedTopicsForQuiz([]);
-    } else {
-      setSelectedTopicsForQuiz(allTopics.map(t => t.title));
-    }
-  };
-
-  const handleToggleTopicSelection = (topicTitle) => {
-    if (selectedTopicsForQuiz.includes(topicTitle)) {
-      setSelectedTopicsForQuiz(prev => prev.filter(t => t !== topicTitle));
-    } else {
-      setSelectedTopicsForQuiz(prev => [...prev, topicTitle]);
-    }
-  };
-
-  const handleToggleQuestionType = (typeId) => {
-    if (quizQuestionTypes.includes(typeId)) {
-      if (quizQuestionTypes.length > 1) {
-        setQuizQuestionTypes(prev => prev.filter(t => t !== typeId));
-      }
-    } else {
-      setQuizQuestionTypes(prev => [...prev, typeId]);
-    }
-  };
-
-  const handleGenerateQuizSession = async () => {
-    if (selectedTopicsForQuiz.length === 0) {
-      alert("Seleziona almeno una lezione da includere nella prova.");
-      return;
-    }
-
-    setQuizStep(3); // Loading screen
-
-    try {
-      const dbData = await getProjectDataFromDB(activeProject.id);
-      const files = dbData?.files || activeProject.files || [];
-
-      const res = await fetch('/.netlify/functions/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'generate_quiz',
-          topicsList: selectedTopicsForQuiz,
-          questionTypes: quizQuestionTypes,
-          numQuestions: quizNumQuestions,
-          difficulty: quizDifficulty,
-          examDescription: activeProject.description,
-          sourceType: activeProject.sourceType,
-          files: activeProject.sourceType === 'my_materials' ? files : [],
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.questions || !Array.isArray(data.questions) || data.questions.length === 0) {
-        throw new Error(data.error || "Impossibile generare le domande di verifica.");
-      }
-
-      setQuizQuestions(data.questions);
-      setCurrentQuestionIndex(0);
-      setUserAnswers({});
-      setMatchingSelections({});
-      setImmediateEvaluations({});
-      setQuizStep(4); // Inizio svolgimento quiz
-    } catch (err) {
-      alert(`Errore generazione verifica: ${err.message}`);
-      setQuizStep(2);
-    }
-  };
-
-  // Gestione risposta domanda aperta con valutazione AI
-  const handleEvaluateCurrentOpenAnswer = async (q) => {
-    const studentAnswer = (userAnswers[q.id] || '').trim();
-    if (!studentAnswer) {
-      alert("Scrivi la tua risposta prima di richiedere la valutazione.");
-      return;
-    }
-
-    setIsEvaluatingOpen(true);
-    try {
-      const res = await fetch('/.netlify/functions/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'evaluate_open_answer',
-          question: q.question,
-          idealAnswerCriteria: q.idealAnswerCriteria,
-          studentAnswer: studentAnswer,
-          topicTitle: q.topicTitle,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Errore valutazione.");
-
-      setImmediateEvaluations(prev => ({
-        ...prev,
-        [q.id]: data
-      }));
-    } catch (err) {
-      alert(`Errore valutazione risposta: ${err.message}`);
-    } finally {
-      setIsEvaluatingOpen(false);
-    }
-  };
-
-  // Verifica immediata per scelta multipla o completamento
-  const handleCheckImmediateAnswer = (q) => {
-    if (q.type === 'aperta') {
-      handleEvaluateCurrentOpenAnswer(q);
-      return;
-    }
-
-    let isCorrect = false;
-    const userAns = userAnswers[q.id];
-
-    if (q.type === 'scelta_multipla') {
-      isCorrect = (userAns || '').trim().toLowerCase() === (q.correctAnswer || '').trim().toLowerCase();
-    } else if (q.type === 'completamento') {
-      isCorrect = (userAns || '').trim().toLowerCase() === (q.correctAnswer || '').trim().toLowerCase() ||
-                  (userAns || '').length > 2 && (q.correctAnswer || '').toLowerCase().includes((userAns || '').toLowerCase());
-    } else if (q.type === 'accoppiamento') {
-      const userPairs = matchingSelections[q.id] || {};
-      const totalPairs = q.matchingPairs?.length || 0;
-      let matchedCount = 0;
-      (q.matchingPairs || []).forEach((pair, idx) => {
-        if (userPairs[idx] === pair.right) matchedCount++;
-      });
-      isCorrect = matchedCount === totalPairs && totalPairs > 0;
-    }
-
-    setImmediateEvaluations(prev => ({
-      ...prev,
-      [q.id]: {
-        isCorrect,
-        score: isCorrect ? 30 : 0,
-        feedback: q.explanation || (isCorrect ? 'Risposta corretta!' : 'Risposta errata.'),
-      }
-    }));
-  };
-
-  // Calcolo risultati finali
-  const calculateFinalQuizScore = () => {
-    if (!quizQuestions.length) return { total: 0, correct: 0, percentage: 0, averageScore: 0 };
-    let correctCount = 0;
-    let totalScore = 0;
-
-    quizQuestions.forEach(q => {
-      const ev = immediateEvaluations[q.id];
-      if (ev) {
-        if (ev.isCorrect) correctCount++;
-        totalScore += (ev.score || (ev.isCorrect ? 30 : 0));
-      } else {
-        // Calcola per chiusura in modalità 'finale'
-        const userAns = userAnswers[q.id];
-        if (q.type === 'scelta_multipla') {
-          if ((userAns || '').trim().toLowerCase() === (q.correctAnswer || '').trim().toLowerCase()) {
-            correctCount++;
-            totalScore += 30;
-          }
-        }
-      }
-    });
-
-    const percentage = Math.round((correctCount / quizQuestions.length) * 100);
-    const averageScore = Math.round(totalScore / quizQuestions.length);
-    return { total: quizQuestions.length, correct: correctCount, percentage, averageScore };
-  };
-
-  const handleFinishQuiz = () => {
-    // Valuta tutte le domande rimanenti se in modalità finale
-    quizQuestions.forEach(q => {
-      if (!immediateEvaluations[q.id]) {
-        handleCheckImmediateAnswer(q);
-      }
-    });
-    setQuizStep(5); // Schermata Report
   };
 
   const handleToggleTopicComplete = (dayNum, topicId) => {
@@ -1303,9 +1070,8 @@ function MainAppContent() {
   const totalFilesReady = wizardUploadedFiles.filter(f => f.status === 'ready').length;
   const isAnyFileExtracting = extractingCount > 0 || wizardUploadedFiles.some(f => f.status === 'extracting');
 
+  // Array dimensioni testo da 4 a 32
   const fontSizes = [4, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 26, 28, 30, 32];
-  const allProjectTopics = getAllProjectTopics();
-  const currentQuizQ = quizQuestions[currentQuestionIndex];
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-geminiDark text-gray-200 relative font-sans">
@@ -1352,517 +1118,6 @@ function MainAppContent() {
               </button>
             </>
           )}
-        </div>
-      )}
-
-      {/* MODAL DIALOG PER VERIFICA COMPETENZE (5 STEP) */}
-      {isQuizModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-geminiDarkSecondary border border-geminiBorder w-full max-w-2xl max-h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden">
-            
-            {/* Header Modal */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-geminiBorder/60 bg-geminiDarkSecondary shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
-                  <GraduationCap size={18} />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-gray-100">Verifica Competenze</h3>
-                  <p className="text-[11px] text-gray-400">Valutazione e test accademico su misura</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setIsQuizModalOpen(false)}
-                className="p-1.5 text-gray-400 hover:text-white hover:bg-geminiHover rounded-xl transition"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Contenuto Modal in base allo Step */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-5">
-              
-              {/* STEP 1: SELEZIONE LEZIONI */}
-              {quizStep === 1 && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="text-sm font-bold text-gray-100">1. Scegli le lezioni da verificare</h4>
-                      <p className="text-xs text-gray-400 mt-0.5">Seleziona gli argomenti che faranno parte della prova d'esame.</p>
-                    </div>
-                    <button
-                      onClick={handleToggleSelectAllTopics}
-                      className="px-3 py-1.5 rounded-xl bg-geminiDark hover:bg-geminiHover border border-geminiBorder text-xs text-blue-400 font-semibold transition"
-                    >
-                      {selectedTopicsForQuiz.length === allProjectTopics.length ? "Deseleziona tutto" : "Seleziona tutto"}
-                    </button>
-                  </div>
-
-                  <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
-                    {allProjectTopics.map(topic => {
-                      const isChecked = selectedTopicsForQuiz.includes(topic.title);
-                      return (
-                        <div
-                          key={topic.id}
-                          onClick={() => handleToggleTopicSelection(topic.title)}
-                          className={`p-3 rounded-2xl border cursor-pointer transition flex items-center justify-between ${
-                            isChecked 
-                              ? 'bg-blue-600/15 border-blue-500 shadow-sm'
-                              : 'bg-geminiDark border-geminiBorder text-gray-400 hover:border-gray-500'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3 truncate pr-2">
-                            <input 
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => {}} // Gestito da onClick padre
-                              className="accent-blue-500 w-4 h-4 rounded"
-                            />
-                            <div className="truncate">
-                              <span className="text-[10px] text-blue-400 font-bold mr-2 uppercase">Giorno {topic.dayNumber}</span>
-                              <span className="text-xs font-medium text-gray-200 truncate">{topic.title}</span>
-                            </div>
-                          </div>
-                          {topic.hasLesson && (
-                            <span className="text-[10px] bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded-md border border-emerald-500/20 shrink-0">
-                              Lezione pronta
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="flex items-center justify-between pt-3 border-t border-geminiBorder/60">
-                    <span className="text-xs text-gray-400">
-                      {selectedTopicsForQuiz.length} di {allProjectTopics.length} argomenti selezionati
-                    </span>
-                    <button
-                      onClick={() => setQuizStep(2)}
-                      disabled={selectedTopicsForQuiz.length === 0}
-                      className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold transition ${
-                        selectedTopicsForQuiz.length > 0 
-                          ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-md'
-                          : 'bg-gray-800 text-gray-500 cursor-not-allowed'
-                      }`}
-                    >
-                      <span>Avanti: Configura Prova</span>
-                      <ArrowRight size={14} />
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 2: CONFIGURAZIONE PARAMETRI */}
-              {quizStep === 2 && (
-                <div className="space-y-5">
-                  <div>
-                    <h4 className="text-sm font-bold text-gray-100">2. Configura le preferenze della verifica</h4>
-                    <p className="text-xs text-gray-400 mt-0.5">Personalizza tipologia di domande, difficoltà e modalità di feedback.</p>
-                  </div>
-
-                  {/* Tipologia di domande */}
-                  <div className="space-y-2">
-                    <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                      Tipologia di domande
-                    </label>
-                    <div className="grid grid-cols-2 gap-2.5">
-                      {[
-                        { id: 'scelta_multipla', label: 'Scelta multipla (4 opzioni)', icon: '🔘' },
-                        { id: 'completamento', label: 'Completamenti (parola chiave)', icon: '✍️' },
-                        { id: 'accoppiamento', label: 'Accoppiamenti (collega coppie)', icon: '🔗' },
-                        { id: 'aperta', label: 'Domande aperte (voto in /30)', icon: '📝' },
-                      ].map(type => {
-                        const isChecked = quizQuestionTypes.includes(type.id);
-                        return (
-                          <div
-                            key={type.id}
-                            onClick={() => handleToggleQuestionType(type.id)}
-                            className={`p-3 rounded-2xl border cursor-pointer transition flex items-center gap-2.5 ${
-                              isChecked 
-                                ? 'bg-indigo-600/20 border-indigo-500 text-white font-medium shadow-sm'
-                                : 'bg-geminiDark border-geminiBorder text-gray-400 hover:border-gray-500'
-                            }`}
-                          >
-                            <input 
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => {}}
-                              className="accent-indigo-500 w-4 h-4 rounded"
-                            />
-                            <span className="text-xs">{type.icon} {type.label}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Numero di domande (5 a 80) */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="font-semibold text-gray-300 uppercase tracking-wider">Numero di domande (Min 5 - Max 80)</span>
-                      <span className="font-bold text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-lg border border-amber-500/20 text-sm">
-                        {quizNumQuestions} domande
-                      </span>
-                    </div>
-                    <input 
-                      type="range"
-                      min="5"
-                      max="80"
-                      step="1"
-                      value={quizNumQuestions}
-                      onChange={(e) => setQuizNumQuestions(Number(e.target.value))}
-                      className="w-full accent-amber-500 h-2 bg-geminiDark rounded-lg cursor-pointer"
-                    />
-                  </div>
-
-                  {/* Grado di difficoltà */}
-                  <div className="space-y-2">
-                    <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                      Grado di difficoltà
-                    </label>
-                    <div className="grid grid-cols-4 gap-2">
-                      {[
-                        { id: 'automatico', label: 'Automatico (consigliato)' },
-                        { id: 'facile', label: 'Facili' },
-                        { id: 'intermedia', label: 'Intermedie' },
-                        { id: 'difficile', label: 'Difficili' }
-                      ].map(d => (
-                        <button
-                          key={d.id}
-                          onClick={() => setQuizDifficulty(d.id)}
-                          className={`p-2.5 rounded-xl border text-[11px] font-semibold transition ${
-                            quizDifficulty === d.id 
-                              ? 'bg-blue-600/20 border-blue-500 text-blue-200' 
-                              : 'bg-geminiDark border-geminiBorder text-gray-400 hover:text-gray-200'
-                          }`}
-                        >
-                          {d.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Modalità Feedback */}
-                  <div className="space-y-2">
-                    <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                      Quando vuoi ricevere il feedback?
-                    </label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div
-                        onClick={() => setQuizFeedbackMode('immediato')}
-                        className={`p-3.5 rounded-2xl border cursor-pointer transition space-y-1 ${
-                          quizFeedbackMode === 'immediato'
-                            ? 'bg-amber-500/15 border-amber-500 shadow-sm'
-                            : 'bg-geminiDark border-geminiBorder text-gray-400'
-                        }`}
-                      >
-                        <div className="text-xs font-bold text-gray-100 flex items-center gap-1.5">
-                          <span>⚡ Subito dopo ogni risposta</span>
-                        </div>
-                        <p className="text-[10px] text-gray-400 leading-relaxed">
-                          Visualizza immediatamente spiegazione ed esito per ciascuna domanda.
-                        </p>
-                      </div>
-
-                      <div
-                        onClick={() => setQuizFeedbackMode('finale')}
-                        className={`p-3.5 rounded-2xl border cursor-pointer transition space-y-1 ${
-                          quizFeedbackMode === 'finale'
-                            ? 'bg-amber-500/15 border-amber-500 shadow-sm'
-                            : 'bg-geminiDark border-geminiBorder text-gray-400'
-                        }`}
-                      >
-                        <div className="text-xs font-bold text-gray-100 flex items-center gap-1.5">
-                          <span>📋 Solo alla fine (Simulazione esame)</span>
-                        </div>
-                        <p className="text-[10px] text-gray-400 leading-relaxed">
-                          Svolgi l'intera prova senza interruzioni e ricevi il voto complessivo e l'analisi al termine.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Navigazione */}
-                  <div className="flex items-center justify-between pt-4 border-t border-geminiBorder/60">
-                    <button
-                      onClick={() => setQuizStep(1)}
-                      className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition"
-                    >
-                      <ArrowLeft size={14} />
-                      <span>Indietro</span>
-                    </button>
-                    <button
-                      onClick={handleGenerateQuizSession}
-                      className="flex items-center gap-2 px-6 py-2.5 rounded-full text-xs font-bold bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white shadow-lg shadow-amber-600/30 transition"
-                    >
-                      <Sparkles size={14} />
-                      <span>Genera Verifica</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 3: CARICAMENTO/GENERAZIONE QUIZ */}
-              {quizStep === 3 && (
-                <div className="py-16 text-center space-y-4">
-                  <div className="w-14 h-14 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 mx-auto animate-bounce">
-                    <Sparkles size={28} />
-                  </div>
-                  <div className="space-y-1">
-                    <h4 className="text-base font-bold text-gray-100">Creazione della Verifica in corso...</h4>
-                    <p className="text-xs text-gray-400 max-w-sm mx-auto">
-                      L'AI sta formulando {quizNumQuestions} quesiti accademici specifici sulle lezioni selezionate.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 4: SVOLGIMENTO QUIZ */}
-              {quizStep === 4 && currentQuizQ && (
-                <div className="space-y-5">
-                  
-                  {/* Barra avanzamento domande */}
-                  <div className="flex items-center justify-between pb-2 border-b border-geminiBorder/40 text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-amber-400">Domanda {currentQuestionIndex + 1} di {quizQuestions.length}</span>
-                      <span className="text-gray-500">•</span>
-                      <span className="text-[11px] bg-geminiDark px-2.5 py-0.5 rounded-md border border-geminiBorder text-gray-300">
-                        {currentQuizQ.topicTitle}
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-gray-400 capitalize px-2 py-0.5 rounded bg-geminiDark border border-geminiBorder">
-                      {currentQuizQ.type ? currentQuizQ.type.replace('_', ' ') : 'Domanda'}
-                    </span>
-                  </div>
-
-                  {/* Testo Domanda */}
-                  <div className="bg-geminiDark p-4 rounded-2xl border border-geminiBorder">
-                    <h4 className="text-sm font-semibold text-gray-100 leading-relaxed">
-                      {currentQuizQ.question}
-                    </h4>
-                  </div>
-
-                  {/* RENDERING IN BASE ALLA TIPOLOGIA */}
-                  
-                  {/* 1. SCELTA MULTIPLA */}
-                  {currentQuizQ.type === 'scelta_multipla' && (
-                    <div className="space-y-2">
-                      {(currentQuizQ.options || []).map((opt, oIdx) => {
-                        const isSelected = userAnswers[currentQuizQ.id] === opt;
-                        return (
-                          <div
-                            key={oIdx}
-                            onClick={() => {
-                              setUserAnswers(prev => ({ ...prev, [currentQuizQ.id]: opt }));
-                            }}
-                            className={`p-3.5 rounded-2xl border cursor-pointer transition flex items-center gap-3 ${
-                              isSelected 
-                                ? 'bg-blue-600/20 border-blue-500 text-white font-medium shadow-sm ring-1 ring-blue-500' 
-                                : 'bg-geminiDark border-geminiBorder text-gray-300 hover:border-gray-500'
-                            }`}
-                          >
-                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                              isSelected ? 'bg-blue-600 text-white' : 'bg-geminiDarkSecondary text-gray-400 border border-geminiBorder'
-                            }`}>
-                              {String.fromCharCode(65 + oIdx)}
-                            </div>
-                            <span className="text-xs leading-relaxed">{opt}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* 2. COMPLETAMENTO */}
-                  {currentQuizQ.type === 'completamento' && (
-                    <div className="space-y-2">
-                      <label className="block text-xs font-semibold text-gray-300">Inserisci il termine o la frase mancante:</label>
-                      <input 
-                        type="text"
-                        value={userAnswers[currentQuizQ.id] || ''}
-                        onChange={(e) => setUserAnswers(prev => ({ ...prev, [currentQuizQ.id]: e.target.value }))}
-                        placeholder="Digita qui la risposta..."
-                        className="w-full bg-geminiDark border border-geminiBorder rounded-2xl p-3.5 text-xs text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500"
-                      />
-                    </div>
-                  )}
-
-                  {/* 3. ACCOPPIAMENTI */}
-                  {currentQuizQ.type === 'accoppiamento' && (
-                    <div className="space-y-3">
-                      <label className="block text-xs font-semibold text-gray-300">Associa a ciascun elemento la definizione corretta:</label>
-                      {(currentQuizQ.matchingPairs || []).map((pair, pIdx) => {
-                        const currentVal = matchingSelections[currentQuizQ.id]?.[pIdx] || '';
-                        return (
-                          <div key={pIdx} className="p-3 bg-geminiDark rounded-2xl border border-geminiBorder flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                            <span className="text-xs font-bold text-blue-300">{pair.left}</span>
-                            <select
-                              value={currentVal}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setMatchingSelections(prev => ({
-                                  ...prev,
-                                  [currentQuizQ.id]: {
-                                    ...(prev[currentQuizQ.id] || {}),
-                                    [pIdx]: val
-                                  }
-                                }));
-                              }}
-                              className="bg-geminiDarkSecondary border border-geminiBorder text-xs text-gray-200 rounded-xl p-2 focus:outline-none"
-                            >
-                              <option value="">-- Seleziona associazione --</option>
-                              {(currentQuizQ.matchingPairs || []).map((p2, i2) => (
-                                <option key={i2} value={p2.right}>{p2.right}</option>
-                              ))}
-                            </select>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* 4. DOMANDA APERTA */}
-                  {currentQuizQ.type === 'aperta' && (
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center">
-                        <label className="block text-xs font-semibold text-gray-300">Scrivi la tua risposta argomentativa completa:</label>
-                        <span className="text-[10px] text-amber-400">Valutazione rigorosa in /30</span>
-                      </div>
-                      <textarea 
-                        rows={5}
-                        value={userAnswers[currentQuizQ.id] || ''}
-                        onChange={(e) => setUserAnswers(prev => ({ ...prev, [currentQuizQ.id]: e.target.value }))}
-                        placeholder="Argomenta la tua risposta spiegando cause, meccanismi, definizioni o classificazioni..."
-                        className="w-full bg-geminiDark border border-geminiBorder rounded-2xl p-3.5 text-xs text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 leading-relaxed"
-                      />
-                    </div>
-                  )}
-
-                  {/* FEEDBACK IMMEDIATO SE ATTIVO */}
-                  {quizFeedbackMode === 'immediato' && (
-                    <div className="pt-2">
-                      {immediateEvaluations[currentQuizQ.id] ? (
-                        <div className={`p-4 rounded-2xl border text-xs space-y-2.5 animate-fadeIn ${
-                          immediateEvaluations[currentQuizQ.id].isCorrect 
-                            ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200' 
-                            : 'bg-red-950/30 border-red-500/40 text-red-200'
-                        }`}>
-                          <div className="flex items-center justify-between font-bold">
-                            <span className="flex items-center gap-1.5">
-                              {immediateEvaluations[currentQuizQ.id].isCorrect ? <CheckCircle size={16} className="text-emerald-400" /> : <XCircle size={16} className="text-red-400" />}
-                              <span>{immediateEvaluations[currentQuizQ.id].isCorrect ? 'Esito Positivo' : 'Esito Negativo'}</span>
-                            </span>
-                            {immediateEvaluations[currentQuizQ.id].score !== undefined && (
-                              <span className="bg-geminiDark px-2 py-0.5 rounded border border-geminiBorder">
-                                Voto: <strong>{immediateEvaluations[currentQuizQ.id].score}/30</strong>
-                              </span>
-                            )}
-                          </div>
-
-                          <p className="leading-relaxed text-gray-200">
-                            {immediateEvaluations[currentQuizQ.id].feedback || currentQuizQ.explanation}
-                          </p>
-
-                          {immediateEvaluations[currentQuizQ.id].missedPoints && immediateEvaluations[currentQuizQ.id].missedPoints.length > 0 && (
-                            <div className="text-[11px] text-amber-300/90 pt-1 border-t border-geminiBorder/40">
-                              <strong>Aspetti da integrare:</strong> {immediateEvaluations[currentQuizQ.id].missedPoints.join(', ')}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => handleCheckImmediateAnswer(currentQuizQ)}
-                          disabled={isEvaluatingOpen}
-                          className="w-full py-2.5 bg-geminiHover hover:bg-geminiBorder border border-geminiBorder text-xs text-blue-300 font-bold rounded-xl transition flex items-center justify-center gap-2"
-                        >
-                          {isEvaluatingOpen ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
-                          <span>{isEvaluatingOpen ? "L'AI sta valutando la risposta..." : "Verifica risposta adesso"}</span>
-                        </button>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Pulsanti navigazione domande */}
-                  <div className="flex items-center justify-between pt-4 border-t border-geminiBorder/60">
-                    <button
-                      onClick={() => setCurrentQuestionIndex(prev => Math.max(0, prev - 1))}
-                      disabled={currentQuestionIndex === 0}
-                      className="px-4 py-2 bg-geminiDark hover:bg-geminiHover disabled:opacity-30 rounded-xl text-xs font-semibold transition"
-                    >
-                      Precedente
-                    </button>
-
-                    {currentQuestionIndex < quizQuestions.length - 1 ? (
-                      <button
-                        onClick={() => setCurrentQuestionIndex(prev => prev + 1)}
-                        className="flex items-center gap-1.5 px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition shadow-md"
-                      >
-                        <span>Successiva</span>
-                        <ChevronRight size={14} />
-                      </button>
-                    ) : (
-                      <button
-                        onClick={handleFinishQuiz}
-                        className="flex items-center gap-1.5 px-6 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold transition shadow-lg"
-                      >
-                        <CheckCircle size={14} />
-                        <span>Concludi e Mostra Esito</span>
-                      </button>
-                    )}
-                  </div>
-
-                </div>
-              )}
-
-              {/* STEP 5: REPORT FINALE */}
-              {quizStep === 5 && (
-                <div className="space-y-6 text-center py-4">
-                  <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-white mx-auto shadow-xl">
-                    <Award size={32} />
-                  </div>
-
-                  <div className="space-y-1">
-                    <h3 className="text-xl font-bold text-gray-100">Verifica Completata!</h3>
-                    <p className="text-xs text-gray-400">Ecco il resoconto analitico delle tue competenze.</p>
-                  </div>
-
-                  {/* Griglia Punteggio */}
-                  <div className="grid grid-cols-3 gap-3 max-w-md mx-auto">
-                    <div className="bg-geminiDark p-3 rounded-2xl border border-geminiBorder">
-                      <div className="text-[10px] uppercase font-bold text-gray-400">Punteggio</div>
-                      <div className="text-lg font-bold text-amber-400">{calculateFinalQuizScore().correct} / {calculateFinalQuizScore().total}</div>
-                    </div>
-                    <div className="bg-geminiDark p-3 rounded-2xl border border-geminiBorder">
-                      <div className="text-[10px] uppercase font-bold text-gray-400">Percentuale</div>
-                      <div className="text-lg font-bold text-blue-400">{calculateFinalQuizScore().percentage}%</div>
-                    </div>
-                    <div className="bg-geminiDark p-3 rounded-2xl border border-geminiBorder">
-                      <div className="text-[10px] uppercase font-bold text-gray-400">Media /30</div>
-                      <div className="text-lg font-bold text-emerald-400">{calculateFinalQuizScore().averageScore}/30</div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-center gap-3 pt-4 border-t border-geminiBorder/60">
-                    <button
-                      onClick={() => setQuizStep(2)}
-                      className="px-5 py-2.5 bg-geminiDark hover:bg-geminiHover border border-geminiBorder text-xs text-gray-300 font-bold rounded-xl transition"
-                    >
-                      Rifai una verifica
-                    </button>
-                    <button
-                      onClick={() => setIsQuizModalOpen(false)}
-                      className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition shadow-md"
-                    >
-                      Torna al Progetto
-                    </button>
-                  </div>
-                </div>
-              )}
-
-            </div>
-
-          </div>
         </div>
       )}
 
@@ -2015,7 +1270,8 @@ function MainAppContent() {
         {/* ------------------------------------------------------------- */}
         {currentView === 'wizard' && (
           <main className="flex-1 overflow-y-auto px-4 md:px-8 py-8 max-w-2xl mx-auto w-full flex flex-col justify-center">
-            {/* Step 1, Step 2, Step 3, Step 4 del wizard */}
+            
+            {/* STEP 1 */}
             {wizardStep === 1 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
                 <div className="flex items-center gap-3">
@@ -2070,6 +1326,7 @@ function MainAppContent() {
               </div>
             )}
 
+            {/* STEP 2 */}
             {wizardStep === 2 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
                 <div className="flex items-center gap-3">
@@ -2199,6 +1456,7 @@ function MainAppContent() {
               </div>
             )}
 
+            {/* STEP 3: FONTI */}
             {wizardStep === 3 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
                 <div className="flex items-center gap-3">
@@ -2390,6 +1648,7 @@ function MainAppContent() {
               </div>
             )}
 
+            {/* STEP 4: CARICAMENTO PROGRESSIVO */}
             {wizardStep === 4 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-8 sm:p-12 rounded-3xl shadow-2xl text-center space-y-6 max-w-md mx-auto w-full">
                 <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
@@ -2418,10 +1677,10 @@ function MainAppContent() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* VISTA 2: PAGINA DEDICATA AL PROGETTO CON "VERIFICA COMPETENZE" */}
+        {/* VISTA 2: PAGINA DEDICATA AL PROGETTO GUIDA                     */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'project' && activeProject && (
-          <main className="flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-5xl mx-auto w-full space-y-6">
+          <main className="flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-4xl mx-auto w-full space-y-6">
             
             <div className="flex items-center justify-between pb-2 border-b border-geminiBorder/40">
               <button 
@@ -2479,97 +1738,71 @@ function MainAppContent() {
               </div>
             </div>
 
-            {/* GRIGLIA 3 COLONNE: MATERIALI, PIANO DI STUDIO E VERIFICA COMPETENZE */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               
-              {/* Card 1: Fonti */}
-              <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 rounded-3xl shadow-sm space-y-4 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between border-b border-geminiBorder/60 pb-3">
-                    <div className="flex items-center gap-2 font-bold text-sm text-gray-100">
-                      <FileText size={16} className="text-blue-400" />
-                      <span>Fonti e Materiali</span>
-                    </div>
-                    <span className="text-[11px] text-gray-400">
-                      {activeProject?.sourceType === 'my_materials' ? `${activeProject?.files?.length || 0} file` : 'Online'}
-                    </span>
+              <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 rounded-3xl shadow-sm space-y-4">
+                <div className="flex items-center justify-between border-b border-geminiBorder/60 pb-3">
+                  <div className="flex items-center gap-2.5 font-bold text-base text-gray-100">
+                    <FileText size={18} className="text-blue-400" />
+                    <span>Fonti e Materiali</span>
                   </div>
+                  <span className="text-xs text-gray-400">
+                    {activeProject?.sourceType === 'my_materials' ? `${activeProject?.files?.length || 0} file caricati` : 'Online'}
+                  </span>
+                </div>
 
-                  {activeProject?.sourceType === 'my_materials' ? (
-                    <div className="space-y-2 mt-3 max-h-40 overflow-y-auto pr-1">
-                      {(activeProject?.files || []).map((f, i) => (
-                        <div key={f.id || i} className="flex items-center justify-between p-2 rounded-xl bg-geminiDark border border-geminiBorder text-xs">
-                          <div className="flex items-center gap-2 truncate">
-                            <FileCheck size={13} className="text-emerald-400 shrink-0" />
-                            <span className="font-medium truncate text-[11px]">{f.name}</span>
+                {activeProject?.sourceType === 'my_materials' ? (
+                  <div className="space-y-3">
+                    {activeProject?.files && activeProject.files.length > 0 ? (
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                        {activeProject.files.map((f, i) => (
+                          <div key={f.id || i} className="flex items-center justify-between p-2.5 rounded-xl bg-geminiDark border border-geminiBorder text-xs">
+                            <div className="flex items-center gap-2 truncate">
+                              <FileCheck size={14} className="text-emerald-400 shrink-0" />
+                              <span className="font-medium truncate">{f.name}</span>
+                            </div>
+                            <span className="text-gray-400 text-[11px] shrink-0 ml-2">
+                              {f.wordsCount ? `${f.wordsCount.toLocaleString()} parole` : f.size}
+                            </span>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-indigo-300 mt-3 leading-relaxed">
-                      Programma didattico strutturato sulla ricerca accademica online.
-                    </p>
-                  )}
-                </div>
-
-                <div className="pt-2 text-[11px] text-gray-500">
-                  Tutte le fonti sono indicizzate
-                </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-500 py-2 text-center">Nessun file presente.</div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300 flex items-center gap-3">
+                    <Globe size={20} className="shrink-0" />
+                    <span>Programma basato sulla ricerca e strutturazione didattica accademica.</span>
+                  </div>
+                )}
               </div>
 
-              {/* Card 2: Piano Didattico */}
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 rounded-3xl shadow-sm space-y-4 flex flex-col justify-between">
                 <div>
-                  <div className="flex items-center gap-2 font-bold text-sm text-gray-100 border-b border-geminiBorder/60 pb-3">
-                    <Sparkles size={16} className="text-indigo-400" />
-                    <span>Piano Didattico</span>
+                  <div className="flex items-center gap-2.5 font-bold text-base text-gray-100 border-b border-geminiBorder/60 pb-3">
+                    <Sparkles size={18} className="text-indigo-400" />
+                    <span>Piano Didattico Giornaliero</span>
                   </div>
                   <p className="text-xs text-gray-400 mt-3 leading-relaxed">
-                    Accedi alle lezioni giornaliere per studiare e personalizzare gli appunti con il Tutor.
+                    Accedi alle singole giornate per consultare, personalizzare o generare lezioni con il chatbot dedicato.
                   </p>
                   
-                  <div className="mt-3 p-2.5 bg-geminiDark rounded-xl border border-geminiBorder flex items-center justify-between text-xs">
-                    <span className="text-gray-400 text-[11px]">Progresso:</span>
-                    <span className="font-bold text-emerald-400 text-[11px]">
-                      {calculateGlobalProgress().completed} / {calculateGlobalProgress().total} ({calculateGlobalProgress().percent}%)
+                  <div className="mt-4 p-3 bg-geminiDark rounded-2xl border border-geminiBorder flex items-center justify-between text-xs">
+                    <span className="text-gray-400">Progresso piano:</span>
+                    <span className="font-bold text-emerald-400">
+                      {calculateGlobalProgress().completed} / {calculateGlobalProgress().total} argomenti ({calculateGlobalProgress().percent}%)
                     </span>
                   </div>
                 </div>
 
                 <button 
                   onClick={() => setCurrentView('study_plan')}
-                  className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-md transition transform active:scale-98"
+                  className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-lg shadow-blue-600/30 transition transform active:scale-98"
                 >
-                  <Sparkles size={13} />
-                  <span>Avvia studio Tutor</span>
-                  <ArrowRight size={13} />
-                </button>
-              </div>
-
-              {/* Card 3: NUOVA SEZIONE "VERIFICA COMPETENZE" */}
-              <div className="bg-geminiDarkSecondary border border-amber-500/30 p-6 rounded-3xl shadow-lg space-y-4 flex flex-col justify-between bg-gradient-to-b from-geminiDarkSecondary to-amber-950/10">
-                <div>
-                  <div className="flex items-center justify-between border-b border-geminiBorder/60 pb-3">
-                    <div className="flex items-center gap-2 font-bold text-sm text-gray-100">
-                      <GraduationCap size={18} className="text-amber-400" />
-                      <span>Verifica Competenze</span>
-                    </div>
-                    <span className="text-[10px] bg-amber-500/15 text-amber-300 font-bold px-2 py-0.5 rounded-md border border-amber-500/20">
-                      Novità
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-3 leading-relaxed">
-                    Simula una prova d'esame personalizzata: scegli le lezioni, il tipo di domande (aperte, quiz, completamenti) e ricevi una valutazione accademica rigorosa.
-                  </p>
-                </div>
-
-                <button 
-                  onClick={handleOpenQuizModal}
-                  className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-gradient-to-r from-amber-600 via-orange-600 to-amber-600 hover:from-amber-500 hover:to-orange-500 text-white text-xs font-bold shadow-lg shadow-amber-600/30 transition transform active:scale-98"
-                >
-                  <CheckCircle2 size={15} />
-                  <span>Verifica</span>
+                  <Sparkles size={15} />
+                  <span>Avvia studio con il Tutor AI</span>
                   <ArrowRight size={14} />
                 </button>
               </div>
@@ -2686,11 +1919,12 @@ function MainAppContent() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* VISTA 4: DETTAGLIO GIORNO WYSIWYG & CHATBOT FISSO A LATO       */}
+        {/* VISTA 4: DETTAGLIO GIORNO CON WYSIWYG & CHATBOT FISSO A LATO */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'day_detail' && activeProject && currentDayData && (
           <main className="flex-1 flex flex-col h-full w-full overflow-hidden">
             
+            {/* Top Bar 1: Breadcrumb navigazione */}
             <div className="flex items-center justify-between px-4 sm:px-6 py-2 border-b border-geminiBorder/40 bg-geminiDarkSecondary/70 shrink-0">
               <button 
                 onClick={() => setCurrentView('study_plan')}
@@ -2706,11 +1940,13 @@ function MainAppContent() {
               </div>
             </div>
 
+            {/* Layout Rigido e Flessibile a 2 Colonne */}
             <div className="flex-1 flex flex-col md:flex-row h-full w-full overflow-hidden">
               
-              {/* COLONNA SINISTRA: FOGLIO WYSIWYG */}
+              {/* COLONNA SINISTRA: FOGLIO WYSIWYG MODIFICABILE IN TEMPO REALE */}
               <div className="flex-1 flex flex-col h-full overflow-hidden border-r border-geminiBorder/40">
                 
+                {/* Selettore Argomenti e Barra Formattazione */}
                 <div className="px-4 py-2 border-b border-geminiBorder/40 bg-geminiDarkSecondary/30 shrink-0 space-y-2">
                   
                   <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1">
@@ -2751,10 +1987,11 @@ function MainAppContent() {
                     )}
                   </div>
 
-                  {/* BARRA FORMATTAZIONE RICCA */}
+                  {/* BARRA FORMATTAZIONE COMPLETA (Font, Dimensione da 4 a 32, B/I/U, Allineamenti, Elenchi) */}
                   {currentSelectedTopic?.lesson && (
                     <div className="flex items-center gap-1 pt-1 overflow-x-auto text-xs text-gray-300 border-t border-geminiBorder/40">
                       
+                      {/* Carattere del testo selezionato */}
                       <select 
                         value={selectedFontFamily}
                         onChange={(e) => applyCustomFontFamily(e.target.value)}
@@ -2769,6 +2006,7 @@ function MainAppContent() {
                         <option value="Courier New">Courier New</option>
                       </select>
 
+                      {/* Dimensione testo selezionato (da 4 a 32 px) */}
                       <div className="flex items-center gap-1 bg-geminiDark border border-geminiBorder rounded-lg px-2 py-0.5">
                         <span className="text-[10px] text-gray-400">Dim:</span>
                         <select 
@@ -2787,6 +2025,7 @@ function MainAppContent() {
 
                       <div className="w-[1px] h-4 bg-geminiBorder mx-1" />
 
+                      {/* Grassetto, Corsivo, Sottolineato */}
                       <button 
                         onClick={() => applyFormattingCommand('bold')}
                         className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
@@ -2811,6 +2050,7 @@ function MainAppContent() {
 
                       <div className="w-[1px] h-4 bg-geminiBorder mx-1" />
 
+                      {/* Allineamento Funzionante (Sinistra, Centro, Destra, Giustificato) */}
                       <button 
                         onClick={() => applyAlignment('left')}
                         className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
@@ -2842,6 +2082,7 @@ function MainAppContent() {
 
                       <div className="w-[1px] h-4 bg-geminiBorder mx-1" />
 
+                      {/* Elenchi */}
                       <button 
                         onClick={() => applyFormattingCommand('insertUnorderedList')}
                         className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
@@ -2859,6 +2100,7 @@ function MainAppContent() {
 
                       <div className="w-[1px] h-4 bg-geminiBorder mx-1" />
 
+                      {/* Intestazioni */}
                       <button 
                         onClick={() => applyFormattingCommand('formatBlock', '<h2>')}
                         className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition text-[11px] font-bold"
@@ -2885,7 +2127,7 @@ function MainAppContent() {
 
                 </div>
 
-                {/* AREA DEL DOCUMENTO SCROLLABILE WYSIWYG */}
+                {/* AREA DEL DOCUMENTO SCROLLABILE E TOTALMENTE MODIFICABILE */}
                 <div className="flex-1 overflow-y-auto p-4 md:p-6 relative">
                   
                   {isGeneratingLesson ? (
@@ -2897,6 +2139,7 @@ function MainAppContent() {
                   ) : currentSelectedTopic?.lesson ? (
                     <div className="max-w-3xl mx-auto space-y-4">
                       
+                      {/* Barra di stato documento e completamento */}
                       <div className="flex items-center justify-between text-xs text-gray-400 bg-geminiDarkSecondary/60 px-4 py-2 rounded-2xl border border-geminiBorder">
                         <span className="text-[11px]">
                           ✏️ <strong>Documento modificabile</strong>: puoi cliccare e scrivere direttamente nel foglio.
@@ -2914,6 +2157,7 @@ function MainAppContent() {
                         </button>
                       </div>
 
+                      {/* FOGLIO WYSIWYG MODIFICABILE IN-PLACE CON FORMULE E FORMATTAZIONE REALE */}
                       <div className="bg-geminiDarkSecondary/70 border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-xl min-h-[520px]">
                         <div
                           ref={wysiwygEditorRef}
@@ -2939,7 +2183,7 @@ function MainAppContent() {
 
               </div>
 
-              {/* COLONNA DESTRA: CHATBOT DELLA LEZIONE */}
+              {/* COLONNA DESTRA: CHATBOT DELLA LEZIONE CON MODIFICA DIRETTA */}
               <div className="w-full md:w-80 lg:w-96 h-80 md:h-full flex flex-col bg-geminiDarkSecondary border-l border-geminiBorder/60 shrink-0 overflow-hidden">
                 
                 <div className="px-4 py-3 border-b border-geminiBorder/40 bg-geminiDarkSecondary flex items-center justify-between shrink-0">
@@ -2952,6 +2196,7 @@ function MainAppContent() {
                   </span>
                 </div>
 
+                {/* MESSAGGI CHATBOT LEZIONE */}
                 <div className="flex-1 overflow-y-auto p-3 space-y-3 text-xs">
                   {lessonChatMessages.length === 0 ? (
                     <div className="h-full flex flex-col justify-center text-center p-3 text-gray-400 space-y-2">
@@ -2968,7 +2213,7 @@ function MainAppContent() {
                           + "Aggiungi una tabella riassuntiva"
                         </button>
                         <button
-                          onClick={() => handleSendLessonChatMessage("Spiegami questo passaggio con un esempio pratico")}
+                          onClick={() => handleSendLessonChatMessage("Spiegami questo argomento con un esempio pratico")}
                           className="w-full text-[11px] p-2 rounded-xl bg-geminiDark hover:bg-geminiHover border border-geminiBorder text-gray-300 text-left transition"
                         >
                           + "Spiegami con un esempio pratico"
@@ -3020,6 +2265,7 @@ function MainAppContent() {
                   <div ref={lessonChatEndRef} />
                 </div>
 
+                {/* Input Chatbot Lezione */}
                 <div className="p-3 border-t border-geminiBorder/40 bg-geminiDarkSecondary shrink-0">
                   <div className="flex items-center gap-1.5 bg-geminiDark border border-geminiBorder rounded-2xl px-3 py-1.5 focus-within:border-blue-500 transition">
                     <input
