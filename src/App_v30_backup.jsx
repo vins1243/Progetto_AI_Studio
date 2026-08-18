@@ -3281,12 +3281,15 @@ function MainAppContent() {
             
             <div 
               onClick={() => setCurrentView('chat')}
-              className="flex items-center gap-2.5 cursor-pointer"
+              className="flex items-center gap-2.5 cursor-pointer group select-none"
+              title="MinervaAI"
             >
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white font-bold shadow-md">
-                <GraduationCap size={18} />
-              </div>
-              <span className="font-semibold text-lg tracking-tight bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent">
+              <img 
+                src={logoImg} 
+                alt="MinervaAI" 
+                className="w-8 h-8 object-contain rounded-lg shadow-sm" 
+              />
+              <span className="font-bold text-lg tracking-tight bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 bg-clip-text text-transparent">
                 MinervaAI
               </span>
             </div>
@@ -3356,29 +3359,19 @@ function MainAppContent() {
         {currentView === 'wizard' && (
           <main className="flex-1 overflow-y-auto px-4 md:px-8 py-8 max-w-2xl mx-auto w-full flex flex-col justify-center">
             {wizardStep === 1 && (
-              <div className={`border p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6 transition ${
-                theme === 'light'
-                  ? 'bg-white border-slate-200 shadow-slate-200/50 text-slate-800'
-                  : 'bg-geminiDarkSecondary border-geminiBorder text-gray-100'
-              }`}>
+              <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
                 <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center border ${
-                    theme === 'light'
-                      ? 'bg-blue-50 text-blue-600 border-blue-200'
-                      : 'bg-blue-600/20 text-blue-400 border-blue-500/30'
-                  }`}>
+                  <div className="w-10 h-10 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
                     <CalendarIcon size={20} />
                   </div>
                   <div>
-                    <h2 className={`text-xl font-bold ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>Quando hai l'esame?</h2>
-                    <p className={`text-xs ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>Seleziona la data per strutturare il calendario giornaliero.</p>
+                    <h2 className="text-xl font-bold text-gray-100">Quando hai l'esame?</h2>
+                    <p className="text-xs text-gray-400">Seleziona la data per strutturare il calendario giornaliero.</p>
                   </div>
                 </div>
 
                 <div className="space-y-3 pt-2">
-                  <label className={`block text-xs font-semibold uppercase tracking-wider ${
-                    theme === 'light' ? 'text-slate-700' : 'text-gray-300'
-                  }`}>
+                  <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
                     Data dell'appello
                   </label>
                   <input 
@@ -3386,11 +3379,7 @@ function MainAppContent() {
                     value={examDate}
                     onChange={(e) => setExamDate(e.target.value)}
                     min={new Date().toISOString().split('T')[0]}
-                    className={`w-full border rounded-2xl px-4 py-3.5 text-base focus:outline-none focus:border-blue-500 transition ${
-                      theme === 'light'
-                        ? 'bg-slate-50 border-slate-200 text-slate-900 [color-scheme:light]'
-                        : 'bg-geminiDark border-geminiBorder text-gray-100 [color-scheme:dark]'
-                    }`}
+                    className="w-full bg-geminiDark border border-geminiBorder rounded-2xl px-4 py-3.5 text-gray-100 text-base focus:outline-none focus:border-blue-500 transition [color-scheme:dark]"
                   />
                   {examDate && (
                     <div className="flex items-center gap-2 text-xs text-blue-400 bg-blue-500/10 px-3.5 py-2 rounded-xl border border-blue-500/20">
@@ -3424,22 +3413,14 @@ function MainAppContent() {
             )}
 
             {wizardStep === 2 && (
-              <div className={`border p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6 transition ${
-                theme === 'light'
-                  ? 'bg-white border-slate-200 shadow-slate-200/50 text-slate-800'
-                  : 'bg-geminiDarkSecondary border-geminiBorder text-gray-100'
-              }`}>
+              <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
                 <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center border ${
-                    theme === 'light'
-                      ? 'bg-indigo-50 text-indigo-600 border-indigo-200'
-                      : 'bg-indigo-600/20 text-indigo-400 border-indigo-500/30'
-                  }`}>
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
                     <Sliders size={20} />
                   </div>
                   <div>
-                    <h2 className={`text-xl font-bold ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>Obiettivo e Dettagli</h2>
-                    <p className={`text-xs ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>Definisci il livello di padronanza e la tipologia dell'esame.</p>
+                    <h2 className="text-xl font-bold text-gray-100">Obiettivo e Dettagli</h2>
+                    <p className="text-xs text-gray-400">Definisci il livello di padronanza e la tipologia dell'esame.</p>
                   </div>
                 </div>
 
@@ -3473,11 +3454,7 @@ function MainAppContent() {
                     value={examDescription}
                     onChange={(e) => setExamDescription(e.target.value)}
                     placeholder="Es. Anatomia Patologica, Fisiologia, Diritto Privato..."
-                    className={`w-full border rounded-2xl p-3 text-sm focus:outline-none focus:border-blue-500 transition resize-none ${
-                      theme === 'light'
-                        ? 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400'
-                        : 'bg-geminiDark border-geminiBorder text-gray-100 placeholder-gray-500'
-                    }`}
+                    className="w-full bg-geminiDark border border-geminiBorder rounded-2xl p-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition resize-none"
                   />
                 </div>
 
@@ -3565,22 +3542,14 @@ function MainAppContent() {
             )}
 
             {wizardStep === 3 && (
-              <div className={`border p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6 transition ${
-                theme === 'light'
-                  ? 'bg-white border-slate-200 shadow-slate-200/50 text-slate-800'
-                  : 'bg-geminiDarkSecondary border-geminiBorder text-gray-100'
-              }`}>
+              <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
                 <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center border ${
-                    theme === 'light'
-                      ? 'bg-purple-50 text-purple-600 border-purple-200'
-                      : 'bg-purple-600/20 text-purple-400 border-purple-500/30'
-                  }`}>
+                  <div className="w-10 h-10 rounded-2xl bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-400">
                     <BookOpen size={20} />
                   </div>
                   <div>
-                    <h2 className={`text-xl font-bold ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>Fonti di Studio</h2>
-                    <p className={`text-xs ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>Scegli se usare i tuoi file o cercare online.</p>
+                    <h2 className="text-xl font-bold text-gray-100">Fonti di Studio</h2>
+                    <p className="text-xs text-gray-400">Scegli se usare i tuoi file o cercare online.</p>
                   </div>
                 </div>
 
@@ -3589,14 +3558,12 @@ function MainAppContent() {
                     onClick={() => setSourceType('my_materials')}
                     className={`p-4 rounded-2xl border cursor-pointer transition flex flex-col justify-between space-y-3 ${
                       sourceType === 'my_materials'
-                        ? (theme === 'light' ? 'bg-blue-50/80 border-blue-500 shadow-sm' : 'bg-blue-600/15 border-blue-500 shadow-md')
-                        : (theme === 'light' ? 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300' : 'bg-geminiDark border-geminiBorder text-gray-400 hover:border-gray-500')
+                        ? 'bg-blue-600/15 border-blue-500 shadow-md'
+                        : 'bg-geminiDark border-geminiBorder text-gray-400 hover:border-gray-500'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
-                        theme === 'light' ? 'bg-blue-100 text-blue-600' : 'bg-blue-600/20 text-blue-400'
-                      }`}>
+                      <div className="w-8 h-8 rounded-xl bg-blue-600/20 flex items-center justify-center text-blue-400">
                         <UploadCloud size={18} />
                       </div>
                       <input 
@@ -3608,8 +3575,8 @@ function MainAppContent() {
                       />
                     </div>
                     <div>
-                      <div className={`font-semibold text-sm ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>Usa il mio materiale</div>
-                      <div className={`text-[11px] mt-0.5 ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>Carica PDF, Word, PPTX o appunti.</div>
+                      <div className="font-semibold text-sm text-gray-100">Usa il mio materiale</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">Carica PDF, Word, PPTX o appunti.</div>
                     </div>
                   </div>
 
@@ -3617,14 +3584,12 @@ function MainAppContent() {
                     onClick={() => setSourceType('search_online')}
                     className={`p-4 rounded-2xl border cursor-pointer transition flex flex-col justify-between space-y-3 ${
                       sourceType === 'search_online'
-                        ? (theme === 'light' ? 'bg-indigo-50/80 border-indigo-500 shadow-sm' : 'bg-indigo-600/15 border-indigo-500 shadow-md')
-                        : (theme === 'light' ? 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300' : 'bg-geminiDark border-geminiBorder text-gray-400 hover:border-gray-500')
+                        ? 'bg-indigo-600/15 border-indigo-500 shadow-md'
+                        : 'bg-geminiDark border-geminiBorder text-gray-400 hover:border-gray-500'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
-                        theme === 'light' ? 'bg-indigo-100 text-indigo-600' : 'bg-indigo-600/20 text-indigo-400'
-                      }`}>
+                      <div className="w-8 h-8 rounded-xl bg-indigo-600/20 flex items-center justify-center text-indigo-400">
                         <Globe size={18} />
                       </div>
                       <input 
@@ -3636,24 +3601,20 @@ function MainAppContent() {
                       />
                     </div>
                     <div>
-                      <div className={`font-semibold text-sm ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>Cerca online</div>
-                      <div className={`text-[11px] mt-0.5 ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>L'AI strutturerà il programma accademico completo senza file.</div>
+                      <div className="font-semibold text-sm text-gray-100">Cerca online</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">L'AI strutturerà il programma accademico completo senza file.</div>
                     </div>
                   </div>
                 </div>
 
                 {sourceType === 'my_materials' ? (
-                  <div className={`space-y-3 pt-2 p-4 rounded-2xl border transition ${
-                    theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-geminiDark/60 border-geminiBorder/70'
-                  }`}>
+                  <div className="space-y-3 pt-2 bg-geminiDark/60 p-4 rounded-2xl border border-geminiBorder/70">
                     <div className="flex items-center justify-between">
-                      <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
-                        theme === 'light' ? 'text-slate-800' : 'text-gray-300'
-                      }`}>
-                        <FileText size={14} className="text-blue-500" />
+                      <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <FileText size={14} className="text-blue-400" />
                         <span>Carica i tuoi documenti</span>
                       </label>
-                      <span className="text-[11px] text-blue-500 font-bold">
+                      <span className="text-[11px] text-blue-400 font-semibold">
                         {totalFilesReady} di {totalFilesSelected} pronti
                       </span>
                     </div>
@@ -3669,19 +3630,11 @@ function MainAppContent() {
 
                     <div 
                       onClick={() => wizardFileInputRef.current?.click()}
-                      className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition group shadow-sm ${
-                        theme === 'light'
-                          ? 'bg-white border-blue-200 hover:bg-blue-50/60 hover:border-blue-400'
-                          : 'bg-geminiDarkSecondary/40 border-geminiBorder hover:border-blue-500 hover:bg-geminiDarkSecondary'
-                      }`}
+                      className="border-2 border-dashed border-geminiBorder hover:border-blue-500 rounded-2xl p-4 text-center cursor-pointer transition bg-geminiDarkSecondary/40 hover:bg-geminiDarkSecondary group"
                     >
-                      <UploadCloud size={28} className="mx-auto text-blue-500 mb-2 group-hover:scale-110 transition" />
-                      <div className={`text-xs font-bold ${theme === 'light' ? 'text-slate-800' : 'text-gray-200'}`}>
-                        Seleziona i tuoi file (PDF, Word, Slide, TXT)
-                      </div>
-                      <div className={`text-[11px] mt-0.5 ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>
-                        Lettura istantanea ed esaustiva di tutti i capitoli
-                      </div>
+                      <UploadCloud size={26} className="mx-auto text-blue-400 mb-1.5 group-hover:scale-110 transition" />
+                      <div className="text-xs font-medium text-gray-200">Seleziona i tuoi file (PDF, Word, Slide, TXT)</div>
+                      <div className="text-[10px] text-gray-500 mt-0.5">Lettura istantanea ed esaustiva di tutti i capitoli</div>
                     </div>
 
                     {isAnyFileExtracting && (
@@ -3754,16 +3707,10 @@ function MainAppContent() {
                   </div>
                 )}
 
-                <div className={`flex justify-between items-center pt-4 border-t ${
-                  theme === 'light' ? 'border-slate-200' : 'border-geminiBorder/60'
-                }`}>
+                <div className="flex justify-between items-center pt-4 border-t border-geminiBorder/60">
                   <button 
                     onClick={() => setWizardStep(2)}
-                    className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border transition ${
-                      theme === 'light'
-                        ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
-                        : 'bg-geminiDark hover:bg-geminiHover text-gray-300 border-geminiBorder'
-                    }`}
+                    className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition"
                   >
                     <ArrowLeft size={14} />
                     <span>Indietro</span>
@@ -3772,10 +3719,10 @@ function MainAppContent() {
                   <button 
                     onClick={handleFinalizeGuide}
                     disabled={sourceType === 'my_materials' && (isAnyFileExtracting || totalFilesReady === 0 || totalFilesSelected === 0)}
-                    className={`flex items-center gap-2 px-6 py-2.5 rounded-2xl text-sm font-bold transition shadow-lg ${
+                    className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold transition shadow-lg ${
                       sourceType === 'my_materials' && (isAnyFileExtracting || totalFilesReady === 0 || totalFilesSelected === 0)
-                        ? (theme === 'light' ? 'bg-slate-200 text-slate-400 border border-slate-200 cursor-not-allowed' : 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700')
-                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/30 active:scale-98 cursor-pointer'
+                        ? 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700'
+                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/30'
                     }`}
                   >
                     <Sparkles size={16} />
@@ -3786,31 +3733,25 @@ function MainAppContent() {
             )}
 
             {wizardStep === 4 && (
-              <div className={`border p-8 sm:p-12 rounded-3xl shadow-2xl text-center space-y-6 max-w-md mx-auto w-full transition ${
-                theme === 'light'
-                  ? 'bg-white border-slate-200 shadow-slate-200/50 text-slate-800'
-                  : 'bg-geminiDarkSecondary border-geminiBorder text-gray-100'
-              }`}>
+              <div className="bg-geminiDarkSecondary border border-geminiBorder p-8 sm:p-12 rounded-3xl shadow-2xl text-center space-y-6 max-w-md mx-auto w-full">
                 <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
                   <div className="w-20 h-20 rounded-full border-4 border-blue-500/20 border-t-blue-500 animate-spin absolute" />
-                  <ShieldCheck size={32} className="text-blue-500" />
+                  <ShieldCheck size={32} className="text-blue-400" />
                 </div>
 
                 <div className="space-y-2">
-                  <h3 className={`text-xl font-bold ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>Generazione del Piano</h3>
-                  <p className={`text-xs h-6 transition-all ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>{loadingStatusText}</p>
+                  <h3 className="text-xl font-bold text-gray-100">Generazione del Piano</h3>
+                  <p className="text-xs text-gray-400 h-6 transition-all">{loadingStatusText}</p>
                 </div>
 
                 <div className="space-y-2">
-                  <div className={`w-full h-3 rounded-full overflow-hidden border ${
-                    theme === 'light' ? 'bg-slate-100 border-slate-200' : 'bg-geminiDark border-geminiBorder'
-                  }`}>
+                  <div className="w-full bg-geminiDark h-3 rounded-full overflow-hidden border border-geminiBorder">
                     <div 
                       className="bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-500 h-full rounded-full transition-all duration-200"
                       style={{ width: `${loadingProgress}%` }}
                     />
                   </div>
-                  <div className="text-xs font-bold text-blue-500">{loadingProgress}%</div>
+                  <div className="text-xs font-bold text-blue-400">{loadingProgress}%</div>
                 </div>
               </div>
             )}
@@ -4157,12 +4098,18 @@ function MainAppContent() {
             <div className="flex-1 flex flex-col md:flex-row h-full w-full overflow-hidden">
               
               {/* COLONNA SINISTRA: FOGLIO WYSIWYG CON EXPORT PDF E IMMAGINI */}
-              <div className="flex-1 flex flex-col h-full overflow-hidden border-r border-geminiBorder/40">
+              <div className={`flex-1 flex flex-col h-full overflow-hidden border-r transition ${
+                theme === 'light' ? 'bg-[#f8fafc] border-slate-200' : 'bg-geminiDark border-geminiBorder/40'
+              }`}>
                 
-                <div className="px-4 py-2 border-b border-geminiBorder/40 bg-geminiDarkSecondary/30 shrink-0 space-y-2">
+                {/* TOOLBAR SUPERIORE LEZIONE E FORMATTAZIONE */}
+                <div className={`px-4 sm:px-6 py-3 border-b shrink-0 space-y-2.5 transition shadow-sm ${
+                  theme === 'light' ? 'bg-white border-slate-200' : 'bg-geminiDarkSecondary border-geminiBorder/60'
+                }`}>
                   
-                  <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1">
-                    <div className="flex items-center gap-1.5">
+                  {/* Riga 1: Argomenti e Pulsanti Azione */}
+                  <div className="flex items-center justify-between gap-3 overflow-x-auto pb-0.5">
+                    <div className="flex items-center gap-2">
                       {(currentDayData?.topics || []).map(topic => (
                         <button
                           key={topic.id}
@@ -4173,14 +4120,16 @@ function MainAppContent() {
                             setImageBoxRect(null);
                             lastLoadedTopicIdRef.current = null;
                           }}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 border ${
+                          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-2 border ${
                             currentSelectedTopic?.id === topic.id
-                              ? 'bg-blue-600 text-white border-blue-500 shadow-sm'
-                              : 'bg-geminiDarkSecondary text-gray-400 border-geminiBorder hover:text-gray-200'
+                              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white border-transparent shadow-md shadow-blue-600/20'
+                              : (theme === 'light'
+                                  ? 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:text-slate-900'
+                                  : 'bg-geminiDark text-gray-400 border-geminiBorder hover:text-gray-200 hover:bg-geminiHover')
                           }`}
                         >
                           <span>{topic.title}</span>
-                          {topic.lesson && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
+                          {topic.lesson && <span className="w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-emerald-400/20" />}
                         </button>
                       ))}
                     </div>
@@ -4192,47 +4141,61 @@ function MainAppContent() {
                           <button
                             onClick={handleDownloadLessonPDF}
                             disabled={isExportingPDF}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 transition shadow-sm"
+                            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm border ${
+                              theme === 'light'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 hover:border-emerald-400'
+                                : 'bg-emerald-950/40 text-emerald-300 border-emerald-600/40 hover:bg-emerald-900/50'
+                            }`}
                             title="Scarica il documento PDF formattato di questa lezione"
                           >
-                            {isExportingPDF ? <RefreshCw size={12} className="animate-spin" /> : <Download size={12} />}
+                            {isExportingPDF ? <RefreshCw size={13} className="animate-spin" /> : <Download size={13} />}
                             <span>Scarica PDF</span>
                           </button>
                         )}
 
                         <button
                           onClick={handleOpenSingleLessonQuizModal}
-                          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 transition shadow-sm"
+                          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm border ${
+                            theme === 'light'
+                              ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 hover:border-amber-400'
+                              : 'bg-amber-950/40 text-amber-300 border-amber-600/40 hover:bg-amber-900/50'
+                          }`}
                           title="Avvia una verifica specifica solo su questa lezione"
                         >
-                          <GraduationCap size={13} />
+                          <GraduationCap size={14} />
                           <span>Verifica Lezione</span>
                         </button>
 
                         <button
                           onClick={() => handleGenerateLesson(currentDayData.dayNumber, currentSelectedTopic)}
                           disabled={isGeneratingLesson}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition shadow-sm ${
+                          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-bold transition shadow-md ${
                             isGeneratingLesson 
-                              ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
-                              : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/20'
+                              ? 'bg-gray-400 text-white cursor-not-allowed' 
+                              : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/25 active:scale-98'
                           }`}
                         >
-                          {isGeneratingLesson ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                          {isGeneratingLesson ? <RefreshCw size={13} className="animate-spin" /> : <Sparkles size={13} />}
                           <span>{currentSelectedTopic.lesson ? 'Rigenera' : 'Genera lezione'}</span>
                         </button>
                       </div>
                     )}
                   </div>
 
-                  {/* BARRA FORMATTAZIONE CON TASTO IMMAGINE */}
+                  {/* Riga 2: Barra Formattazione Testo con Inserimento Immagine */}
                   {currentSelectedTopic?.lesson && (
-                    <div className="flex items-center gap-1 pt-1 overflow-x-auto text-xs text-gray-300 border-t border-geminiBorder/40">
+                    <div className={`flex items-center gap-1.5 pt-2 overflow-x-auto text-xs border-t ${
+                      theme === 'light' ? 'border-slate-200 text-slate-700' : 'border-geminiBorder/60 text-gray-300'
+                    }`}>
                       
                       <select 
                         value={selectedFontFamily}
                         onChange={(e) => applyCustomFontFamily(e.target.value)}
-                        className="bg-geminiDark border border-geminiBorder rounded-lg px-2 py-1 text-[11px] text-gray-200 focus:outline-none"
+                        className={`border rounded-xl px-2.5 py-1 text-xs focus:outline-none transition shadow-sm cursor-pointer ${
+                          theme === 'light' 
+                            ? 'bg-slate-50 border-slate-200 text-slate-800 focus:border-blue-500' 
+                            : 'bg-geminiDark border-geminiBorder text-gray-200 focus:border-blue-500'
+                        }`}
                         title="Carattere testo selezionato"
                       >
                         <option value="sans-serif">Sans-serif</option>
@@ -4243,152 +4206,212 @@ function MainAppContent() {
                         <option value="Courier New">Courier New</option>
                       </select>
 
-                      <div className="flex items-center gap-1 bg-geminiDark border border-geminiBorder rounded-lg px-2 py-0.5">
-                        <span className="text-[10px] text-gray-400">Dim:</span>
+                      <div className={`flex items-center gap-1.5 border rounded-xl px-2.5 py-1 shadow-sm transition ${
+                        theme === 'light' ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-geminiDark border-geminiBorder text-gray-200'
+                      }`}>
+                        <span className={`text-[11px] font-medium ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>Dim:</span>
                         <select 
                           value={selectedFontSize}
                           onChange={(e) => applyCustomFontSize(Number(e.target.value))}
-                          className="bg-transparent text-[11px] text-gray-200 focus:outline-none cursor-pointer"
+                          className="bg-transparent text-xs font-semibold focus:outline-none cursor-pointer"
                           title="Dimensione testo selezionato (4 - 32px)"
                         >
                           {fontSizes.map(size => (
-                            <option key={size} value={size} className="bg-geminiDark text-gray-200">
+                            <option key={size} value={size} className={theme === 'light' ? 'bg-white text-slate-900' : 'bg-geminiDark text-gray-200'}>
                               {size}px
                             </option>
                           ))}
                         </select>
                       </div>
 
-                      <div className="w-[1px] h-4 bg-geminiBorder mx-1" />
+                      <div className={`w-[1px] h-4 mx-1 ${theme === 'light' ? 'bg-slate-200' : 'bg-geminiBorder'}`} />
 
                       <button 
                         onClick={() => applyFormattingCommand('bold')}
-                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
+                        className={`p-1.5 rounded-lg transition font-bold ${
+                          theme === 'light' ? 'text-slate-700 hover:text-slate-900 hover:bg-slate-100' : 'text-gray-300 hover:text-white hover:bg-geminiHover'
+                        }`}
                         title="Grassetto"
                       >
-                        <Bold size={13} />
+                        <Bold size={14} />
                       </button>
                       <button 
                         onClick={() => applyFormattingCommand('italic')}
-                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
+                        className={`p-1.5 rounded-lg transition italic ${
+                          theme === 'light' ? 'text-slate-700 hover:text-slate-900 hover:bg-slate-100' : 'text-gray-300 hover:text-white hover:bg-geminiHover'
+                        }`}
                         title="Corsivo"
                       >
-                        <Italic size={13} />
+                        <Italic size={14} />
                       </button>
                       <button 
                         onClick={() => applyFormattingCommand('underline')}
-                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
+                        className={`p-1.5 rounded-lg transition underline ${
+                          theme === 'light' ? 'text-slate-700 hover:text-slate-900 hover:bg-slate-100' : 'text-gray-300 hover:text-white hover:bg-geminiHover'
+                        }`}
                         title="Sottolineato"
                       >
-                        <UnderlineIcon size={13} />
+                        <UnderlineIcon size={14} />
                       </button>
 
-                      <div className="w-[1px] h-4 bg-geminiBorder mx-1" />
+                      <div className={`w-[1px] h-4 mx-1 ${theme === 'light' ? 'bg-slate-200' : 'bg-geminiBorder'}`} />
 
                       <button 
                         onClick={() => applyAlignment('left')}
-                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
+                        className={`p-1.5 rounded-lg transition ${
+                          theme === 'light' ? 'text-slate-700 hover:text-slate-900 hover:bg-slate-100' : 'text-gray-300 hover:text-white hover:bg-geminiHover'
+                        }`}
                         title="Allinea a sinistra"
                       >
-                        <AlignLeft size={13} />
+                        <AlignLeft size={14} />
                       </button>
                       <button 
                         onClick={() => applyAlignment('center')}
-                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
+                        className={`p-1.5 rounded-lg transition ${
+                          theme === 'light' ? 'text-slate-700 hover:text-slate-900 hover:bg-slate-100' : 'text-gray-300 hover:text-white hover:bg-geminiHover'
+                        }`}
                         title="Centra"
                       >
-                        <AlignCenter size={13} />
+                        <AlignCenter size={14} />
                       </button>
                       <button 
                         onClick={() => applyAlignment('right')}
-                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
+                        className={`p-1.5 rounded-lg transition ${
+                          theme === 'light' ? 'text-slate-700 hover:text-slate-900 hover:bg-slate-100' : 'text-gray-300 hover:text-white hover:bg-geminiHover'
+                        }`}
                         title="Allinea a destra"
                       >
-                        <AlignRight size={13} />
+                        <AlignRight size={14} />
                       </button>
                       <button 
                         onClick={() => applyAlignment('justify')}
-                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
+                        className={`p-1.5 rounded-lg transition ${
+                          theme === 'light' ? 'text-slate-700 hover:text-slate-900 hover:bg-slate-100' : 'text-gray-300 hover:text-white hover:bg-geminiHover'
+                        }`}
                         title="Giustifica testo"
                       >
-                        <AlignJustify size={13} />
+                        <AlignJustify size={14} />
                       </button>
 
-                      <div className="w-[1px] h-4 bg-geminiBorder mx-1" />
+                      <div className={`w-[1px] h-4 mx-1 ${theme === 'light' ? 'bg-slate-200' : 'bg-geminiBorder'}`} />
 
                       <button 
                         onClick={() => applyFormattingCommand('insertUnorderedList')}
-                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
+                        className={`p-1.5 rounded-lg transition ${
+                          theme === 'light' ? 'text-slate-700 hover:text-slate-900 hover:bg-slate-100' : 'text-gray-300 hover:text-white hover:bg-geminiHover'
+                        }`}
                         title="Elenco puntato"
                       >
-                        <List size={13} />
+                        <List size={14} />
                       </button>
                       <button 
                         onClick={() => applyFormattingCommand('insertOrderedList')}
-                        className="p-1.5 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
+                        className={`p-1.5 rounded-lg transition ${
+                          theme === 'light' ? 'text-slate-700 hover:text-slate-900 hover:bg-slate-100' : 'text-gray-300 hover:text-white hover:bg-geminiHover'
+                        }`}
                         title="Elenco numerato"
                       >
-                        <ListOrdered size={13} />
+                        <ListOrdered size={14} />
                       </button>
 
-                      <div className="w-[1px] h-4 bg-geminiBorder mx-1" />
+                      <div className={`w-[1px] h-4 mx-1 ${theme === 'light' ? 'bg-slate-200' : 'bg-geminiBorder'}`} />
 
                       <input 
                         type="file" 
-                        ref={imageUploadInputRef} 
-                        accept="image/*" 
-                        onChange={handleImageFileSelect} 
-                        className="hidden" 
+                        ref={imageUploadInputRef}
+                        onChange={handleImageFileSelect}
+                        accept="image/*"
+                        className="hidden"
                       />
-                      <button
+                      <button 
                         onClick={() => imageUploadInputRef.current?.click()}
-                        className="p-1.5 hover:bg-blue-600/30 text-blue-400 hover:text-blue-300 rounded-lg transition flex items-center gap-1 font-semibold"
-                        title="Inserisci immagine nel documento"
+                        className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold transition border ${
+                          theme === 'light' 
+                            ? 'text-blue-700 bg-blue-50 hover:bg-blue-100 border-blue-200' 
+                            : 'text-blue-300 bg-blue-950/40 hover:bg-blue-900/50 border-blue-800/40'
+                        }`}
+                        title="Carica un'immagine direttamente nel testo della lezione"
                       >
                         <ImageIcon size={14} />
-                        <span className="text-[10px]">Immagine</span>
+                        <span>Immagine</span>
                       </button>
+
                     </div>
                   )}
 
                 </div>
 
-                {/* CORPO DELLA LEZIONE CON SUPPORTO DRAG TO RESIZE */}
-                <div className="flex-1 overflow-y-auto p-4 md:p-6 relative">
-                  
+                {/* CORPO DELLA LEZIONE CON EDITOR WYSIWYG */}
+                <div className={`flex-1 overflow-y-auto p-4 sm:p-8 transition ${
+                  theme === 'light' ? 'bg-[#f8fafc]' : 'bg-geminiDark'
+                }`}>
                   {isGeneratingLesson ? (
-                    <div className="h-full flex flex-col items-center justify-center text-center space-y-3 py-16">
-                      <Sparkles size={28} className="text-blue-400 animate-bounce" />
-                      <div className="text-sm font-semibold text-gray-200">Generazione della lezione in corso...</div>
-                      <div className="text-xs text-gray-400">Elaborazione con formule LaTeX e schemi didattici</div>
+                    <div className="h-full flex flex-col items-center justify-center space-y-4 text-center p-8">
+                      <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-xl shadow-blue-600/30 animate-pulse">
+                        <Sparkles size={28} />
+                      </div>
+                      <div className="space-y-1">
+                        <h3 className={`text-base font-bold ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>
+                          MinervaAI sta redigendo la lezione specialistica...
+                        </h3>
+                        <p className={`text-xs max-w-md ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>
+                          Creazione scaletta dettagliata, analisi completa delle dispense caricate e formattazione con formule LaTeX.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-blue-500 font-semibold pt-2">
+                        <RefreshCw size={14} className="animate-spin" />
+                        <span>Analisi approfondita in corso...</span>
+                      </div>
                     </div>
                   ) : currentSelectedTopic?.lesson ? (
-                    <div className="max-w-3xl mx-auto space-y-4">
+                    <div className="max-w-4xl mx-auto space-y-4">
                       
-                      <div className="flex flex-wrap items-center justify-between text-xs text-gray-400 bg-geminiDarkSecondary/60 px-4 py-2 rounded-2xl border border-geminiBorder gap-2">
+                      {/* BARRA STATUS: MODIFICA ATTIVA & TASTO SEGNA STUDIATO */}
+                      <div className={`flex flex-wrap items-center justify-between text-xs px-4 py-2.5 rounded-2xl border gap-2 shadow-sm transition ${
+                        theme === 'light' 
+                          ? 'bg-white border-slate-200 text-slate-700' 
+                          : 'bg-geminiDarkSecondary/80 border-geminiBorder text-gray-300'
+                      }`}>
                         <div className="flex items-center gap-2">
-                          <span className="text-[11px]">✏️ <strong>Modifica testo attiva</strong> • Trascina gli angoli per ridimensionare le immagini</span>
+                          <span className={`text-[11px] font-medium ${theme === 'light' ? 'text-slate-700' : 'text-gray-300'}`}>
+                            ✏️ <strong className={theme === 'light' ? 'text-slate-900' : 'text-white'}>Modifica testo attiva</strong> • Trascina gli angoli per ridimensionare le immagini
+                          </span>
                           {currentSelectedTopic.quizScore && (
-                            <span className="bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-md border border-amber-500/30 text-[10px] font-bold">
+                            <span className={`px-2.5 py-0.5 rounded-lg border text-[10px] font-bold ${
+                              theme === 'light'
+                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                            }`}>
                               Verifica: {currentSelectedTopic.quizScore}/30
                             </span>
                           )}
                         </div>
                         
+                        {/* TASTO SEGNA STUDIATO AD ALTO CONTRASTO */}
                         <button
                           onClick={() => handleToggleTopicComplete(currentDayData.dayNumber, currentSelectedTopic.id)}
-                          className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition ${
+                          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm border ${
                             currentSelectedTopic.completed 
-                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
-                              : 'bg-geminiHover text-gray-300 hover:text-white border border-geminiBorder'
+                              ? (theme === 'light' 
+                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200' 
+                                  : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40') 
+                              : (theme === 'light' 
+                                  ? 'bg-blue-600 text-white hover:bg-blue-500 border-blue-600 shadow-blue-600/20 active:scale-98' 
+                                  : 'bg-geminiHover text-gray-200 hover:text-white border-geminiBorder active:scale-98')
                           }`}
+                          title={currentSelectedTopic.completed ? "Argomento completato" : "Segna questo argomento come studiato"}
                         >
-                          {currentSelectedTopic.completed ? <CheckCircle2 size={13} /> : <CheckSquare size={13} />}
+                          {currentSelectedTopic.completed ? <CheckCircle2 size={14} /> : <CheckSquare size={14} />}
                           <span>{currentSelectedTopic.completed ? 'Studiato' : 'Segna studiato'}</span>
                         </button>
                       </div>
 
-                      <div className="bg-geminiDarkSecondary/70 border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-xl min-h-[520px]">
+                      {/* FOGLIO LEZIONE WYSIWYG */}
+                      <div className={`border p-6 sm:p-10 rounded-3xl shadow-xl min-h-[540px] transition ${
+                        theme === 'light' 
+                          ? 'bg-white border-slate-200 shadow-slate-200/50' 
+                          : 'bg-geminiDarkSecondary/70 border-geminiBorder'
+                      }`}>
                         <div
                           ref={wysiwygEditorRef}
                           contentEditable="true"
@@ -4401,15 +4424,27 @@ function MainAppContent() {
 
                     </div>
                   ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-center py-16 space-y-3">
-                      <BookOpen size={32} className="mx-auto text-gray-500" />
-                      <div className="text-sm font-semibold text-gray-300">Nessuna lezione presente per questo argomento</div>
-                      <p className="text-xs text-gray-500 max-w-sm">
-                        Clicca su <strong>"Genera lezione"</strong> in alto per creare la sintesi didattica completa con formule e tabelle.
-                      </p>
+                    <div className="h-full flex flex-col items-center justify-center space-y-4 text-center p-8">
+                      <div className="w-14 h-14 rounded-2xl bg-blue-600/15 text-blue-500 flex items-center justify-center">
+                        <BookOpen size={28} />
+                      </div>
+                      <div className="space-y-1">
+                        <h3 className={`text-base font-bold ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>
+                          Nessuna lezione redatta per questo argomento
+                        </h3>
+                        <p className={`text-xs max-w-sm ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>
+                          Clicca sul pulsante in alto a destra per generare la lezione approfondita con MinervaAI.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleGenerateLesson(currentDayData.dayNumber, currentSelectedTopic)}
+                        className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-2xl shadow-lg shadow-blue-600/25 transition transform active:scale-98 flex items-center gap-2"
+                      >
+                        <Sparkles size={14} />
+                        <span>Genera Lezione Didattica</span>
+                      </button>
                     </div>
                   )}
-
                 </div>
 
               </div>
@@ -4597,8 +4632,8 @@ function MainAppContent() {
                 
                 {messages.length === 0 ? (
                   <div className="min-h-[55vh] flex flex-col items-center justify-center text-center">
-                    <div className="w-14 h-14 rounded-2xl bg-geminiDarkSecondary border border-geminiBorder flex items-center justify-center text-blue-400 mb-6 shadow-lg">
-                      <Sparkles size={28} />
+                    <div className="w-16 h-16 flex items-center justify-center mb-6 shrink-0 overflow-hidden">
+                      <img src={logoImg} alt="MinervaAI Logo" className="w-16 h-16 object-contain drop-shadow-md rounded-2xl" />
                     </div>
                     
                     <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-gray-100 mb-3">
@@ -4635,8 +4670,8 @@ function MainAppContent() {
                       className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                     >
                       {msg.role === 'assistant' && (
-                        <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0 mt-1 shadow-sm">
-                          <GraduationCap size={16} />
+                        <div className="w-8 h-8 rounded-lg bg-blue-600/10 border border-blue-500/30 flex items-center justify-center shrink-0 mt-1 shadow-sm overflow-hidden p-1">
+                          <img src={logoImg} alt="MinervaAI" className="w-full h-full object-contain" />
                         </div>
                       )}
 
@@ -4666,8 +4701,8 @@ function MainAppContent() {
 
                 {isLoading && (
                   <div className="flex gap-3 justify-start">
-                    <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0 mt-1">
-                      <GraduationCap size={16} />
+                    <div className="w-8 h-8 rounded-lg bg-blue-600/10 border border-blue-500/30 flex items-center justify-center shrink-0 mt-1 overflow-hidden p-1">
+                      <img src={logoImg} alt="MinervaAI" className="w-full h-full object-contain" />
                     </div>
                     <div className="bg-geminiDarkSecondary border border-geminiBorder px-4 py-3 rounded-2xl rounded-tl-sm text-sm text-gray-400 flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
