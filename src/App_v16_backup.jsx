@@ -58,7 +58,7 @@ import {
 } from 'lucide-react';
 
 // IndexedDB Helper
-const DB_NAME = 'StudyAIDB_V9';
+const DB_NAME = 'StudyAIDB_V8';
 const STORE_NAME = 'project_data_store';
 
 function getDB() {
@@ -266,9 +266,6 @@ export default function App() {
 function MainAppContent() {
   const [currentView, setCurrentView] = useState('chat');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
-  // SCHEDA ATTIVA NEL MENU LATERALE ('conversations' | 'projects')
-  const [sidebarTab, setSidebarTab] = useState('projects');
 
   // Chat Homepage
   const [conversations, setConversations] = useState(() => {
@@ -721,7 +718,6 @@ function MainAppContent() {
 
       setSavedProjects(old => [newProject, ...(old || [])]);
       setActiveProject(newProject);
-      setSidebarTab('projects'); // Porta la sidebar su progetti
 
       setTimeout(() => {
         setCurrentView('project');
@@ -999,6 +995,7 @@ function MainAppContent() {
     return list;
   };
 
+  // Apertura Verifica Generale dalla pagina Progetto
   const handleOpenGeneralQuizModal = () => {
     const allTopics = getAllProjectTopics();
     setSelectedTopicsForQuiz(allTopics.map(t => t.title));
@@ -1011,12 +1008,13 @@ function MainAppContent() {
     setImmediateEvaluations({});
   };
 
+  // Apertura Verifica Specifica dalla singola Lezione (bypassa Step 1)
   const handleOpenSingleLessonQuizModal = () => {
     if (!currentSelectedTopic) return;
     setSelectedTopicsForQuiz([currentSelectedTopic.title]);
     setIsSingleLessonQuiz(true);
-    setQuizNumQuestions(5);
-    setQuizStep(2);
+    setQuizNumQuestions(5); // Default 5 domande per singola lezione
+    setQuizStep(2); // Va direttamente alla configurazione
     setIsQuizModalOpen(true);
     setQuizQuestions([]);
     setUserAnswers({});
@@ -1057,7 +1055,7 @@ function MainAppContent() {
       return;
     }
 
-    setQuizStep(3);
+    setQuizStep(3); // Loading screen
 
     try {
       const dbData = await getProjectDataFromDB(activeProject.id);
@@ -1095,6 +1093,7 @@ function MainAppContent() {
     }
   };
 
+  // VALUTAZIONE INTELLIGENTE E MODULARE DEI COMPLETAMENTI (NON BINARIA 0/30)
   const evaluateCompletionIntelligently = (userAns, correctAns, altAnswers = [], explanation = '') => {
     if (!userAns || !userAns.trim()) {
       return { 
@@ -1107,6 +1106,7 @@ function MainAppContent() {
     const cleanUser = userAns.trim().toLowerCase();
     const cleanCorrect = (correctAns || '').trim().toLowerCase();
     
+    // 1. Corrispondenza esatta
     if (cleanUser === cleanCorrect) {
       return { 
         isCorrect: true, 
@@ -1115,6 +1115,7 @@ function MainAppContent() {
       };
     }
 
+    // 2. Corrispondenza con risposte alternative/sinonimi
     if (Array.isArray(altAnswers) && altAnswers.some(alt => alt.trim().toLowerCase() === cleanUser)) {
       return { 
         isCorrect: true, 
@@ -1123,6 +1124,7 @@ function MainAppContent() {
       };
     }
 
+    // 3. Sovrapposizione termini chiave (es. "bicarbonato" dentro "concentrazione di bicarbonato")
     const userWords = cleanUser.split(/\s+/).filter(w => w.length > 2);
     const correctWords = cleanCorrect.split(/\s+/).filter(w => w.length > 2);
     const hasOverlap = userWords.some(w => cleanCorrect.includes(w)) || correctWords.some(w => cleanUser.includes(w));
@@ -1130,11 +1132,12 @@ function MainAppContent() {
     if (hasOverlap) {
       return {
         isCorrect: true,
-        score: 27,
+        score: 27, // Punteggio alto: concetto chiave centrato!
         feedback: `Molto bene! Hai individuato il concetto fondamentale ("${userAns}"). La dicitura specialistica più precisa è "${correctAns}". ${explanation}`
       };
     }
 
+    // 4. Risposta parziale o non coincidente
     return {
       isCorrect: false,
       score: 10,
@@ -1142,6 +1145,7 @@ function MainAppContent() {
     };
   };
 
+  // Gestione valutazione risposta aperta con AI (tono costruttivo e voto /30)
   const handleEvaluateCurrentOpenAnswer = async (q) => {
     const studentAnswer = (userAnswers[q.id] || '').trim();
     if (!studentAnswer) {
@@ -1177,6 +1181,7 @@ function MainAppContent() {
     }
   };
 
+  // Verifica immediata
   const handleCheckImmediateAnswer = (q) => {
     if (q.type === 'aperta') {
       handleEvaluateCurrentOpenAnswer(q);
@@ -1219,6 +1224,7 @@ function MainAppContent() {
     }));
   };
 
+  // Calcolo Punteggio Finale e Registrazione nei dati di progetto
   const calculateFinalQuizScore = () => {
     if (!quizQuestions.length) return { total: 0, correct: 0, percentage: 0, averageScore: 0 };
     let correctCount = 0;
@@ -1252,6 +1258,7 @@ function MainAppContent() {
 
     const results = calculateFinalQuizScore();
 
+    // Salva il punteggio nello storico del progetto
     if (activeProject) {
       const newHistoryEntry = {
         date: new Date().toISOString(),
@@ -1263,6 +1270,7 @@ function MainAppContent() {
 
       const updatedHistory = [newHistoryEntry, ...(activeProject.quizHistory || [])];
 
+      // Se era un quiz di una singola lezione, aggiorna il punteggio di quella lezione
       let updatedSchedule = activeProject.schedule;
       if (isSingleLessonQuiz && currentSelectedTopic && currentDayData) {
         updatedSchedule = (activeProject.schedule || []).map(d => {
@@ -1287,11 +1295,12 @@ function MainAppContent() {
     setQuizStep(5);
   };
 
+  // CALCOLO GRADO DI PREPARAZIONE GENERALE (Mix Lezioni Studiate + Risultati Verifiche)
   const calculateOverallReadiness = () => {
     if (!activeProject) return { percentage: 0, label: 'Inizio percorso', averageQuizScore: 0, testsCount: 0 };
 
     const globalProg = calculateGlobalProgress();
-    const studiedPercent = globalProg.percent;
+    const studiedPercent = globalProg.percent; // 0 - 100%
 
     const history = activeProject.quizHistory || [];
     const testsCount = history.length;
@@ -1299,15 +1308,17 @@ function MainAppContent() {
     let avgQuizScore = 0;
     if (testsCount > 0) {
       const sum = history.reduce((acc, h) => acc + (h.score || 0), 0);
-      avgQuizScore = Math.round(sum / testsCount);
+      avgQuizScore = Math.round(sum / testsCount); // in /30
     }
 
     const quizScorePercentage = Math.round((avgQuizScore / 30) * 100);
 
     let finalReadiness = 0;
     if (testsCount === 0) {
+      // Se non ha ancora fatto verifiche, il grado si basa principalmente sulle lezioni studiate
       finalReadiness = Math.round(studiedPercent * 0.7);
     } else {
+      // Ponderazione: 40% lezioni studiate + 60% esiti delle verifiche
       finalReadiness = Math.round((studiedPercent * 0.4) + (quizScorePercentage * 0.6));
     }
 
@@ -1504,6 +1515,7 @@ function MainAppContent() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
           <div className="bg-geminiDarkSecondary border border-geminiBorder w-full max-w-2xl max-h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden">
             
+            {/* Header Modal */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-geminiBorder/60 bg-geminiDarkSecondary shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
@@ -1524,8 +1536,10 @@ function MainAppContent() {
               </button>
             </div>
 
+            {/* Contenuto Modal */}
             <div className="flex-1 overflow-y-auto p-6 space-y-5">
               
+              {/* STEP 1: SELEZIONE LEZIONI (mostrato solo in modalità generale) */}
               {quizStep === 1 && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
@@ -1596,6 +1610,7 @@ function MainAppContent() {
                 </div>
               )}
 
+              {/* STEP 2: CONFIGURAZIONE PARAMETRI */}
               {quizStep === 2 && (
                 <div className="space-y-5">
                   <div>
@@ -1607,6 +1622,7 @@ function MainAppContent() {
                     </p>
                   </div>
 
+                  {/* Tipologia di domande */}
                   <div className="space-y-2">
                     <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
                       Tipologia di domande
@@ -1642,6 +1658,7 @@ function MainAppContent() {
                     </div>
                   </div>
 
+                  {/* Numero di domande */}
                   <div className="space-y-2">
                     <div className="flex justify-between items-center text-xs">
                       <span className="font-semibold text-gray-300 uppercase tracking-wider">Numero di domande (Min 3 - Max 80)</span>
@@ -1660,6 +1677,7 @@ function MainAppContent() {
                     />
                   </div>
 
+                  {/* Difficoltà */}
                   <div className="space-y-2">
                     <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
                       Grado di difficoltà
@@ -1686,6 +1704,7 @@ function MainAppContent() {
                     </div>
                   </div>
 
+                  {/* Modalità Feedback */}
                   <div className="space-y-2">
                     <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
                       Quando vuoi ricevere il feedback?
@@ -1725,6 +1744,7 @@ function MainAppContent() {
                     </div>
                   </div>
 
+                  {/* Navigazione */}
                   <div className="flex items-center justify-between pt-4 border-t border-geminiBorder/60">
                     {!isSingleLessonQuiz ? (
                       <button
@@ -1747,6 +1767,7 @@ function MainAppContent() {
                 </div>
               )}
 
+              {/* STEP 3: LOADING */}
               {quizStep === 3 && (
                 <div className="py-16 text-center space-y-4">
                   <div className="w-14 h-14 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 mx-auto animate-bounce">
@@ -1761,6 +1782,7 @@ function MainAppContent() {
                 </div>
               )}
 
+              {/* STEP 4: SVOLGIMENTO QUIZ */}
               {quizStep === 4 && currentQuizQ && (
                 <div className="space-y-5">
                   
@@ -1783,6 +1805,7 @@ function MainAppContent() {
                     </h4>
                   </div>
 
+                  {/* SCELTA MULTIPLA */}
                   {currentQuizQ.type === 'scelta_multipla' && (
                     <div className="space-y-2">
                       {(currentQuizQ.options || []).map((opt, oIdx) => {
@@ -1811,6 +1834,7 @@ function MainAppContent() {
                     </div>
                   )}
 
+                  {/* COMPLETAMENTO */}
                   {currentQuizQ.type === 'completamento' && (
                     <div className="space-y-2">
                       <label className="block text-xs font-semibold text-gray-300">Inserisci il termine o concetto mancante:</label>
@@ -1824,6 +1848,7 @@ function MainAppContent() {
                     </div>
                   )}
 
+                  {/* ACCOPPIAMENTO */}
                   {currentQuizQ.type === 'accoppiamento' && (
                     <div className="space-y-3">
                       <label className="block text-xs font-semibold text-gray-300">Associa a ciascun elemento la definizione corretta:</label>
@@ -1857,6 +1882,7 @@ function MainAppContent() {
                     </div>
                   )}
 
+                  {/* DOMANDA APERTA */}
                   {currentQuizQ.type === 'aperta' && (
                     <div className="space-y-2">
                       <div className="flex justify-between items-center">
@@ -1873,6 +1899,7 @@ function MainAppContent() {
                     </div>
                   )}
 
+                  {/* FEEDBACK IMMEDIATO MODULARE E COSTRUTTIVO */}
                   {quizFeedbackMode === 'immediato' && (
                     <div className="pt-2">
                       {immediateEvaluations[currentQuizQ.id] ? (
@@ -1933,6 +1960,7 @@ function MainAppContent() {
                     </div>
                   )}
 
+                  {/* Pulsanti navigazione */}
                   <div className="flex items-center justify-between pt-4 border-t border-geminiBorder/60">
                     <button
                       onClick={() => setCurrentQuestionIndex(prev => Math.max(0, prev - 1))}
@@ -1964,6 +1992,7 @@ function MainAppContent() {
                 </div>
               )}
 
+              {/* STEP 5: REPORT FINALE */}
               {quizStep === 5 && (
                 <div className="space-y-6 text-center py-4">
                   <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-white mx-auto shadow-xl">
@@ -2021,149 +2050,80 @@ function MainAppContent() {
         />
       )}
 
-      {/* SIDEBAR CON SEGMENTED SWITCHER (CONVERSAZIONI VS PROGETTI) */}
+      {/* SIDEBAR RETRATTILE */}
       <aside 
         className={`fixed inset-y-0 left-0 z-50 flex flex-col w-80 max-w-[85vw] bg-geminiDarkSecondary border-r border-geminiBorder shadow-2xl transition-transform duration-300 ease-in-out overflow-hidden ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        {/* HEADER SIDEBAR CON SEGMENTED SWITCHER */}
-        <div className="p-3.5 border-b border-geminiBorder/60 space-y-3 bg-geminiDarkSecondary shrink-0">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Archivio Personale</span>
-            <button 
-              onClick={() => setIsSidebarOpen(false)}
-              className="p-1.5 text-gray-400 hover:text-white hover:bg-geminiHover rounded-lg transition"
-              title="Chiudi menu"
-            >
-              <X size={18} />
-            </button>
-          </div>
-
-          {/* SEGMENTED PILL SWITCHER STILE GEMINI */}
-          <div className="flex bg-geminiDark p-1 rounded-2xl border border-geminiBorder/80">
-            <button
-              onClick={() => setSidebarTab('conversations')}
-              className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
-                sidebarTab === 'conversations'
-                  ? 'bg-geminiDarkSecondary text-blue-400 shadow-md border border-geminiBorder/60'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
-            >
-              <MessageSquare size={13} />
-              <span>Conversazioni</span>
-              {conversations.length > 0 && (
-                <span className="text-[10px] bg-geminiHover px-1.5 py-0.2 rounded-full text-gray-300 ml-0.5">
-                  {conversations.length}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setSidebarTab('projects')}
-              className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
-                sidebarTab === 'projects'
-                  ? 'bg-geminiDarkSecondary text-blue-400 shadow-md border border-geminiBorder/60'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
-            >
-              <FolderKanban size={13} />
-              <span>Progetti</span>
-              {savedProjects.length > 0 && (
-                <span className="text-[10px] bg-geminiHover px-1.5 py-0.2 rounded-full text-gray-300 ml-0.5">
-                  {savedProjects.length}
-                </span>
-              )}
-            </button>
-          </div>
-
-          {/* PULSANTE D'AZIONE CONTESTUALE */}
-          {sidebarTab === 'conversations' ? (
-            <button 
-              onClick={handleNewChat}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-semibold bg-geminiHover hover:bg-geminiBorder text-gray-100 rounded-xl border border-geminiBorder transition shadow-sm"
-            >
-              <Plus size={14} />
-              <span>Nuova chat</span>
-            </button>
-          ) : (
-            <button 
-              onClick={handleStartWizard}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl shadow-md transition transform active:scale-98"
-            >
-              <Sparkles size={14} />
-              <span>Crea guida allo studio</span>
-            </button>
-          )}
+        <div className="flex items-center justify-between p-4 border-b border-geminiBorder">
+          <button 
+            onClick={handleNewChat}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium bg-geminiHover hover:bg-geminiBorder text-gray-100 rounded-full border border-geminiBorder transition flex-1 mr-2"
+          >
+            <Plus size={16} />
+            <span>Nuova chat</span>
+          </button>
+          
+          <button 
+            onClick={() => setIsSidebarOpen(false)}
+            className="p-2 text-gray-400 hover:text-white hover:bg-geminiHover rounded-lg transition"
+            title="Chiudi menu"
+          >
+            <X size={20} />
+          </button>
         </div>
 
-        {/* CONTENUTO DELLA SCHEDA SELEZIONATA */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-2">
-          
-          {/* VISTA SCHEDA: PROGETTI */}
-          {sidebarTab === 'projects' && (
-            <div className="space-y-1">
-              <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-3 py-1 flex items-center justify-between">
-                <span>Guide e Corsi ({savedProjects.length})</span>
+        <div className="flex-1 overflow-y-auto p-3 space-y-4">
+          {savedProjects && savedProjects.length > 0 && (
+            <div>
+              <div className="text-xs font-semibold text-blue-400 uppercase tracking-wider px-3 py-1 flex items-center gap-1.5">
+                <FolderKanban size={13} />
+                <span>Guide allo Studio</span>
               </div>
-              
-              {!savedProjects || savedProjects.length === 0 ? (
-                <div className="text-xs text-gray-500 px-3 py-6 text-center space-y-2">
-                  <FolderKanban size={24} className="mx-auto text-gray-600" />
-                  <p>Nessuna guida creata</p>
-                  <button 
-                    onClick={handleStartWizard}
-                    className="text-xs text-blue-400 underline font-semibold"
-                  >
-                    Crea la tua prima guida
-                  </button>
-                </div>
-              ) : (
-                savedProjects.map(proj => (
+              <div className="mt-1 space-y-1">
+                {savedProjects.map(proj => (
                   <div
                     key={proj.id}
                     onClick={() => loadProjectWithFiles(proj)}
-                    className={`group flex items-center justify-between px-3 py-2.5 rounded-xl text-sm cursor-pointer transition ${
+                    className={`group flex items-center justify-between px-3 py-2 rounded-xl text-sm cursor-pointer transition ${
                       activeProject?.id === proj.id && (currentView === 'project' || currentView === 'study_plan' || currentView === 'day_detail')
                         ? 'bg-blue-600/20 text-blue-300 font-medium border border-blue-500/40'
                         : 'text-gray-300 hover:bg-geminiHover/50'
                     }`}
                   >
-                    <div className="flex items-center gap-2.5 truncate pr-2">
+                    <div className="flex items-center gap-2 truncate pr-2">
                       <Target size={14} className="text-blue-400 shrink-0" />
-                      <span className="truncate">{proj.description || 'Progetto di Studio'}</span>
+                      <span className="truncate">{proj.description?.slice(0, 22) || 'Progetto'}...</span>
                     </div>
                     <button
                       onClick={(e) => handleDeleteProject(e, proj.id)}
-                      className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-400 transition rounded"
+                      className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-400 transition"
                       title="Elimina guida"
                     >
                       <Trash2 size={13} />
                     </button>
                   </div>
-                ))
-              )}
+                ))}
+              </div>
             </div>
           )}
 
-          {/* VISTA SCHEDA: CONVERSAZIONI */}
-          {sidebarTab === 'conversations' && (
-            <div className="space-y-1">
-              <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-3 py-1 flex items-center justify-between">
-                <span>Sessioni Recenti ({conversations.length})</span>
-              </div>
-              
+          <div>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 py-1">
+              Conversazioni recenti
+            </div>
+            <div className="mt-1 space-y-1">
               {!conversations || conversations.length === 0 ? (
-                <div className="text-xs text-gray-500 px-3 py-6 text-center space-y-2">
-                  <MessageSquare size={24} className="mx-auto text-gray-600" />
-                  <p>Nessuna conversazione recente</p>
+                <div className="text-xs text-gray-500 px-3 py-3 text-center">
+                  Nessuna conversazione salvata
                 </div>
               ) : (
                 conversations.map((chat) => (
                   <div 
                     key={chat.id}
                     onClick={() => handleSelectChat(chat)}
-                    className={`group flex items-center justify-between px-3 py-2.5 rounded-xl text-sm cursor-pointer transition ${
+                    className={`group flex items-center justify-between px-3 py-2 rounded-xl text-sm cursor-pointer transition ${
                       currentChatId === chat.id && currentView === 'chat'
                         ? 'bg-geminiHover text-white font-medium border border-geminiBorder/60' 
                         : 'text-gray-300 hover:bg-geminiHover/50'
@@ -2184,8 +2144,7 @@ function MainAppContent() {
                 ))
               )}
             </div>
-          )}
-
+          </div>
         </div>
       </aside>
 
@@ -2198,7 +2157,7 @@ function MainAppContent() {
             <button 
               onClick={() => setIsSidebarOpen(true)}
               className="p-2 text-gray-300 hover:text-white hover:bg-geminiHover rounded-xl border border-geminiBorder/60 transition flex items-center justify-center shadow-sm"
-              title="Apri menu laterale"
+              title="Apri cronologia"
             >
               <Menu size={20} />
             </button>
@@ -2232,7 +2191,7 @@ function MainAppContent() {
         {/* ------------------------------------------------------------- */}
         {currentView === 'wizard' && (
           <main className="flex-1 overflow-y-auto px-4 md:px-8 py-8 max-w-2xl mx-auto w-full flex flex-col justify-center">
-            {/* Wizard step 1 a 4 */}
+            {/* Wizard steps */}
             {wizardStep === 1 && (
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
                 <div className="flex items-center gap-3">
@@ -2713,6 +2672,7 @@ function MainAppContent() {
             {/* GRIGLIA 3 SEZIONI: MATERIALI, PIANO DIDATTICO E VERIFICA COMPETENZE */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               
+              {/* Card 1: Fonti */}
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 rounded-3xl shadow-sm space-y-4 flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between border-b border-geminiBorder/60 pb-3">
@@ -2748,6 +2708,7 @@ function MainAppContent() {
                 </div>
               </div>
 
+              {/* Card 2: Piano Didattico */}
               <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 rounded-3xl shadow-sm space-y-4 flex flex-col justify-between">
                 <div>
                   <div className="flex items-center gap-2 font-bold text-sm text-gray-100 border-b border-geminiBorder/60 pb-3">
@@ -2776,6 +2737,7 @@ function MainAppContent() {
                 </button>
               </div>
 
+              {/* Card 3: VERIFICA COMPETENZE */}
               <div className="bg-geminiDarkSecondary border border-amber-500/30 p-6 rounded-3xl shadow-lg space-y-4 flex flex-col justify-between bg-gradient-to-b from-geminiDarkSecondary to-amber-950/10">
                 <div>
                   <div className="flex items-center justify-between border-b border-geminiBorder/60 pb-3">
@@ -2965,6 +2927,7 @@ function MainAppContent() {
 
                     {currentSelectedTopic && (
                       <div className="flex items-center gap-2 shrink-0">
+                        {/* TASTO "VERIFICA" DEDICATO ALLA SINGOLA LEZIONE */}
                         <button
                           onClick={handleOpenSingleLessonQuizModal}
                           className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 transition shadow-sm"
@@ -3136,6 +3099,7 @@ function MainAppContent() {
                   ) : currentSelectedTopic?.lesson ? (
                     <div className="max-w-3xl mx-auto space-y-4">
                       
+                      {/* Badge con stato e punteggio ultima verifica per questa lezione */}
                       <div className="flex flex-wrap items-center justify-between text-xs text-gray-400 bg-geminiDarkSecondary/60 px-4 py-2 rounded-2xl border border-geminiBorder gap-2">
                         <div className="flex items-center gap-2">
                           <span className="text-[11px]">✏️ <strong>Modifica testo attiva</strong></span>
@@ -3159,6 +3123,7 @@ function MainAppContent() {
                         </button>
                       </div>
 
+                      {/* Foglio WYSIWYG */}
                       <div className="bg-geminiDarkSecondary/70 border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-xl min-h-[520px]">
                         <div
                           ref={wysiwygEditorRef}
@@ -3393,6 +3358,7 @@ function MainAppContent() {
               </div>
             </div>
 
+            {/* Input Bar Fisso */}
             <footer className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-geminiDark via-geminiDark to-transparent z-10">
               <div className="max-w-3xl mx-auto">
                 
