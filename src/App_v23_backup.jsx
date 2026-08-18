@@ -358,65 +358,46 @@ function MainAppContent() {
   const [lessonChatMessages, setLessonChatMessages] = useState([]);
   const [lessonChatInput, setLessonChatInput] = useState('');
   const [isLessonChatLoading, setIsLessonChatLoading] = useState(false);
-  // STATO TEMA GIORNO / NOTTE (DEFAULT: IMPOSTAZIONI DI SISTEMA DEL DISPOSITIVO)
+  // STATO TEMA GIORNO / NOTTE (DEFAULT: IMPOSTAZIONI DI SISTEMA)
   const [theme, setTheme] = useState(() => {
     try {
       const saved = localStorage.getItem('minerva_theme');
       if (saved === 'light' || saved === 'dark') return saved;
-      if (typeof window !== 'undefined' && window.matchMedia) {
-        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+        return 'light';
       }
     } catch {}
     return 'dark';
   });
 
-  // Sincronizzazione tema sul DOM, HTML e Body
   useEffect(() => {
     try {
+      localStorage.setItem('minerva_theme', theme);
       if (typeof document !== 'undefined') {
         document.documentElement.classList.remove('dark', 'light');
         document.documentElement.classList.add(theme);
-        document.documentElement.style.colorScheme = theme;
-        if (document.body) {
-          document.body.classList.remove('dark', 'light');
-          document.body.classList.add(theme);
-          document.body.style.backgroundColor = theme === 'light' ? '#f8fafc' : '#131314';
-          document.body.style.color = theme === 'light' ? '#0f172a' : '#e3e3e3';
-        }
       }
     } catch (err) {
       console.warn('Theme update error:', err);
     }
   }, [theme]);
 
-  // Ascolto in tempo reale dei cambiamenti del tema del dispositivo / sistema operativo
+  // Listener per cambiamenti del tema di sistema in tempo reale se non forzato
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return;
-    const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    
-    const handleSystemThemeChange = (e) => {
-      const manual = localStorage.getItem('minerva_theme_manual');
-      if (!manual) {
-        setTheme(e.matches ? 'dark' : 'light');
+    const mq = window.matchMedia('(prefers-color-scheme: light)');
+    const handleChange = (e) => {
+      const saved = localStorage.getItem('minerva_theme');
+      if (!saved) {
+        setTheme(e.matches ? 'light' : 'dark');
       }
     };
-
-    if (darkQuery.addEventListener) {
-      darkQuery.addEventListener('change', handleSystemThemeChange);
-      return () => darkQuery.removeEventListener('change', handleSystemThemeChange);
-    } else if (darkQuery.addListener) {
-      darkQuery.addListener(handleSystemThemeChange);
-      return () => darkQuery.removeListener(handleSystemThemeChange);
-    }
+    mq.addEventListener('change', handleChange);
+    return () => mq.removeEventListener('change', handleChange);
   }, []);
 
   const toggleTheme = () => {
-    const nextTheme = theme === 'dark' ? 'light' : 'dark';
-    setTheme(nextTheme);
-    try {
-      localStorage.setItem('minerva_theme', nextTheme);
-      localStorage.setItem('minerva_theme_manual', 'true');
-    } catch {}
+    setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
   };
 
   // DETTATURA VOCALE PER CHAT DELLA LEZIONE
@@ -4582,8 +4563,7 @@ function MainAppContent() {
               </div>
             </div>
 
-            <footer className={`absolute bottom-0 inset-x-0 p-4 z-10 ${theme === 'light' ? 'bg-gradient-to-t from-[#f8fafc] via-[#f8fafc]/95 to-transparent' : 'bg-gradient-to-t from-geminiDark via-geminiDark to-transparent'}`}>
-
+            <footer className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-geminiDark via-geminiDark to-transparent z-10">
               <div className="max-w-3xl mx-auto">
                 
                 {attachedFiles.length > 0 && (

@@ -135,32 +135,6 @@ html.light .shadow-xl {
   box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04) !important;
 }
 
-/* Gradients in Light mode per azzerare bande scure */
-html.light .bg-gradient-to-t {
-  background-image: linear-gradient(to top, #f8fafc 65%, rgba(248, 250, 252, 0.9) 85%, rgba(248, 250, 252, 0) 100%) !important;
-}
-html.light .from-geminiDark {
-  --tw-gradient-from: #f8fafc var(--tw-gradient-from-position) !important;
-  --tw-gradient-to: rgba(248, 250, 252, 0) var(--tw-gradient-to-position) !important;
-  --tw-gradient-stops: var(--tw-gradient-from), #f8fafc var(--tw-gradient-via-position), var(--tw-gradient-to) !important;
-}
-html.light .via-geminiDark {
-  --tw-gradient-via-position: 50% !important;
-  --tw-gradient-stops: var(--tw-gradient-from), #f8fafc var(--tw-gradient-via-position), var(--tw-gradient-to) !important;
-}
-html.light .from-geminiDarkSecondary {
-  --tw-gradient-from: #ffffff var(--tw-gradient-from-position) !important;
-}
-html.light .via-geminiDarkSecondary {
-  --tw-gradient-via: #ffffff !important;
-}
-html.light .to-blue-950\/20 {
-  --tw-gradient-to: rgba(239, 246, 255, 0.8) var(--tw-gradient-to-position) !important;
-}
-html.light .to-amber-950\/10 {
-  --tw-gradient-to: rgba(254, 243, 199, 0.5) var(--tw-gradient-to-position) !important;
-}
-
 /* ------------------------------------------------------------- */
 /* STILI PER EDITOR WYSIWYG                                      */
 /* ------------------------------------------------------------- */
