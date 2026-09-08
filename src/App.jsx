@@ -463,6 +463,12 @@ function MainAppContent() {
   const [isSubManageModalOpen, setIsSubManageModalOpen] = useState(false);
   const [isPaywallModalOpen, setIsPaywallModalOpen] = useState(false);
   const [isSecretUnlockOpen, setIsSecretUnlockOpen] = useState(false);
+  const [legalModalOpen, setLegalModalOpen] = useState(false);
+  const [legalModalTab, setLegalModalTab] = useState('terms'); // 'terms' | 'privacy'
+  const [hasAcceptedTos, setHasAcceptedTos] = useState(false);
+  const [tosChecked, setTosChecked] = useState(false);
+  const [recessoChecked, setRecessoChecked] = useState(false);
+  const [signupTosAccepted, setSignupTosAccepted] = useState(false);
   const [secretCodeInput, setSecretCodeInput] = useState('');
   const [secretCodeError, setSecretCodeError] = useState('');
   const [secretCodeSuccess, setSecretCodeSuccess] = useState('');
@@ -559,6 +565,8 @@ function MainAppContent() {
       if (isLocallyUnlocked) {
         setLocalUnlocked(true);
       }
+      const isTosAccepted = typeof window !== 'undefined' && Boolean(localStorage.getItem('minerva_tos_accepted_' + userId));
+      setHasAcceptedTos(isTosAccepted);
       const freeCount = typeof window !== 'undefined' ? parseInt(localStorage.getItem('minerva_free_count_' + userId) || '0', 10) : 0;
       setFreeQuestionCount(freeCount);
 
@@ -636,6 +644,11 @@ function MainAppContent() {
         }
         setAuthPassword('');
       } else if (authMode === 'signup') {
+        if (!signupTosAccepted) {
+          setAuthError('Devi accettare i Termini di Servizio e la Privacy Policy per registrarti.');
+          setIsAuthSubmitting(false);
+          return;
+        }
         const res = await signUpUser(authEmail, authPassword, authFullName);
         const signedUser = res?.user || res?.session?.user;
         if (signedUser && res?.session) {
@@ -2316,6 +2329,22 @@ function MainAppContent() {
     (typeof window !== 'undefined' && user?.id && localStorage.getItem('minerva_unlocked_' + user.id) === 'true')
   );
 
+  const handleAcceptTos = async () => {
+    if (!tosChecked || !recessoChecked) return;
+    const now = new Date().toISOString();
+    if (user?.id && typeof window !== 'undefined') {
+      localStorage.setItem('minerva_tos_accepted_' + user.id, now);
+      if (typeof supabase !== 'undefined' && supabase) {
+        try {
+          await supabase.from('profiles').update({ tos_accepted_at: now }).eq('id', user.id);
+        } catch (e) {
+          console.warn('TOS update DB error:', e);
+        }
+      }
+    }
+    setHasAcceptedTos(true);
+  };
+
   const handleSecretUnlock = async () => {
     if (secretCodeInput.trim().toUpperCase() === 'CANE') {
       setSecretCodeSuccess('🎉 Codice valido! Accesso completo sbloccato.');
@@ -2669,6 +2698,37 @@ function MainAppContent() {
               </div>
             )}
 
+            {authMode === 'signup' && (
+              <div className="flex items-start gap-2.5 pt-1 text-xs text-gray-400">
+                <input
+                  type="checkbox"
+                  id="signup_tos"
+                  checked={signupTosAccepted}
+                  onChange={(e) => setSignupTosAccepted(e.target.checked)}
+                  className="mt-0.5 rounded border-gray-600 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                />
+                <label htmlFor="signup_tos" className="cursor-pointer text-[11px] leading-snug">
+                  Dichiaro di aver letto e accetto i{' '}
+                  <button
+                    type="button"
+                    onClick={() => { setLegalModalTab('terms'); setLegalModalOpen(true); }}
+                    className="text-blue-400 hover:underline font-semibold"
+                  >
+                    Termini di Servizio
+                  </button>{' '}
+                  e l'{' '}
+                  <button
+                    type="button"
+                    onClick={() => { setLegalModalTab('privacy'); setLegalModalOpen(true); }}
+                    className="text-blue-400 hover:underline font-semibold"
+                  >
+                    Informativa Privacy & Cookie
+                  </button>
+                  .
+                </label>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={isAuthSubmitting}
@@ -2715,6 +2775,24 @@ function MainAppContent() {
               </button>
             </div>
           )}
+
+          <div className="pt-3 border-t border-geminiBorder/40 text-center text-[11px] text-gray-500 flex items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => { setLegalModalTab('terms'); setLegalModalOpen(true); }}
+              className="hover:text-gray-300 hover:underline transition"
+            >
+              Termini di Servizio
+            </button>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={() => { setLegalModalTab('privacy'); setLegalModalOpen(true); }}
+              className="hover:text-gray-300 hover:underline transition"
+            >
+              Privacy & Cookie Policy (GDPR)
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -5189,8 +5267,24 @@ function MainAppContent() {
                   </button>
                 </div>
                 
-                <div className="text-center mt-2 text-[11px] text-gray-500">
-                  Trascina file fino a 10 elementi • Dettatura vocale Whisper • Esportazione PDF
+                <div className="text-center mt-2 text-[11px] text-gray-500 flex items-center justify-center gap-2 flex-wrap">
+                  <span>Trascina file fino a 10 elementi • Dettatura vocale Whisper • Esportazione PDF</span>
+                  <span>•</span>
+                  <button
+                    type="button"
+                    onClick={() => { setLegalModalTab('terms'); setLegalModalOpen(true); }}
+                    className="hover:underline hover:text-gray-400 transition"
+                  >
+                    Termini
+                  </button>
+                  <span>•</span>
+                  <button
+                    type="button"
+                    onClick={() => { setLegalModalTab('privacy'); setLegalModalOpen(true); }}
+                    className="hover:underline hover:text-gray-400 transition"
+                  >
+                    Privacy
+                  </button>
                 </div>
               </div>
             </footer>
@@ -5379,6 +5473,192 @@ function MainAppContent() {
                 className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition shadow-md"
               >
                 Conferma e Sblocca
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODALE DI PRIMO ACCESSO: ACCETTAZIONE OBBLIGATORIA TOS & PRIVACY */}
+      {/* ------------------------------------------------------------- */}
+      {user && !hasAcceptedTos && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-popup">
+          <div className={`w-full max-w-lg border rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5 transition ${
+            theme === 'light' ? 'bg-white border-slate-200 text-slate-800' : 'bg-geminiDarkSecondary border-geminiBorder text-gray-100'
+          }`}>
+            <div className="text-center space-y-2">
+              <div className="w-14 h-14 mx-auto flex items-center justify-center rounded-2xl bg-blue-600/20 text-blue-500 border border-blue-500/30">
+                <ShieldCheck size={28} />
+              </div>
+              <h3 className={`text-xl font-extrabold tracking-tight ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>
+                Termini di Servizio e Privacy Policy
+              </h3>
+              <p className={`text-xs max-w-sm mx-auto ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>
+                Benvenuto su MinervaAI. Prima di iniziare, è necessario prendere visione e accettare le condizioni di utilizzo e l'informativa privacy (GDPR).
+              </p>
+            </div>
+
+            {/* Documenti Legali Cliccabili */}
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => { setLegalModalTab('terms'); setLegalModalOpen(true); }}
+                className={`p-3 rounded-2xl border text-left transition hover:border-blue-500 ${
+                  theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-geminiDark border-geminiBorder'
+                }`}
+              >
+                <FileText size={18} className="text-blue-500 mb-1" />
+                <div className="text-xs font-bold">Termini di Servizio</div>
+                <div className="text-[10px] text-gray-400">Abbonamento e regole d'uso</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setLegalModalTab('privacy'); setLegalModalOpen(true); }}
+                className={`p-3 rounded-2xl border text-left transition hover:border-blue-500 ${
+                  theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-geminiDark border-geminiBorder'
+                }`}
+              >
+                <ShieldCheck size={18} className="text-emerald-500 mb-1" />
+                <div className="text-xs font-bold">Privacy Policy (GDPR)</div>
+                <div className="text-[10px] text-gray-400">Protezione e diritti sui dati</div>
+              </button>
+            </div>
+
+            {/* Caselle di Spunta Obbligatorie */}
+            <div className="space-y-3 pt-2 text-xs">
+              <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={tosChecked}
+                  onChange={(e) => setTosChecked(e.target.checked)}
+                  className="mt-0.5 rounded border-gray-600 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                />
+                <span className={`text-[11px] leading-snug ${theme === 'light' ? 'text-slate-700' : 'text-gray-300'}`}>
+                  Dichiaro di aver letto, compreso e di accettare integralmente i <strong>Termini di Servizio</strong> e l'<strong>Informativa sulla Privacy</strong>.
+                </span>
+              </label>
+
+              <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={recessoChecked}
+                  onChange={(e) => setRecessoChecked(e.target.checked)}
+                  className="mt-0.5 rounded border-gray-600 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                />
+                <span className={`text-[11px] leading-snug ${theme === 'light' ? 'text-slate-700' : 'text-gray-300'}`}>
+                  Accetto che la fornitura del servizio digitale inizi immediatamente e prendo atto che ciò comporta la <strong>rinuncia al diritto di recesso</strong> di 14 giorni ai sensi dell'art. 59 del Codice del Consumo.
+                </span>
+              </label>
+            </div>
+
+            {/* Pulsante Conferma */}
+            <button
+              type="button"
+              onClick={handleAcceptTos}
+              disabled={!tosChecked || !recessoChecked}
+              className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-2xl text-xs transition shadow-xl shadow-blue-600/25 flex items-center justify-center gap-2"
+            >
+              <CheckCircle2 size={16} />
+              <span>Accetta e Continua su MinervaAI</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODALE VISUALIZZAZIONE DOCUMENTI LEGALI (TOS & PRIVACY)       */}
+      {/* ------------------------------------------------------------- */}
+      {legalModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-popup">
+          <div className={`w-full max-w-2xl border rounded-3xl p-6 sm:p-8 shadow-2xl relative space-y-4 max-h-[85vh] flex flex-col transition ${
+            theme === 'light' ? 'bg-white border-slate-200 text-slate-800' : 'bg-geminiDarkSecondary border-geminiBorder text-gray-100'
+          }`}>
+            <button
+              onClick={() => setLegalModalOpen(false)}
+              className="absolute top-5 right-5 text-gray-400 hover:text-white p-1 rounded-xl transition"
+              title="Chiudi"
+            >
+              <X size={18} />
+            </button>
+
+            {/* Tabs */}
+            <div className="flex items-center gap-2 border-b border-geminiBorder/60 pb-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setLegalModalTab('terms')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                  legalModalTab === 'terms'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-geminiHover'
+                }`}
+              >
+                Termini di Servizio
+              </button>
+              <button
+                type="button"
+                onClick={() => setLegalModalTab('privacy')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                  legalModalTab === 'privacy'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-geminiHover'
+                }`}
+              >
+                Informativa Privacy & Cookie (GDPR)
+              </button>
+            </div>
+
+            {/* Contenuto Documento Scorrevole */}
+            <div className="flex-1 overflow-y-auto pr-2 space-y-4 text-xs leading-relaxed text-slate-600 dark:text-gray-300">
+              {legalModalTab === 'terms' ? (
+                <div className="space-y-3">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">1. Oggetto del Servizio</h4>
+                  <p>MinervaAI è una piattaforma web SaaS destinata al supporto didattico e alla preparazione degli esami universitari, dotata di strumenti di intelligenza artificiale per l'elaborazione di dispense, piani di studio e simulazioni d'esame.</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">2. Abbonamento e Fatturazione</h4>
+                  <p>L'accesso completo alle funzionalità è fornito mediante abbonamento mensile a 14,99 € (IVA inclusa dove applicabile), con rinnovo tacito automatico ogni 30 giorni. I pagamenti sono elaborati in modo sicuro tramite Stripe Inc. L'utente può disdire l'abbonamento in qualsiasi momento dal proprio profilo o dal Customer Portal di Stripe senza penali né vincoli di permanenza.</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">3. Diritto di Recesso e Contenuti Digitali</h4>
+                  <p>Ai sensi dell'art. 59, comma 1, lettera (o) del D.Lgs. 206/2005 (Codice del Consumo), il diritto di recesso di 14 giorni è escluso per i servizi digitali eseguiti con l'accordo espresso del consumatore e con l'accettazione della perdita di tale diritto a seguito della piena fornitura o attivazione immediata dell'accesso.</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">4. Limitazione di Responsabilità</h4>
+                  <p>MinervaAI costituisce un ausilio integrativo allo studio e non sostituisce in alcun modo i programmi didattici ufficiali dei docenti o i testi d'esame universitari. Nonostante l'adozione di modelli IA avanzati, MinervaAI non garantisce l'assoluta esattezza di ogni risposta generata né l'esito delle prove accademiche degli utenti.</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">5. Uso Accettabile</h4>
+                  <p>L'utente si impegna a non caricare materiali in violazione del diritto d'autore o materiale diffamatorio o illecito. Ogni account è strettamente personale e non cedibile a terzi.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">1. Titolare del Trattamento</h4>
+                  <p>Il titolare del trattamento dei dati è il gestore della piattaforma MinervaAI. Per qualsiasi informazione, richiesta di rettifica o cancellazione è possibile contattare l'assistenza via email.</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">2. Dati Raccolti e Finalità</h4>
+                  <p>Raccogliamo: dati anagrafici e di contatto (email, nome) necessari per l'autenticazione dell'account; dati di utilizzo didattico (piani di studio creati, conversazioni, file caricati per l'estrazione didattica). La base giuridica è l'esecuzione del contratto di servizio richiesto dall'utente (art. 6, par. 1, lett. b GDPR).</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">3. Trattamento dei Dati con l'Intelligenza Artificiale</h4>
+                  <p>I testi e i contenuti inviati durante le sessioni di studio vengono elaborati tramite API protette di OpenAI/Google. In conformità con le policy enterprise delle API, i dati degli utenti <strong>non vengono utilizzati per l'addestramento</strong> di modelli pubblici di intelligenza artificiale.</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">4. Destinatari e Sub-responsabili (Server UE)</h4>
+                  <p>I dati risiedono su infrastrutture cloud sicure con crittografia end-to-end e protocollo HTTPS (Supabase per il database con hosting in Unione Europea, Stripe per i pagamenti cifrati, Netlify per l'hosting web).</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">5. Cookie Policy</h4>
+                  <p>MinervaAI utilizza esclusivamente <strong>cookie e storage tecnici</strong> strettamente necessari per l'autenticazione e la persistenza della sessione di studio. Non vengono impiegati cookie di profilazione pubblicitaria di terze parti.</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">6. Diritti dell'Interessato (GDPR)</h4>
+                  <p>Ai sensi degli articoli 15-22 del GDPR, l'utente ha diritto di accedere ai propri dati, richiederne la rettifica, la portabilità o la cancellazione definitiva (diritto all'oblio) in qualunque momento.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer Modale */}
+            <div className="pt-2 border-t border-geminiBorder/60 flex justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setLegalModalOpen(false)}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition shadow-sm"
+              >
+                Ho Letto e Compreso
               </button>
             </div>
           </div>
