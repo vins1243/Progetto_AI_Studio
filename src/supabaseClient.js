@@ -265,60 +265,37 @@ export async function deleteChatFromCloud(userId, chatId) {
   }
 }
 
-// -------------------------------------------------------------
-// HELPER PROFILO E ABBONAMENTO STRIPE (RIGOROSO ANCHE PER UTENTI ESISTENTI)
-// -------------------------------------------------------------
-export async function fetchUserProfile(userId, email = '', fullName = '') {
-  if (!client || !userId) return { id: userId, subscription_status: 'inactive' };
+
+export async function fetchUserProfile(userId) {
+  if (!client || !userId) return null;
   try {
-    const { data, error } = await client
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
-
-    if (!data) {
-      const { data: newProfile } = await client
-        .from('profiles')
-        .insert({
-          id: userId,
-          email: email || '',
-          full_name: fullName || '',
-          subscription_status: 'inactive'
-        })
-        .select()
-        .maybeSingle();
-      return newProfile || { id: userId, subscription_status: 'inactive' };
-    }
-
+    const { data, error } = await client.from('profiles').select('*').eq('id', userId).single();
+    if (error) return null;
     return data;
   } catch (err) {
-    console.warn('Fetch user profile exception:', err);
-    return { id: userId, subscription_status: 'inactive' };
+    return null;
   }
 }
 
-export async function setSubscriptionActive(userId, plan = 'monthly_14.99') {
+export async function setSubscriptionActive(userId) {
   if (!client || !userId) return false;
   try {
-    const { data, error } = await client
-      .from('profiles')
-      .upsert({
-        id: userId,
-        subscription_status: 'active',
-        plan_type: plan,
-        subscription_end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      })
-      .select()
-      .single();
-
+    const { error } = await client.from('profiles').upsert({
+      id: userId,
+      subscription_status: 'active',
+      is_premium: true,
+      plan_type: 'monthly_14.99'
+    }, { onConflict: 'id' });
     if (error) {
-      console.warn('Errore attivazione abbonamento:', error);
-      return false;
+      console.warn("Update profile error:", error);
+      await client.from('profiles').update({
+        subscription_status: 'active',
+        is_premium: true
+      }).eq('id', userId);
     }
     return true;
   } catch (err) {
-    console.warn('Set subscription exception:', err);
+    console.warn("setSubscriptionActive error:", err);
     return false;
   }
 }
@@ -326,22 +303,13 @@ export async function setSubscriptionActive(userId, plan = 'monthly_14.99') {
 export async function cancelUserSubscription(userId) {
   if (!client || !userId) return false;
   try {
-    const { data, error } = await client
-      .from('profiles')
-      .update({
-        subscription_status: 'canceled',
-      })
-      .eq('id', userId)
-      .select()
-      .single();
-
-    if (error) {
-      console.warn('Errore disdetta abbonamento:', error);
-      return false;
-    }
+    const { error } = await client.from('profiles').update({
+      subscription_status: 'canceled',
+      is_premium: false
+    }).eq('id', userId);
+    if (error) return false;
     return true;
   } catch (err) {
-    console.warn('Cancel subscription exception:', err);
     return false;
   }
 }

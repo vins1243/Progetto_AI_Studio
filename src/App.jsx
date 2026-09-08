@@ -578,20 +578,46 @@ function MainAppContent() {
     }
   };
 
-  // Rilevamento automatico ritorno da Stripe (?payment=success)
+  // Rilevamento automatico ritorno da Stripe (?payment=success o hash)
   useEffect(() => {
-    if (typeof window === 'undefined' || !user?.id) return;
+    if (typeof window === 'undefined') return;
     try {
       const params = new URLSearchParams(window.location.search);
-      if (params.get('payment') === 'success') {
-        setSubscriptionActive(user.id).then(() => {
-          fetchUserProfile(user.id).then(p => setUserProfile(p));
-          const cleanUrl = window.location.pathname;
-          window.history.replaceState({}, document.title, cleanUrl);
-        });
+      const hasPaymentSuccess = params.get('payment') === 'success' || params.get('session_id') || window.location.href.includes('payment=success');
+      
+      if (hasPaymentSuccess) {
+        if (user?.id) {
+          localStorage.setItem('minerva_unlocked_' + user.id, 'true');
+          setLocalUnlocked(true);
+          setSubscriptionActive(user.id).then(() => {
+            fetchUserProfile(user.id).then(p => {
+              if (p) setUserProfile(p);
+            });
+          });
+        } else {
+          localStorage.setItem('minerva_pending_unlock', 'true');
+        }
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
       }
     } catch (e) {
       console.warn('Payment success url check:', e);
+    }
+  }, [user?.id]);
+
+  // Se c'era uno sblocco in sospeso prima del caricamento della sessione
+  useEffect(() => {
+    if (user?.id && typeof window !== 'undefined') {
+      if (localStorage.getItem('minerva_pending_unlock') === 'true') {
+        localStorage.removeItem('minerva_pending_unlock');
+        localStorage.setItem('minerva_unlocked_' + user.id, 'true');
+        setLocalUnlocked(true);
+        setSubscriptionActive(user.id).then(() => {
+          fetchUserProfile(user.id).then(p => {
+            if (p) setUserProfile(p);
+          });
+        });
+      }
     }
   }, [user?.id]);
 
