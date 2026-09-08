@@ -461,6 +461,13 @@ function MainAppContent() {
   const [userProfile, setUserProfile] = useState(null);
   const [isCheckingPayment, setIsCheckingPayment] = useState(false);
   const [isSubManageModalOpen, setIsSubManageModalOpen] = useState(false);
+  const [isPaywallModalOpen, setIsPaywallModalOpen] = useState(false);
+  const [isSecretUnlockOpen, setIsSecretUnlockOpen] = useState(false);
+  const [secretCodeInput, setSecretCodeInput] = useState('');
+  const [secretCodeError, setSecretCodeError] = useState('');
+  const [secretCodeSuccess, setSecretCodeSuccess] = useState('');
+  const [localUnlocked, setLocalUnlocked] = useState(false);
+  const [freeQuestionCount, setFreeQuestionCount] = useState(0);
   const [isCancelingSub, setIsCancelingSub] = useState(false);
   const [isAuthInitializing, setIsAuthInitializing] = useState(true);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -548,6 +555,13 @@ function MainAppContent() {
       const profile = await fetchUserProfile(userId, email, fullName);
       setUserProfile(profile);
 
+      const isLocallyUnlocked = typeof window !== 'undefined' && localStorage.getItem('minerva_unlocked_' + userId) === 'true';
+      if (isLocallyUnlocked) {
+        setLocalUnlocked(true);
+      }
+      const freeCount = typeof window !== 'undefined' ? parseInt(localStorage.getItem('minerva_free_count_' + userId) || '0', 10) : 0;
+      setFreeQuestionCount(freeCount);
+
       if (profile?.subscription_status === 'active' || profile?.is_premium) {
         const cloudProjects = await fetchProjectsFromCloud(userId);
         setSavedProjects(cloudProjects || []);
@@ -570,8 +584,7 @@ function MainAppContent() {
     try {
       const params = new URLSearchParams(window.location.search);
       if (params.get('payment') === 'success') {
-        setSubscriptionActive,
-  cancelUserSubscription(user.id, 'monthly_14.99').then(() => {
+        setSubscriptionActive(user.id).then(() => {
           fetchUserProfile(user.id).then(p => setUserProfile(p));
           const cleanUrl = window.location.pathname;
           window.history.replaceState({}, document.title, cleanUrl);
@@ -2165,6 +2178,10 @@ function MainAppContent() {
   // Chat Homepage: invio messaggi con multi-file (fino a 10 file)
   const handleSendMessage = async (textToSend = inputPrompt) => {
     const prompt = textToSend.trim();
+    if (!isSubscribed && freeQuestionCount >= 1) {
+      setIsPaywallModalOpen(true);
+      return;
+    }
     if (!prompt && attachedFiles.length === 0) return;
     if (isLoading) return;
 
@@ -2202,6 +2219,17 @@ function MainAppContent() {
       const aiMessage = { role: 'assistant', text: data.reply };
       const updatedMessages = [...newMessages, aiMessage];
       setMessages(updatedMessages);
+
+      if (!isSubscribed) {
+        const nextCount = freeQuestionCount + 1;
+        setFreeQuestionCount(nextCount);
+        if (user?.id && typeof window !== 'undefined') {
+          localStorage.setItem('minerva_free_count_' + user.id, String(nextCount));
+        }
+        setTimeout(() => {
+          setIsPaywallModalOpen(true);
+        }, 1200);
+      }
 
       let chatId = currentChatId;
       if (!chatId) {
@@ -2255,11 +2283,42 @@ function MainAppContent() {
   const readiness = calculateOverallReadiness();
 
   // CONTROLLO ABBONAMENTO OBBLIGATORIO (PAYWALL STRIPE 14,99 €/MESE)
-  const isSubscribed = Boolean(userProfile?.subscription_status === 'active' || userProfile?.is_premium);
+  const isSubscribed = Boolean(
+    userProfile?.subscription_status === 'active' || 
+    userProfile?.is_premium || 
+    localUnlocked ||
+    (typeof window !== 'undefined' && user?.id && localStorage.getItem('minerva_unlocked_' + user.id) === 'true')
+  );
 
-  if (!isSubscribed) {
+  const handleSecretUnlock = async () => {
+    if (secretCodeInput.trim().toUpperCase() === 'CANE') {
+      setSecretCodeSuccess('🎉 Codice valido! Accesso completo sbloccato.');
+      setSecretCodeError('');
+      if (user?.id && typeof window !== 'undefined') {
+        localStorage.setItem('minerva_unlocked_' + user.id, 'true');
+        await setSubscriptionActive(user.id);
+      }
+      setLocalUnlocked(true);
+      setUserProfile(prev => ({
+        ...(prev || {}),
+        subscription_status: 'active',
+        is_premium: true
+      }));
+      setTimeout(() => {
+        setIsSecretUnlockOpen(false);
+        setIsPaywallModalOpen(false);
+        setSecretCodeSuccess('');
+        setSecretCodeInput('');
+      }, 900);
+    } else {
+      setSecretCodeError('Codice non valido. Riprova.');
+      setSecretCodeSuccess('');
+    }
+  };
+
     const stripeCheckoutUrl = `${STRIPE_PAYMENT_URL}?prefilled_email=${encodeURIComponent(user?.email || '')}&client_reference_id=${user?.id || ''}`;
 
+  if (!isSubscribed && view !== 'chat') {
     return (
       <div className={`min-h-screen w-screen flex flex-col items-center justify-center p-4 sm:p-6 transition ${
         theme === 'light' ? 'bg-[#f8fafc] text-slate-900' : 'bg-geminiDark text-gray-100'
@@ -2344,20 +2403,69 @@ function MainAppContent() {
               <span>Abbonati a 14,99 €/mese con Stripe</span>
             </a>
 
+            
+            {/* Box Sblocca Ora con Codice CANE */}
+            <div className={`p-4 rounded-2xl border transition ${
+              theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-geminiDark border-geminiBorder'
+            }`}>
+              {!isSecretUnlockOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setIsSecretUnlockOpen(true)}
+                  className="w-full flex items-center justify-center gap-2 text-xs font-bold text-blue-500 hover:text-blue-400 py-1 transition"
+                >
+                  <Key size={14} />
+                  <span>Sblocca ora</span>
+                </button>
+              ) : (
+                <div className="space-y-3 animate-popup">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold flex items-center gap-1.5">
+                      <Key size={13} className="text-blue-500" />
+                      <span>Inserisci codice di sblocco</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => { setIsSecretUnlockOpen(false); setSecretCodeError(''); setSecretCodeSuccess(''); }}
+                      className="text-gray-400 hover:text-white"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={secretCodeInput}
+                      onChange={(e) => setSecretCodeInput(e.target.value)}
+                      placeholder="Digita CANE..."
+                      className={`flex-1 px-3 py-2 text-xs rounded-xl border focus:outline-none uppercase font-bold tracking-wider transition ${
+                        theme === 'light' 
+                          ? 'bg-white border-slate-300 text-slate-900 focus:border-blue-500' 
+                          : 'bg-geminiDarkSecondary border-geminiBorder text-white focus:border-blue-500'
+                      }`}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleSecretUnlock(); }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSecretUnlock}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition shadow-md shrink-0"
+                    >
+                      Sblocca
+                    </button>
+                  </div>
+                  {secretCodeError && <p className="text-[11px] font-semibold text-red-500">{secretCodeError}</p>}
+                  {secretCodeSuccess && <p className="text-[11px] font-semibold text-emerald-500">{secretCodeSuccess}</p>}
+                </div>
+              )}
+            </div>
+
+
             <div className="flex items-center justify-between pt-2">
               <button
-                onClick={async () => {
-                  if (!user?.id) return;
-                  setIsCheckingPayment(true);
-                  const p = await fetchUserProfile(user.id);
-                  setUserProfile(p);
-                  setIsCheckingPayment(false);
-                }}
-                disabled={isCheckingPayment}
+                onClick={() => setView('chat')}
                 className="text-xs text-blue-500 hover:underline font-semibold flex items-center gap-1.5"
               >
-                {isCheckingPayment && <RefreshCw size={12} className="animate-spin" />}
-                <span>Hai già pagato? Verifica e Sblocca</span>
+                <span>Torna alla Chat Iniziale</span>
               </button>
 
               <button
@@ -4939,6 +5047,57 @@ function MainAppContent() {
                   </div>
                 )}
 
+                {!isSubscribed && (
+                  <div className={`mb-3 p-3 sm:p-3.5 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md animate-popup ${
+                    theme === 'light'
+                      ? 'bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 border-blue-200 text-slate-800'
+                      : 'bg-gradient-to-r from-blue-950/50 via-indigo-950/40 to-geminiDarkSecondary border-blue-500/30 text-gray-200'
+                  }`}>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-500 shrink-0">
+                        <Sparkles size={16} />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold flex items-center gap-2">
+                          <span>{freeQuestionCount === 0 ? "Domanda di prova gratuita disponibile" : "Prova gratuita completata"}</span>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${
+                            freeQuestionCount === 0 ? 'bg-emerald-500/20 text-emerald-600' : 'bg-amber-500/20 text-amber-500'
+                          }`}>
+                            {freeQuestionCount === 0 ? "1 domanda libera" : "0 rimanenti"}
+                          </span>
+                        </div>
+                        <p className={`text-[11px] ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>
+                          {freeQuestionCount === 0 
+                            ? "Puoi fare 1 domanda nella chat per provare MinervaAI."
+                            : "Per continuare a chattare e usare piani di studio e quiz, attiva l'abbonamento."}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setIsSecretUnlockOpen(true)}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition flex items-center gap-1.5 ${
+                          theme === 'light'
+                            ? 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 shadow-sm'
+                            : 'bg-geminiDarkSecondary hover:bg-geminiHover text-gray-200 border-geminiBorder'
+                        }`}
+                      >
+                        <Key size={13} className="text-blue-500" />
+                        <span>Sblocca ora</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsPaywallModalOpen(true)}
+                        className="px-3.5 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 rounded-xl shadow-md transition flex items-center gap-1.5"
+                      >
+                        <CreditCard size={13} />
+                        <span>Abbonati a 14,99 €</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {isTranscribingAudio && (
                   <div className="flex items-center gap-2 mb-2 px-4 py-2 bg-blue-950/60 border border-blue-500/50 rounded-2xl text-xs text-blue-200 shadow-lg">
                     <RefreshCw size={14} className="animate-spin text-blue-400" />
@@ -5016,6 +5175,190 @@ function MainAppContent() {
             {/* ------------------------------------------------------------- */}
       {/* MODALE GESTIONE ABBONAMENTO STRIPE                            */}
       {/* ------------------------------------------------------------- */}
+      {/* MODALE PAYWALL / ABBONAMENTO STRIPE 14,99 €/MESE */}
+      {isPaywallModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-popup">
+          <div className={`w-full max-w-lg border rounded-3xl p-6 sm:p-8 shadow-2xl relative space-y-5 transition ${
+            theme === 'light' ? 'bg-white border-slate-200 shadow-slate-200/50 text-slate-800' : 'bg-geminiDarkSecondary border-geminiBorder text-gray-100'
+          }`}>
+            <button
+              onClick={() => setIsPaywallModalOpen(false)}
+              className={`absolute top-5 right-5 p-2 rounded-xl transition ${
+                theme === 'light' ? 'text-slate-400 hover:text-slate-900 hover:bg-slate-100' : 'text-gray-400 hover:text-white hover:bg-geminiHover'
+              }`}
+              title="Chiudi"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="text-center space-y-2">
+              <div className="w-14 h-14 mx-auto flex items-center justify-center overflow-hidden">
+                <AppLogo className="w-14 h-14" imgClassName="w-14 h-14 object-contain drop-shadow-xl" />
+              </div>
+              <span className="text-[11px] font-bold uppercase tracking-wider px-3 py-0.5 rounded-full bg-blue-500/10 text-blue-600 border border-blue-500/20">
+                MinervaAI Premium
+              </span>
+              <h3 className={`text-xl sm:text-2xl font-extrabold tracking-tight ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>
+                {freeQuestionCount >= 1 ? "Prova Gratuita Completata" : "Sblocca MinervaAI Premium"}
+              </h3>
+              <p className={`text-xs max-w-sm mx-auto ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>
+                {freeQuestionCount >= 1 
+                  ? "Hai completato la tua domanda di prova. Abbonati per continuare a preparare i tuoi esami senza limiti."
+                  : "Accedi senza limiti a lezioni, quiz, upload di 10 file e dettatura vocale Whisper."}
+              </p>
+            </div>
+
+            {/* Scheda Prezzo */}
+            <div className={`p-4 sm:p-5 rounded-2xl border transition ${
+              theme === 'light' ? 'bg-gradient-to-br from-blue-50/50 via-indigo-50/30 to-purple-50/40 border-blue-200' : 'bg-geminiDark border-blue-500/30'
+            }`}>
+              <div className="flex items-baseline justify-between">
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-blue-500">Piano Mensile</div>
+                  <div className="text-3xl font-black text-blue-600 mt-0.5">
+                    14,99 € <span className={`text-xs font-normal ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>/ mese</span>
+                  </div>
+                </div>
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
+                  Nessun vincolo
+                </span>
+              </div>
+              <ul className="mt-3 space-y-1.5 text-xs">
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 size={14} className="text-blue-500 shrink-0" />
+                  <span>Chat illimitata con modelli IA avanzati</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 size={14} className="text-blue-500 shrink-0" />
+                  <span>Creazione automatica piani di studio e syllabus</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 size={14} className="text-blue-500 shrink-0" />
+                  <span>Lezioni complete al 100% con formule LaTeX ed export PDF</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 size={14} className="text-blue-500 shrink-0" />
+                  <span>Simulazione verifiche con votazione in trentesimi</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Pulsante Stripe */}
+            <div className="space-y-3">
+              <a
+                href={stripeCheckoutUrl}
+                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-3.5 rounded-2xl shadow-xl shadow-blue-600/30 transition transform active:scale-98 flex items-center justify-center gap-2 text-sm"
+              >
+                <Sparkles size={17} />
+                <span>Abbonati a 14,99 €/mese con Stripe</span>
+              </a>
+
+              {/* Tasto e Box Sblocca ora con codice CANE */}
+              <div className={`p-3.5 rounded-2xl border transition ${
+                theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-geminiDark border-geminiBorder'
+              }`}>
+                {!isSecretUnlockOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsSecretUnlockOpen(true)}
+                    className="w-full flex items-center justify-center gap-2 text-xs font-bold text-blue-500 hover:text-blue-400 py-0.5 transition"
+                  >
+                    <Key size={14} />
+                    <span>Sblocca ora</span>
+                  </button>
+                ) : (
+                  <div className="space-y-2.5 animate-popup">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold flex items-center gap-1.5">
+                        <Key size={13} className="text-blue-500" />
+                        <span>Inserisci codice di sblocco</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => { setIsSecretUnlockOpen(false); setSecretCodeError(''); setSecretCodeSuccess(''); }}
+                        className="text-gray-400 hover:text-white"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={secretCodeInput}
+                        onChange={(e) => setSecretCodeInput(e.target.value)}
+                        placeholder="Digita CANE..."
+                        className={`flex-1 px-3 py-1.5 text-xs rounded-xl border focus:outline-none uppercase font-bold tracking-wider transition ${
+                          theme === 'light' 
+                            ? 'bg-white border-slate-300 text-slate-900 focus:border-blue-500' 
+                            : 'bg-geminiDarkSecondary border-geminiBorder text-white focus:border-blue-500'
+                        }`}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleSecretUnlock(); }}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSecretUnlock}
+                        className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition shadow-md shrink-0"
+                      >
+                        Sblocca
+                      </button>
+                    </div>
+                    {secretCodeError && <p className="text-[11px] font-semibold text-red-500">{secretCodeError}</p>}
+                    {secretCodeSuccess && <p className="text-[11px] font-semibold text-emerald-500">{secretCodeSuccess}</p>}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODALE DIRETTA SBLOCCA ORA (CODICE CANE) */}
+      {isSecretUnlockOpen && !isPaywallModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-popup">
+          <div className={`w-full max-w-sm border rounded-3xl p-6 shadow-2xl relative space-y-4 transition ${
+            theme === 'light' ? 'bg-white border-slate-200 text-slate-800' : 'bg-geminiDarkSecondary border-geminiBorder text-gray-100'
+          }`}>
+            <button
+              onClick={() => { setIsSecretUnlockOpen(false); setSecretCodeError(''); setSecretCodeSuccess(''); }}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white"
+            >
+              <X size={16} />
+            </button>
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-blue-600/20 text-blue-500 flex items-center justify-center">
+                <Key size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm">Sblocca MinervaAI</h3>
+                <p className="text-xs text-gray-400">Inserisci il codice segreto</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={secretCodeInput}
+                onChange={(e) => setSecretCodeInput(e.target.value)}
+                placeholder="Digita CANE..."
+                className={`w-full px-3.5 py-2 text-xs rounded-xl border focus:outline-none uppercase font-bold tracking-wider transition ${
+                  theme === 'light' ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-geminiDark border-geminiBorder text-white'
+                }`}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSecretUnlock(); }}
+                autoFocus
+              />
+              {secretCodeError && <p className="text-[11px] font-semibold text-red-500">{secretCodeError}</p>}
+              {secretCodeSuccess && <p className="text-[11px] font-semibold text-emerald-500">{secretCodeSuccess}</p>}
+              <button
+                type="button"
+                onClick={handleSecretUnlock}
+                className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition shadow-md"
+              >
+                Conferma e Sblocca
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isSubManageModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-popup">
           <div className={`w-full max-w-md border rounded-3xl p-6 sm:p-8 shadow-2xl relative space-y-5 transition ${
