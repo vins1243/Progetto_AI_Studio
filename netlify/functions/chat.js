@@ -550,48 +550,66 @@ Genera il piano di studio JSON.`;
       };
     }
 
-    // -------------------------------------------------------------
-    // AZIONE 7: GENERAZIONE LEZIONE DIDATTICA
+        // -------------------------------------------------------------
+    // AZIONE 7: GENERAZIONE LEZIONE DIDATTICA ACCADEMICA (COMPENDIO RAGIONATO)
     // -------------------------------------------------------------
     if (isLessonGeneration) {
       const isStrict = sourceType === 'my_materials';
       
       let relevantSources = '';
       allFiles.forEach((f, idx) => {
-        const text = (f.text || f.extractedText || '').trim();
-        if (text) {
-          relevantSources += `\n\n=== DOCUMENTO: "${f.name || `File ${idx + 1}`}" ===\n${text.slice(0, 20000)}\n=== FINE DOCUMENTO ===\n`;
+        const fileContent = (f.text || f.extractedText || '').trim();
+        if (fileContent) {
+          relevantSources += `\n\n=== DOCUMENTO: "${f.name || `File ${idx + 1}`}" ===\n${fileContent.slice(0, 60000)}\n=== FINE DOCUMENTO ===\n`;
         }
       });
 
-      const lessonSystemPrompt = `Sei un docente universitario e tutor accademico di altissimo livello.
-Il tuo compito è redigere una lezione didattica specialistica, chiara, altamente logica, approfondita ed esaustiva sul tema richiesto.
+      const lessonSystemPrompt = `Sei un professore universitario ordinario e autore di compendi clinici e manuali di studio per corsi di laurea magistrale (es. Medicina e Chirurgia, Ingegneria, Scienze).
+Il tuo obiettivo è redigere un "COMPENDIO RAGIONATO E APPROFONDITO" sul tema richiesto, con il massimo grado di densità concettuale, rigore accademico e chiarezza didattica.
+Il testo deve essere esaustivo, monumentale e autosufficiente per consentire a uno studente di superare l'esame universitario con 30 e Lode.
 
-${isStrict ? `REGOLA FONDAMENTALE E RIGIDA:
-Devi spiegare l'argomento basandoti UNICAMENTE ED ESCLUSIVAMENTE sulle informazioni, spiegazioni, definizioni, formule ed esempi PRESENTI NEI DOCUMENTI ALLEGATI DELLO STUDENTE.
-NON aggiungere nozioni esterne da internet.
-Il tuo compito è rendere il materiale originale molto più chiaro, ordinato, schematizzato e pedagogico, senza inventare o deviare dalle fonti caricate.` : `Spiega l'argomento attingendo alle migliori nozioni scientifiche e accademiche universitarie.`}
+LINEA GUIDA GENERALE DI REDAZIONE:
+1. DIVIETO ASSOLUTO DI BANALITÀ E RIEMPITIVI: Non usare mai frasi introduttive vuote (come "In questa lezione vedremo...", "Per comprendere questo tema è essenziale...", "È importante notare che..."). Inizia OGNI capitolo direttamente con la definizione formale, l'eziopatogenesi o la base fisiopatologica molecolare.
+2. DENSITÀ CONCETTUALE CONTINUA: Ogni singola frase deve trasmettere dati scientifici, meccanismi biologici/fisici, correlazioni cliniche o parametri quantitativi. Zero riassunti telegrafici.
+3. DATI QUANTITATIVI E CUT-OFF SISTEMATICI: Includi SEMPRE tutti i valori numerici, soglie diagnostiche, percentuali, dimensioni (es. calibro in $\\mu m$ o mm), pressioni ($mmHg$), intervalli temporali (minuti, ore, giorni) e dosaggi farmacologici precisi.
+4. TABELLE COMPARATIVE OBBLIGATORIE: Inserisci SEMPRE all'interno della lezione almeno 1 o 2 TABELLE MARKDOWN dettagliate (es. stadi/classi, classificazione eziologica, diagnosi differenziale con segni e mortalità associata, protocolli terapeutici).
+5. FORMULE E NOTAZIONE SCIENTIFICA ($LaTeX$): Scrivi SEMPRE qualsiasi formula matematica, emodinamica, biochimica o ione chimico in notazione LaTeX rigorosa ($...$ inline o $$...$$ a blocchi). Esempi: $Flusso = \\Delta P / R$, $MVO_2$, $Ca^{2+}$, $K^+$, $H^+$, $CO_2$, $SaO_2 < 90\\%$.
+6. LINEE GUIDA UFFICIALI E TEMPISTICHE: Cita sempre le società scientifiche e linee guida di riferimento (es. ESC, AHA/ACC, GOLD, KDIGO), specificando le tempistiche rigide (es. finestre temporali entro $\\le 10$ minuti, $\\le 120$ minuti, cut-off di rischio come GRACE score, scale di Killip I-IV con percentuali di mortalità).
+7. FARMACOLOGIA CLINICA PUNTUALE: Non limitarti a citare classi generiche (es. "beta-bloccanti"). Cita sempre i principi attivi specifici, le dosi di carico e di mantenimento (in mg o UI/kg), la via di somministrazione, il meccanismo d'azione recettoriale, le controindicazioni assolute e le interazioni.
+8. CINETICA DEI BIOMARCATORI: Per ogni parametro di laboratorio, dettaglia la cinetica temporale completa: inizio del rialzo ematico, picco massimo, tempo di normalizzazione e protocolli diagnostici rapidi (es. algoritmi 0h/1h o 0h/2h).
 
-FORMATTAZIONE:
-- Usa titoli chiari in Markdown (##, ###).
-- Evidenzia SEMPRE i termini tecnici e i concetti fondamentali in GRASSETTO (**termine**).
-- Usa elenchi puntati strutturati e tabelle comparative Markdown.
-- Per qualsiasi formula scientifica, chimica, medica, fisica o statistica, USA LA NOTAZIONE LaTeX ($formula$ o $$formula$$).`;
+${isStrict ? `FONTI DELLO STUDENTE (REGOLA DI FERRO):
+Basa la spiegazione sul materiale fornito dallo studente. Copri il 100% degli argomenti, dettagli e formule presenti nelle fonti, sviluppando e spiegando approfonditamente ogni concetto con massimo rigore enciclopedico senza omettere alcun capitolo o dettaglio.` : `Sviluppa l'argomento attingendo alle nozioni più avanzate della letteratura scientifica universitaria internazionale.`}
 
-      const lessonUserPrompt = `Argomento della lezione: "${topicTitle}".
-Materia: "${examDescription || ''}", Livello target: ${prepLevel || 80}%, Stile: ${languageStyle || 'automatico'}.
+STRUTTURA DIDATTICA DELLA LEZIONE:
+- TITOLO DELLA LEZIONE IN MAIUSCOLO CON SOTTOTITOLO SINTETICO DEI TEMI
+- 📋 INDICE E SCALETTA ANALITICA DEI CAPITOLI (capitoli numerati 1, 2, 3... e sottoargomenti)
+- 1. FISIOLOGIA / ANATOMIA APPLICATA E BASI MOLECOLARI
+- 2. EZIOPATOGENESI E CASCATA FISIOPATOLOGICA SEQUENZIALE (fasi temporali numerate)
+- 3. CLASSIFICAZIONI CLINICHE E TABELLE COMPARATIVE (con tabella markdown completa)
+- 4. MANIFESTAZIONI CLINICHE, SEGNI E SINTOMI
+- 5. CRITERI DIAGNOSTICI STRUMENTALI, CUT-OFF E LINEE GUIDA (con criteri diagnostici precisi)
+- 6. BIOMARCATORI E DIAGNOSTICA DI LABORATORIO (con cinetica temporale rialzo/picco/durata)
+- 7. TERAPIA MEDICA E PROTOCOLLI FARMACOLOGICI (con molecole e dosaggi)
+- 8. STRATIFICAZIONE PROGNOSTICA, COMPLICANZE E OUTCOME CLINICO`;
 
-${relevantSources ? `FONTI DELLO STUDENTE ESTRATTE DAI FILE CARICATI:\n${relevantSources.slice(0, 80000)}` : ''}
+      const lessonUserPrompt = `MATERIA: "${examDescription || 'Trattazione Universitaria'}"
+ARGOMENTO SPECIFICO: "${topicTitle}"
+LIVELLO PREPARAZIONE RICHIESTO: ${prepLevel || 80}%
+STILE: ${languageStyle || 'automatico'} (discorsivo accademico con punti analitici e tabelle)
 
-Redigi la lezione didattica in modo chiaro, schematizzato e rigorosamente fedele al tema.`;
+${relevantSources ? `TESTO INTEGRALE DEI DOCUMENTI CARICATI DALLO STUDENTE:\n${relevantSources.slice(0, 100000)}` : 'Sviluppa la trattazione accademica completa per questo argomento.'}
+
+Redigi ora il COMPENDIO RAGIONATO COMPLETO. Rispetta tutti i vincoli: tabelle markdown, dati numerici precisi, formule LaTeX, farmaci con dosaggi, linee guida societarie e scaletta esaustiva. Non fare riassunti o sintesi brevi: redigi un testo esteso, profondo ed enciclopedico.`;
 
       const { response: completion, modelUsed } = await callOpenAIWithFallback(openai, 'gpt-5.6-sol', {
         messages: [
           { role: 'system', content: lessonSystemPrompt },
           { role: 'user', content: lessonUserPrompt }
         ],
-        temperature: 0.25,
-      }, ['gpt-5.6-terra', 'gpt-4o', 'gpt-4o-mini']);
+        temperature: 0.2,
+        max_tokens: 7000,
+      }, ['gpt-5.6-terra', 'gpt-5-pro', 'gpt-4o', 'gpt-4o-mini']);
 
       const reply = completion.choices[0]?.message?.content || 'Nessuna lezione generata.';
       return {
