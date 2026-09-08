@@ -2318,7 +2318,7 @@ function MainAppContent() {
 
     const stripeCheckoutUrl = `${STRIPE_PAYMENT_URL}?prefilled_email=${encodeURIComponent(user?.email || '')}&client_reference_id=${user?.id || ''}`;
 
-  if (!isSubscribed && view !== 'chat') {
+  if (!isSubscribed && currentView !== 'chat') {
     return (
       <div className={`min-h-screen w-screen flex flex-col items-center justify-center p-4 sm:p-6 transition ${
         theme === 'light' ? 'bg-[#f8fafc] text-slate-900' : 'bg-geminiDark text-gray-100'
@@ -2462,7 +2462,7 @@ function MainAppContent() {
 
             <div className="flex items-center justify-between pt-2">
               <button
-                onClick={() => setView('chat')}
+                onClick={() => setCurrentView('chat')}
                 className="text-xs text-blue-500 hover:underline font-semibold flex items-center gap-1.5"
               >
                 <span>Torna alla Chat Iniziale</span>
