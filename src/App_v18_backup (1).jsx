@@ -3512,29 +3512,23 @@ function MainAppContent() {
                       <span>Abbonamento Attivo (14,99 €/m)</span>
                     </div>
                   </div>
-                                    <button
-                    type="button"
-                    onClick={() => {
-                      setIsProfileMenuOpen(false);
-                      setIsSubManageModalOpen(true);
-                    }}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 my-1 text-xs font-semibold rounded-xl border transition cursor-pointer ${
-                      theme === 'light'
-                        ? 'bg-blue-50/90 hover:bg-blue-100 text-blue-800 border-blue-200 shadow-sm'
-                        : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border-blue-500/30'
+                  <button
+                    onClick={() => { setIsProfileMenuOpen(false); setIsSubManageModalOpen(true); }}
+                    className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold rounded-xl transition ${
+                      theme === 'light' ? 'text-slate-800 hover:bg-slate-100' : 'text-gray-100 hover:bg-geminiHover'
                     }`}
                   >
                     <div className="flex items-center gap-2">
-                      <CreditCard size={15} className="text-blue-500 shrink-0" />
-                      <span className="font-bold">Abbonamento</span>
+                      <CreditCard size={14} className="text-blue-500" />
+                      <span>Abbonamento</span>
                     </div>
-                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
-                      isSubscribed ? 'bg-emerald-500/20 text-emerald-600' : 'bg-amber-500/20 text-amber-500'
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                      isSubscribed ? 'bg-emerald-500/15 text-emerald-600' : 'bg-red-500/15 text-red-500'
                     }`}>
-                      {isSubscribed ? 'Attivo' : '14,99 €/m'}
+                      {isSubscribed ? 'Attivo' : 'Non attivo'}
                     </span>
                   </button>
-<button
+                  <button
                     onClick={() => { setIsProfileMenuOpen(false); handleSignOut(); }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-red-400 hover:bg-red-500/10 rounded-xl transition"
                   >
