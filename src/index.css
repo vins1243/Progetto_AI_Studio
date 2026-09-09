@@ -480,3 +480,123 @@ html.light .katex {
 .pdf-export-container .katex {
   color: #1e40af !important;
 }
+
+
+/* CALLOUT BOXES CLINICI IN STILE GEMINI */
+.callout-box {
+  margin: 1.2rem 0;
+  padding: 1rem 1.25rem;
+  border-radius: 1rem;
+  border-left-width: 4px;
+  line-height: 1.65;
+  font-size: 0.88rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
+}
+
+.callout-therapy {
+  border-color: #10b981;
+  background-color: rgba(16, 185, 129, 0.08);
+  color: #065f46;
+}
+.dark .callout-therapy {
+  background-color: rgba(16, 185, 129, 0.12);
+  color: #6ee7b7;
+}
+
+.callout-criteria {
+  border-color: #3b82f6;
+  background-color: rgba(59, 130, 246, 0.08);
+  color: #1e40af;
+}
+.dark .callout-criteria {
+  background-color: rgba(59, 130, 246, 0.12);
+  color: #93c5fd;
+}
+
+.callout-warning {
+  border-color: #ef4444;
+  background-color: rgba(239, 68, 68, 0.08);
+  color: #991b1b;
+}
+.dark .callout-warning {
+  background-color: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
+.callout-default {
+  border-color: #6366f1;
+  background-color: rgba(99, 102, 241, 0.08);
+  color: #3730a3;
+}
+.dark .callout-default {
+  background-color: rgba(99, 102, 241, 0.12);
+  color: #c7d2fe;
+}
+
+/* TABELLE CLINICHE IN STILE ACCADEMICO */
+.academic-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+  font-size: 0.84rem;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
+}
+.dark .academic-table {
+  border-color: #334155;
+}
+
+.academic-table th {
+  background-color: #0f172a;
+  color: #f8fafc;
+  padding: 0.75rem 1rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.75rem;
+}
+.dark .academic-table th {
+  background-color: #1e293b;
+}
+
+.academic-table td {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid #e2e8f0;
+  vertical-align: top;
+}
+.dark .academic-table td {
+  border-color: #334155;
+  color: #cbd5e1;
+}
+
+.academic-table tr:nth-child(even) td {
+  background-color: #f8fafc;
+}
+.dark .academic-table tr:nth-child(even) td {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.pdf-export-container .callout-box {
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
+  margin: 12px 0 !important;
+  padding: 10px 14px !important;
+}
+
+.pdf-export-container .academic-table {
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
+  font-size: 11px !important;
+}
+
+.pdf-export-container .lesson-image-wrapper {
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
+  text-align: center !important;
+  margin: 16px 0 !important;
+}

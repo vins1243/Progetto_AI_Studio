@@ -70,7 +70,9 @@ import {
   Lock,
   Key,
   Cloud,
-  CreditCard
+  CreditCard,
+  Crop,
+  Maximize2
 } from 'lucide-react';
 
 import { 
@@ -151,14 +153,45 @@ async function extractTextFromPdf(arrayBuffer) {
   const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
   const pdf = await loadingTask.promise;
   let text = '';
+  const extractedImages = [];
   const maxPages = Math.min(pdf.numPages, 120);
   for (let i = 1; i <= maxPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
     const pageText = content.items.map(item => item.str).join(' ');
     text += `\n[Pagina ${i}]: ` + pageText;
+
+    // Cattura schemi / figure dalle prime pagine con illustrazioni
+    try {
+      if (extractedImages.length < 12) {
+        const ops = await page.getOperatorList();
+        let hasImg = false;
+        for (let j = 0; j < ops.fnArray.length; j++) {
+          if (ops.fnArray[j] === pdfjsLib.OPS.paintImageXObject || ops.fnArray[j] === pdfjsLib.OPS.paintInlineImageXObject) {
+            hasImg = true;
+            break;
+          }
+        }
+        if (hasImg) {
+          const viewport = page.getViewport({ scale: 1.2 });
+          const canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          const ctx = canvas.getContext('2d');
+          await page.render({ canvasContext: ctx, viewport }).promise;
+          extractedImages.push({
+            id: `FIGURA_PDF_PAG_${i}`,
+            name: `Schema illustrativo (Pagina ${i})`,
+            dataUrl: canvas.toDataURL('image/jpeg', 0.82),
+            label: `Figura da Pagina ${i}`
+          });
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
   }
-  return { text: text.trim(), pagesCount: pdf.numPages };
+  return { text: text.trim(), pagesCount: pdf.numPages, images: extractedImages };
 }
 
 async function extractTextFromDocx(arrayBuffer) {
@@ -166,7 +199,33 @@ async function extractTextFromDocx(arrayBuffer) {
     throw new Error("Libreria Word non pronta.");
   }
   const result = await window.mammoth.extractRawText({ arrayBuffer });
-  return { text: result.value || '', pagesCount: 1 };
+  const extractedImages = [];
+  if (typeof window !== 'undefined' && window.JSZip) {
+    try {
+      const zip = await window.JSZip.loadAsync(arrayBuffer);
+      const mediaFiles = [];
+      zip.forEach((path, file) => {
+        if (path.startsWith('word/media/') && !file.dir) mediaFiles.push({ path, file });
+      });
+      for (let idx = 0; idx < Math.min(mediaFiles.length, 15); idx++) {
+        const mf = mediaFiles[idx];
+        const ext = mf.path.split('.').pop().toLowerCase();
+        if (['png', 'jpg', 'jpeg', 'webp'].includes(ext)) {
+          const mime = ext === 'png' ? 'image/png' : (ext === 'webp' ? 'image/webp' : 'image/jpeg');
+          const b64 = await mf.file.async('base64');
+          extractedImages.push({
+            id: `FIGURA_DOCX_${idx + 1}`,
+            name: mf.path.split('/').pop(),
+            dataUrl: `data:${mime};base64,${b64}`,
+            label: `Figura Word ${idx + 1}`
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("DOCX image extract error:", err);
+    }
+  }
+  return { text: result.value || '', pagesCount: 1, images: extractedImages };
 }
 
 async function extractTextFromPptx(arrayBuffer) {
@@ -176,9 +235,12 @@ async function extractTextFromPptx(arrayBuffer) {
   const zip = await window.JSZip.loadAsync(arrayBuffer);
   let text = '';
   const slideFiles = [];
+  const mediaFiles = [];
   zip.forEach((path, file) => {
     if (path.startsWith('ppt/slides/slide') && path.endsWith('.xml')) {
       slideFiles.push({ path, file });
+    } else if (path.startsWith('ppt/media/') && !file.dir) {
+      mediaFiles.push({ path, file });
     }
   });
   slideFiles.sort((a, b) => {
@@ -192,11 +254,32 @@ async function extractTextFromPptx(arrayBuffer) {
     const slideText = matches.map(m => m.replace(/<[^>]+>/g, '')).join(' ');
     text += `\n[Slide ${i + 1}]: ${slideText}`;
   }
-  return { text: text.trim(), pagesCount: slideFiles.length };
+
+  const extractedImages = [];
+  for (let idx = 0; idx < Math.min(mediaFiles.length, 20); idx++) {
+    const mf = mediaFiles[idx];
+    const ext = mf.path.split('.').pop().toLowerCase();
+    if (['png', 'jpg', 'jpeg', 'webp'].includes(ext)) {
+      try {
+        const mime = ext === 'png' ? 'image/png' : (ext === 'webp' ? 'image/webp' : 'image/jpeg');
+        const b64 = await mf.file.async('base64');
+        extractedImages.push({
+          id: `FIGURA_PPTX_${idx + 1}`,
+          name: mf.path.split('/').pop(),
+          dataUrl: `data:${mime};base64,${b64}`,
+          label: `Figura dalle slide (${mf.path.split('/').pop()})`
+        });
+      } catch (err) {
+        console.warn("PPTX image extract error:", err);
+      }
+    }
+  }
+
+  return { text: text.trim(), pagesCount: slideFiles.length, images: extractedImages };
 }
 
-// RENDERING AUTOMATICO MARKDOWN + LATEX KATEX VERSO HTML WYSIWYG
-function renderMarkdownAndLatexToHtml(md) {
+// RENDERING AUTOMATICO MARKDOWN + LATEX KATEX + TABELLE + CALLOUT + FIGURE
+function renderMarkdownAndLatexToHtml(md, imagesMap = {}) {
   if (!md) return '';
   let html = md;
 
@@ -224,26 +307,85 @@ function renderMarkdownAndLatexToHtml(md) {
     return `<span class="katex-inline" contenteditable="false">${expr}</span>`;
   });
 
-  // 3. Intestazioni Markdown
+  // 3. Immagini e Figure Markdown ![alt](url) con preset elegante (centrata, 70% larghezza, didascalia)
+  html = html.replace(/!\[(.*?)\]\((.*?)\)/g, (match, altText, srcUrl) => {
+    const cleanAlt = (altText || 'Illustrazione didattica').trim();
+    const cleanSrc = (srcUrl || '').trim();
+    const resolvedSrc = imagesMap[cleanSrc] || cleanSrc;
+
+    return `<div class="lesson-image-wrapper text-center my-6" contenteditable="false">
+      <div class="inline-block relative group" style="width: 72%; max-width: 680px;">
+        <img 
+          src="${resolvedSrc}" 
+          alt="${cleanAlt}" 
+          class="lesson-img rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 w-full object-contain cursor-pointer transition hover:shadow-xl" 
+        />
+      </div>
+      <p class="text-xs text-slate-500 dark:text-slate-400 italic mt-2.5 text-center font-medium">
+        <strong>Figura:</strong> ${cleanAlt}
+      </p>
+    </div>`;
+  });
+
+  // 4. Tabelle Markdown ad alta leggibilità in stile accademico
+  html = html.replace(/((?:^[ \t]*\|.+?\|[ \t]*\n?){2,})/gm, (match) => {
+    const lines = match.trim().split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length < 2) return match;
+
+    const headers = lines[0].split('|').slice(1, -1).map(c => c.trim());
+    let startIdx = 1;
+    if (lines[1] && /^\|?[\s\-\:\.]+\|?$/.test(lines[1].replace(/\|/g, '').trim() || lines[1])) {
+      startIdx = 2;
+    }
+
+    const ths = headers.map(h => `<th class="py-3 px-4 text-left font-bold text-xs uppercase tracking-wider">${h}</th>`).join('');
+    const rows = lines.slice(startIdx).map(l => {
+      const cells = l.split('|').slice(1, -1).map(c => c.trim());
+      if (!cells.length) return '';
+      const tds = cells.map(c => `<td class="py-2.5 px-4 text-xs align-top">${c}</td>`).join('');
+      return `<tr class="border-b border-slate-200 dark:border-slate-800 transition">${tds}</tr>`;
+    }).filter(Boolean).join('');
+
+    return `<div class="academic-table-container my-6 overflow-x-auto" contenteditable="false">
+      <table class="academic-table w-full border-collapse rounded-2xl overflow-hidden border border-slate-300 dark:border-slate-700 shadow-sm">
+        <thead>
+          <tr class="bg-slate-900 text-white dark:bg-slate-800 border-b border-slate-700">${ths}</tr>
+        </thead>
+        <tbody class="divide-y divide-slate-200 dark:divide-slate-800">${rows}</tbody>
+      </table>
+    </div>`;
+  });
+
+  // 5. Callout Box Clinici in stile Gemini (> ...)
+  html = html.replace(/^\>\s*(.*?)$/gm, (match, bqText) => {
+    const textClean = bqText.trim();
+    if (/Regola Terapeutica|Terapia|Farmaco/i.test(textClean)) {
+      return `<div class="callout-box callout-therapy">${textClean}</div>`;
+    } else if (/Criteri ESC|Criteri|Linee Guida|Score/i.test(textClean)) {
+      return `<div class="callout-box callout-criteria">${textClean}</div>`;
+    } else if (/Attenzione|Controindicat|Pericolo|Allarme/i.test(textClean)) {
+      return `<div class="callout-box callout-warning">${textClean}</div>`;
+    }
+    return `<div class="callout-box callout-default">${textClean}</div>`;
+  });
+
+  // 6. Intestazioni Markdown
   html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
   html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
   html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
 
-  // 4. Grassetto e Corsivo
+  // 7. Grassetto e Corsivo
   html = html.replace(/\*\*\*(.*?)\*\*\*/gim, '<b><i>$1</i></b>');
   html = html.replace(/\*\*(.*?)\*\*/gim, '<b>$1</b>');
   html = html.replace(/\*(.*?)\*/gim, '<i>$1</i>');
 
-  // 5. Elenchi
+  // 8. Elenchi
   html = html.replace(/^\s*-\s+(.*$)/gim, '<ul><li>$1</li></ul>');
   html = html.replace(/<\/ul>\s*<ul>/gim, '');
   html = html.replace(/^\s*\d+\.\s+(.*$)/gim, '<ol><li>$1</li></ol>');
   html = html.replace(/<\/ol>\s*<ol>/gim, '');
 
-  // 6. Citazioni
-  html = html.replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>');
-
-  // 7. Paragrafi
+  // 9. Paragrafi
   html = html.replace(/\n\n/gim, '</p><p>');
   html = html.replace(/\n/gim, '<br/>');
 
@@ -461,6 +603,9 @@ function MainAppContent() {
   const [userProfile, setUserProfile] = useState(null);
   const [isCheckingPayment, setIsCheckingPayment] = useState(false);
   const [isSubManageModalOpen, setIsSubManageModalOpen] = useState(false);
+  const [isCropModalOpen, setIsCropModalOpen] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState('');
+  const [cropInset, setCropInset] = useState({ top: 0, bottom: 0, left: 0, right: 0 });
   const [isPaywallModalOpen, setIsPaywallModalOpen] = useState(false);
   const [isSecretUnlockOpen, setIsSecretUnlockOpen] = useState(false);
   const [legalModalOpen, setLegalModalOpen] = useState(false);
@@ -1270,6 +1415,52 @@ function MainAppContent() {
     e.target.value = '';
   };
 
+  const handleSetImageWidth = (widthPercent) => {
+    if (!selectedImageEl) return;
+    selectedImageEl.style.width = widthPercent;
+    selectedImageEl.style.maxWidth = '100%';
+    selectedImageEl.style.height = 'auto';
+    updateImageBoxRect(selectedImageEl);
+  };
+
+  const handleOpenCropModal = () => {
+    if (!selectedImageEl) return;
+    setCropImageSrc(selectedImageEl.src);
+    setCropInset({ top: 0, bottom: 0, left: 0, right: 0 });
+    setIsCropModalOpen(true);
+  };
+
+  const handleApplyCrop = () => {
+    if (!selectedImageEl || !cropImageSrc) return;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const naturalW = img.naturalWidth || img.width;
+      const naturalH = img.naturalHeight || img.height;
+
+      const sx = (cropInset.left / 100) * naturalW;
+      const sy = (cropInset.top / 100) * naturalH;
+      const sw = naturalW * (1 - (cropInset.left + cropInset.right) / 100);
+      const sh = naturalH * (1 - (cropInset.top + cropInset.bottom) / 100);
+
+      canvas.width = Math.max(10, sw);
+      canvas.height = Math.max(10, sh);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+
+      try {
+        const croppedDataUrl = canvas.toDataURL('image/png');
+        selectedImageEl.src = croppedDataUrl;
+        updateImageBoxRect(selectedImageEl);
+      } catch (err) {
+        console.warn('Crop canvas export error:', err);
+      }
+      setIsCropModalOpen(false);
+    };
+    img.src = cropImageSrc;
+  };
+
   const handleAlignImage = (alignClass) => {
     if (selectedImageEl) {
       const wrapper = selectedImageEl.closest('.lesson-image-wrapper');
@@ -1349,6 +1540,7 @@ function MainAppContent() {
           extractedText: text,
           wordsCount: words,
           pagesCount: pages,
+          images: res?.images || [],
         } : f));
 
       } catch (err) {
@@ -1516,7 +1708,11 @@ function MainAppContent() {
           isLessonGeneration: true,
           topicTitle: topic.title,
           sourceType: activeProject.sourceType,
-          files: activeProject.sourceType === 'my_materials' ? fullFilesList.map(f => ({ name: f.name, text: f.extractedText || f.text })) : [],
+          files: activeProject.sourceType === 'my_materials' ? fullFilesList.map(f => ({
+            name: f.name,
+            text: f.extractedText || f.text,
+            images: f.images ? f.images.map(img => ({ id: img.id, name: img.name, label: img.label })) : []
+          })) : [],
           examDescription: activeProject.description,
           prepLevel: activeProject.prepLevel,
           languageStyle: activeProject.languageStyle
@@ -2935,6 +3131,44 @@ function MainAppContent() {
             title="Allinea a destra"
           >
             <AlignRight size={13} />
+          </button>
+
+          <div className="w-[1px] h-4 bg-geminiBorder mx-0.5" />
+
+          {/* Preset Dimensioni Rapide */}
+          <span className="text-[10px] text-gray-400 font-bold px-0.5">Dim:</span>
+          <button
+            onClick={() => handleSetImageWidth('50%')}
+            className="px-1.5 py-0.5 text-[10px] font-bold text-gray-300 hover:text-white hover:bg-geminiHover rounded transition"
+            title="Dimensione Compatta (50%)"
+          >
+            50%
+          </button>
+          <button
+            onClick={() => handleSetImageWidth('72%')}
+            className="px-1.5 py-0.5 text-[10px] font-bold text-blue-400 hover:text-blue-300 hover:bg-blue-500/20 rounded transition"
+            title="Dimensione Standard (72%)"
+          >
+            72%
+          </button>
+          <button
+            onClick={() => handleSetImageWidth('100%')}
+            className="px-1.5 py-0.5 text-[10px] font-bold text-gray-300 hover:text-white hover:bg-geminiHover rounded transition"
+            title="Larghezza Intera (100%)"
+          >
+            100%
+          </button>
+
+          <div className="w-[1px] h-4 bg-geminiBorder mx-0.5" />
+
+          {/* Tasto Ritaglia */}
+          <button
+            onClick={handleOpenCropModal}
+            className="px-2 py-1 flex items-center gap-1 hover:bg-blue-500/20 text-blue-400 hover:text-blue-300 rounded-lg transition text-[11px] font-bold"
+            title="Ritaglia immagine"
+          >
+            <Crop size={12} />
+            <span>Ritaglia</span>
           </button>
 
           <div className="w-[1px] h-4 bg-geminiBorder mx-0.5" />
@@ -5293,6 +5527,121 @@ function MainAppContent() {
         )}
       {/* ------------------------------------------------------------- */}
             {/* ------------------------------------------------------------- */}
+      {/* MODALE RITAGLIO IMMAGINE (CROP) */}
+      {isCropModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-popup">
+          <div className={`w-full max-w-xl border rounded-3xl p-6 shadow-2xl space-y-5 transition ${
+            theme === 'light' ? 'bg-white border-slate-200 text-slate-800' : 'bg-geminiDarkSecondary border-geminiBorder text-gray-100'
+          }`}>
+            <div className="flex items-center justify-between border-b border-geminiBorder/60 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-blue-600/20 text-blue-500 flex items-center justify-center">
+                  <Crop size={18} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm">Ritaglia e Modifica Immagine</h3>
+                  <p className="text-[11px] text-gray-400">Regola i bordi da ritagliare sui quattro lati</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsCropModalOpen(false)}
+                className="p-1 text-gray-400 hover:text-white rounded-lg transition"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Anteprima con ritaglio visivo */}
+            <div className="w-full h-64 bg-slate-900 rounded-2xl flex items-center justify-center overflow-hidden relative p-4 border border-slate-700">
+              <div
+                className="relative overflow-hidden transition-all flex items-center justify-center"
+                style={{
+                  clipPath: `inset(${cropInset.top}% ${cropInset.right}% ${cropInset.bottom}% ${cropInset.left}%)`,
+                }}
+              >
+                <img src={cropImageSrc} alt="Preview" className="max-h-56 max-w-full object-contain" />
+              </div>
+            </div>
+
+            {/* Controlli di ritaglio sui 4 lati */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 mb-1">Taglia Alto: {cropInset.top}%</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="45"
+                  value={cropInset.top}
+                  onChange={(e) => setCropInset(prev => ({ ...prev, top: parseInt(e.target.value) || 0 }))}
+                  className="w-full accent-blue-600 cursor-pointer"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 mb-1">Taglia Basso: {cropInset.bottom}%</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="45"
+                  value={cropInset.bottom}
+                  onChange={(e) => setCropInset(prev => ({ ...prev, bottom: parseInt(e.target.value) || 0 }))}
+                  className="w-full accent-blue-600 cursor-pointer"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 mb-1">Taglia Sinistra: {cropInset.left}%</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="45"
+                  value={cropInset.left}
+                  onChange={(e) => setCropInset(prev => ({ ...prev, left: parseInt(e.target.value) || 0 }))}
+                  className="w-full accent-blue-600 cursor-pointer"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 mb-1">Taglia Destra: {cropInset.right}%</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="45"
+                  value={cropInset.right}
+                  onChange={(e) => setCropInset(prev => ({ ...prev, right: parseInt(e.target.value) || 0 }))}
+                  className="w-full accent-blue-600 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* Pulsanti Modal */}
+            <div className="flex items-center justify-between pt-2 border-t border-geminiBorder/60">
+              <button
+                type="button"
+                onClick={() => setCropInset({ top: 0, bottom: 0, left: 0, right: 0 })}
+                className="px-3 py-1.5 text-xs text-gray-400 hover:text-white transition"
+              >
+                Reimposta
+              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCropModalOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-gray-400 hover:text-white rounded-xl transition"
+                >
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyCrop}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition shadow-md flex items-center gap-1.5"
+                >
+                  <CheckCircle2 size={14} />
+                  <span>Applica Ritaglio</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODALE GESTIONE ABBONAMENTO STRIPE                            */}
       {/* ------------------------------------------------------------- */}
       {/* MODALE PAYWALL / ABBONAMENTO STRIPE 14,99 €/MESE */}

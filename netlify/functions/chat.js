@@ -557,7 +557,17 @@ Genera il piano di studio JSON.`;
       const isStrict = sourceType === 'my_materials';
       
       let relevantSources = '';
+      let availableImagesList = [];
       allFiles.forEach((f, idx) => {
+        if (Array.isArray(f.images) && f.images.length > 0) {
+          f.images.forEach(img => {
+            availableImagesList.push({
+              id: img.id,
+              name: img.name || img.label || `Figura ${availableImagesList.length + 1}`,
+              fileName: f.name || `File ${idx + 1}`
+            });
+          });
+        }
         const fileContent = (f.text || f.extractedText || '').trim();
         if (fileContent) {
           relevantSources += `\n\n=== DOCUMENTO: "${f.name || `File ${idx + 1}`}" ===\n${fileContent.slice(0, 60000)}\n=== FINE DOCUMENTO ===\n`;
@@ -577,6 +587,16 @@ LINEA GUIDA GENERALE DI REDAZIONE:
 6. LINEE GUIDA UFFICIALI E TEMPISTICHE: Cita sempre le società scientifiche e linee guida di riferimento (es. ESC, AHA/ACC, GOLD, KDIGO), specificando le tempistiche rigide (es. finestre temporali entro $\\le 10$ minuti, $\\le 120$ minuti, cut-off di rischio come GRACE score, scale di Killip I-IV con percentuali di mortalità).
 7. FARMACOLOGIA CLINICA PUNTUALE: Non limitarti a citare classi generiche (es. "beta-bloccanti"). Cita sempre i principi attivi specifici, le dosi di carico e di mantenimento (in mg o UI/kg), la via di somministrazione, il meccanismo d'azione recettoriale, le controindicazioni assolute e le interazioni.
 8. CINETICA DEI BIOMARCATORI: Per ogni parametro di laboratorio, dettaglia la cinetica temporale completa: inizio del rialzo ematico, picco massimo, tempo di normalizzazione e protocolli diagnostici rapidi (es. algoritmi 0h/1h o 0h/2h).
+9. GESTIONE FIGURE ED IMMAGINI:
+${availableImagesList.length > 0 ? `Sono disponibili le seguenti figure estratte direttamente dai documenti dello studente:
+${availableImagesList.map(img => `- ID: "${img.id}" -> Descrizione: "${img.name}" (da ${img.fileName})`).join('\n')}
+DEVI INSERIRE queste figure nei capitoli di pertinenza usando la sintassi:
+![Descrizione didattica dettagliata della figura](ID_FIGURA)` : `Se nei documenti non ci sono immagini ma un concetto richiede un diagramma o tracciato (es. circolo coronarico, tracciato ECG, cascata ischemica), inserisci un'illustrazione didattica con sintassi:
+![Descrizione dettagliata dello schema](https://images.unsplash.com/photo-1579684385127-1ef15d508118?auto=format&fit=crop&w=1200&q=80)`}
+10. CALLOUT DI EVIDENZIAZIONE: Usa citazioni markdown con titolo in grassetto per le nozioni cruciali, ad esempio:
+> **Regola Terapeutica Cardine:** [Spiegazione dettagliata]
+> **Criteri ESC di Stratificazione del Rischio:** [Elenco criteri e tempistiche]
+> **Attenzione Clinica / Controindicazione:** [Avvertenza]
 
 ${isStrict ? `FONTI DELLO STUDENTE (REGOLA DI FERRO):
 Basa la spiegazione sul materiale fornito dallo studente. Copri il 100% degli argomenti, dettagli e formule presenti nelle fonti, sviluppando e spiegando approfonditamente ogni concetto con massimo rigore enciclopedico senza omettere alcun capitolo o dettaglio.` : `Sviluppa l'argomento attingendo alle nozioni più avanzate della letteratura scientifica universitaria internazionale.`}
