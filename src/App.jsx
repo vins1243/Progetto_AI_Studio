@@ -156,39 +156,13 @@ async function extractTextFromPdf(arrayBuffer) {
   const extractedImages = [];
   const maxPages = Math.min(pdf.numPages, 120);
   for (let i = 1; i <= maxPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    const pageText = content.items.map(item => item.str).join(' ');
-    text += `\n[Pagina ${i}]: ` + pageText;
-
-    // Cattura schemi / figure dalle prime pagine con illustrazioni
     try {
-      if (extractedImages.length < 12) {
-        const ops = await page.getOperatorList();
-        let hasImg = false;
-        for (let j = 0; j < ops.fnArray.length; j++) {
-          if (ops.fnArray[j] === pdfjsLib.OPS.paintImageXObject || ops.fnArray[j] === pdfjsLib.OPS.paintInlineImageXObject) {
-            hasImg = true;
-            break;
-          }
-        }
-        if (hasImg) {
-          const viewport = page.getViewport({ scale: 1.2 });
-          const canvas = document.createElement('canvas');
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-          const ctx = canvas.getContext('2d');
-          await page.render({ canvasContext: ctx, viewport }).promise;
-          extractedImages.push({
-            id: `FIGURA_PDF_PAG_${i}`,
-            name: `Schema illustrativo (Pagina ${i})`,
-            dataUrl: canvas.toDataURL('image/jpeg', 0.82),
-            label: `Figura da Pagina ${i}`
-          });
-        }
-      }
-    } catch (e) {
-      // ignore
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items.map(item => item.str).join(' ');
+      text += `\n[Pagina ${i}]: ` + pageText;
+    } catch (pageErr) {
+      console.warn(`Errore lettura pagina ${i} del PDF:`, pageErr);
     }
   }
   return { text: text.trim(), pagesCount: pdf.numPages, images: extractedImages };
@@ -417,12 +391,17 @@ class ErrorBoundary extends Component {
             <p className="text-xs text-gray-400">
               I tuoi dati sono al sicuro. Clicca qui sotto per ricaricare l'app.
             </p>
+            {this.state.error && (
+              <div className="p-3 bg-red-950/50 border border-red-500/30 rounded-2xl text-left text-[11px] text-red-300 font-mono overflow-auto max-h-36">
+                {this.state.error.message || String(this.state.error)}
+              </div>
+            )}
             <button 
               onClick={() => {
                 this.setState({ hasError: false });
                 window.location.reload();
               }}
-              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-full text-xs font-semibold transition"
+              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-full text-xs font-bold transition shadow-lg shadow-blue-600/30"
             >
               Ricarica applicazione
             </button>
@@ -1237,15 +1216,15 @@ function MainAppContent() {
           if (name.endsWith('.pdf') || mime.includes('pdf')) {
             const buffer = await file.arrayBuffer();
             const res = await extractTextFromPdf(buffer);
-            text = res.text;
+            text = res?.text || '';
           } else if (name.endsWith('.docx') || mime.includes('word')) {
             const buffer = await file.arrayBuffer();
             const res = await extractTextFromDocx(buffer);
-            text = res.text;
+            text = res?.text || '';
           } else if (name.endsWith('.pptx') || mime.includes('presentation')) {
             const buffer = await file.arrayBuffer();
             const res = await extractTextFromPptx(buffer);
-            text = res.text;
+            text = res?.text || '';
           } else {
             text = await file.text();
           }
@@ -1507,27 +1486,32 @@ function MainAppContent() {
 
     for (const entry of newFileEntries) {
       const file = entry.fileRef;
-      const name = file.name.toLowerCase();
-      const mime = file.type.toLowerCase();
+      const name = (file.name || '').toLowerCase();
+      const mime = (file.type || '').toLowerCase();
 
       try {
         let text = '';
         let pages = 1;
+        let fileImages = [];
 
         if (name.endsWith('.pdf') || mime.includes('pdf')) {
           const buffer = await file.arrayBuffer();
           const res = await extractTextFromPdf(buffer);
-          text = res.text;
-          pages = res.pagesCount;
+          text = res?.text || '';
+          pages = res?.pagesCount || 1;
+          fileImages = res?.images || [];
         } else if (name.endsWith('.docx') || mime.includes('word')) {
           const buffer = await file.arrayBuffer();
           const res = await extractTextFromDocx(buffer);
-          text = res.text;
+          text = res?.text || '';
+          pages = res?.pagesCount || 1;
+          fileImages = res?.images || [];
         } else if (name.endsWith('.pptx') || mime.includes('presentation')) {
           const buffer = await file.arrayBuffer();
           const res = await extractTextFromPptx(buffer);
-          text = res.text;
-          pages = res.pagesCount;
+          text = res?.text || '';
+          pages = res?.pagesCount || 1;
+          fileImages = res?.images || [];
         } else {
           text = await file.text();
         }
@@ -1540,7 +1524,7 @@ function MainAppContent() {
           extractedText: text,
           wordsCount: words,
           pagesCount: pages,
-          images: res?.images || [],
+          images: fileImages,
         } : f));
 
       } catch (err) {
@@ -1550,6 +1534,7 @@ function MainAppContent() {
           status: 'error',
           extractedText: '',
           wordsCount: 0,
+          images: [],
         } : f));
       } finally {
         setExtractingCount(prev => Math.max(0, prev - 1));
@@ -1649,7 +1634,17 @@ function MainAppContent() {
       setLoadingStatusText('Piano di studio creato con successo!');
 
       if (!isOnlineSearch) {
-        await saveProjectDataToDB(projectId, { files: readyFiles });
+        const sanitizedFilesForDB = readyFiles.map(f => ({
+          id: f.id,
+          name: f.name,
+          size: f.size,
+          mimeType: f.mimeType,
+          extractedText: f.extractedText || '',
+          wordsCount: f.wordsCount || 0,
+          pagesCount: f.pagesCount || 1,
+          images: (f.images || []).map(img => ({ id: img.id, name: img.name, dataUrl: img.dataUrl, label: img.label }))
+        }));
+        await saveProjectDataToDB(projectId, { files: sanitizedFilesForDB });
       }
 
       const newProject = {
