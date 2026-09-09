@@ -255,118 +255,162 @@ async function extractTextFromPptx(arrayBuffer) {
 // RENDERING AUTOMATICO MARKDOWN + LATEX KATEX + TABELLE + CALLOUT + FIGURE
 function renderMarkdownAndLatexToHtml(md, imagesMap = {}) {
   if (!md) return '';
-  let html = md;
 
-  // 1. Render LaTeX display blocks $$ ... $$
-  html = html.replace(/\$\$([\s\S]*?)\$\$/g, (match, expr) => {
+  // 1. Display Math $$ ... $$
+  let html = md.replace(/\$\$([\s\S]*?)\$\$/g, (m, expr) => {
     try {
       if (typeof window !== 'undefined' && window.katex) {
-        return `<div class="katex-display" contenteditable="false">${window.katex.renderToString(expr.trim(), { displayMode: true, throwOnError: false })}</div>`;
+        return '<div class="katex-display" contenteditable="false">' + window.katex.renderToString(expr.trim(), { displayMode: true, throwOnError: false }) + '</div>';
       }
     } catch (e) {
       console.warn("KaTeX display error:", e);
     }
-    return `<div class="katex-display" contenteditable="false">${expr}</div>`;
+    return '<div class="katex-display" contenteditable="false">' + expr + '</div>';
   });
 
-  // 2. Render LaTeX inline math $ ... $
-  html = html.replace(/\$([^\$\n]+?)\$/g, (match, expr) => {
+  // 2. Inline Math $ ... $
+  html = html.replace(/\$([^\$\n]+?)\$/g, (m, expr) => {
     try {
       if (typeof window !== 'undefined' && window.katex) {
-        return `<span class="katex-inline" contenteditable="false">${window.katex.renderToString(expr.trim(), { displayMode: false, throwOnError: false })}</span>`;
+        return '<span class="katex-inline" contenteditable="false">' + window.katex.renderToString(expr.trim(), { displayMode: false, throwOnError: false }) + '</span>';
       }
     } catch (e) {
       console.warn("KaTeX inline error:", e);
     }
-    return `<span class="katex-inline" contenteditable="false">${expr}</span>`;
+    return '<span class="katex-inline" contenteditable="false">' + expr + '</span>';
   });
 
-  // 3. Immagini e Figure Markdown ![alt](url) con preset elegante (centrata, 70% larghezza, didascalia)
-  html = html.replace(/!\[(.*?)\]\((.*?)\)/g, (match, altText, srcUrl) => {
-    const cleanAlt = (altText || 'Illustrazione didattica').trim();
-    const cleanSrc = (srcUrl || '').trim();
-    const resolvedSrc = imagesMap[cleanSrc] || cleanSrc;
+  let lines = html.split('\n');
+  let output = [];
+  let inList = null; // 'ul' | 'ol' | null
+  let tableRows = [];
+  let inTable = false;
 
-    return `<div class="lesson-image-wrapper text-center my-6" contenteditable="false">
-      <div class="inline-block relative group" style="width: 72%; max-width: 680px;">
-        <img 
-          src="${resolvedSrc}" 
-          alt="${cleanAlt}" 
-          class="lesson-img rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 w-full object-contain cursor-pointer transition hover:shadow-xl" 
-        />
-      </div>
-      <p class="text-xs text-slate-500 dark:text-slate-400 italic mt-2.5 text-center font-medium">
-        <strong>Figura:</strong> ${cleanAlt}
-      </p>
-    </div>`;
-  });
-
-  // 4. Tabelle Markdown ad alta leggibilità in stile accademico
-  html = html.replace(/((?:^[ \t]*\|.+?\|[ \t]*\n?){2,})/gm, (match) => {
-    const lines = match.trim().split('\n').map(l => l.trim()).filter(Boolean);
-    if (lines.length < 2) return match;
-
-    const headers = lines[0].split('|').slice(1, -1).map(c => c.trim());
+  function flushTable() {
+    if (!tableRows.length) return;
     let startIdx = 1;
-    if (lines[1] && /^\|?[\s\-\:\.]+\|?$/.test(lines[1].replace(/\|/g, '').trim() || lines[1])) {
+    let headers = tableRows[0].split('|').slice(1, -1).map(c => c.trim());
+    if (tableRows[1] && /^[|\s\-:]+$/.test(tableRows[1].replace(/\|/g, '').trim() || tableRows[1])) {
       startIdx = 2;
     }
-
-    const ths = headers.map(h => `<th class="py-3 px-4 text-left font-bold text-xs uppercase tracking-wider">${h}</th>`).join('');
-    const rows = lines.slice(startIdx).map(l => {
-      const cells = l.split('|').slice(1, -1).map(c => c.trim());
-      if (!cells.length) return '';
-      const tds = cells.map(c => `<td class="py-2.5 px-4 text-xs align-top">${c}</td>`).join('');
-      return `<tr class="border-b border-slate-200 dark:border-slate-800 transition">${tds}</tr>`;
-    }).filter(Boolean).join('');
-
-    return `<div class="academic-table-container my-6 overflow-x-auto" contenteditable="false">
-      <table class="academic-table w-full border-collapse rounded-2xl overflow-hidden border border-slate-300 dark:border-slate-700 shadow-sm">
-        <thead>
-          <tr class="bg-slate-900 text-white dark:bg-slate-800 border-b border-slate-700">${ths}</tr>
-        </thead>
-        <tbody class="divide-y divide-slate-200 dark:divide-slate-800">${rows}</tbody>
-      </table>
-    </div>`;
-  });
-
-  // 5. Callout Box Clinici in stile Gemini (> ...)
-  html = html.replace(/^\>\s*(.*?)$/gm, (match, bqText) => {
-    const textClean = bqText.trim();
-    if (/Regola Terapeutica|Terapia|Farmaco/i.test(textClean)) {
-      return `<div class="callout-box callout-therapy">${textClean}</div>`;
-    } else if (/Criteri ESC|Criteri|Linee Guida|Score/i.test(textClean)) {
-      return `<div class="callout-box callout-criteria">${textClean}</div>`;
-    } else if (/Attenzione|Controindicat|Pericolo|Allarme/i.test(textClean)) {
-      return `<div class="callout-box callout-warning">${textClean}</div>`;
+    let ths = headers.map(h => '<th class="py-3 px-4 text-left font-bold text-xs uppercase tracking-wider">' + h + '</th>').join('');
+    let trs = [];
+    for (let j = startIdx; j < tableRows.length; j++) {
+      let cells = tableRows[j].split('|').slice(1, -1).map(c => c.trim());
+      if (cells.length === 0 || !cells.some(Boolean)) continue;
+      let tds = cells.map(c => '<td class="py-2.5 px-4 text-xs align-top">' + c + '</td>').join('');
+      trs.push('<tr class="border-b border-slate-200 dark:border-slate-800 transition">' + tds + '</tr>');
     }
-    return `<div class="callout-box callout-default">${textClean}</div>`;
-  });
-
-  // 6. Intestazioni Markdown
-  html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
-  html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
-  html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
-
-  // 7. Grassetto e Corsivo
-  html = html.replace(/\*\*\*(.*?)\*\*\*/gim, '<b><i>$1</i></b>');
-  html = html.replace(/\*\*(.*?)\*\*/gim, '<b>$1</b>');
-  html = html.replace(/\*(.*?)\*/gim, '<i>$1</i>');
-
-  // 8. Elenchi
-  html = html.replace(/^\s*-\s+(.*$)/gim, '<ul><li>$1</li></ul>');
-  html = html.replace(/<\/ul>\s*<ul>/gim, '');
-  html = html.replace(/^\s*\d+\.\s+(.*$)/gim, '<ol><li>$1</li></ol>');
-  html = html.replace(/<\/ol>\s*<ol>/gim, '');
-
-  // 9. Paragrafi
-  html = html.replace(/\n\n/gim, '</p><p>');
-  html = html.replace(/\n/gim, '<br/>');
-
-  if (!html.startsWith('<h') && !html.startsWith('<p') && !html.startsWith('<ul') && !html.startsWith('<ol') && !html.startsWith('<div')) {
-    html = '<p>' + html + '</p>';
+    output.push('<div class="academic-table-container my-6 overflow-x-auto" contenteditable="false"><table class="academic-table w-full border-collapse rounded-2xl overflow-hidden border border-slate-300 dark:border-slate-700 shadow-sm"><thead><tr class="bg-slate-900 text-white dark:bg-slate-800 border-b border-slate-700">' + ths + '</tr></thead><tbody class="divide-y divide-slate-200 dark:divide-slate-800">' + trs.join('') + '</tbody></table></div>');
+    tableRows = [];
+    inTable = false;
   }
-  return html;
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    let trimmed = line.trim();
+
+    // Table detection: line starts and ends with |
+    if (trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.length > 2) {
+      if (inList) { output.push(inList === 'ul' ? '</ul>' : '</ol>'); inList = null; }
+      inTable = true;
+      tableRows.push(trimmed);
+      continue;
+    } else if (inTable) {
+      flushTable();
+    }
+
+    // Empty line
+    if (!trimmed) {
+      if (inList) { output.push(inList === 'ul' ? '</ul>' : '</ol>'); inList = null; }
+      continue;
+    }
+
+    // Headings
+    if (trimmed.startsWith('### ')) {
+      if (inList) { output.push(inList === 'ul' ? '</ul>' : '</ol>'); inList = null; }
+      output.push('<h3>' + trimmed.slice(4).trim() + '</h3>');
+      continue;
+    }
+    if (trimmed.startsWith('## ')) {
+      if (inList) { output.push(inList === 'ul' ? '</ul>' : '</ol>'); inList = null; }
+      output.push('<h2>' + trimmed.slice(3).trim() + '</h2>');
+      continue;
+    }
+    if (trimmed.startsWith('# ')) {
+      if (inList) { output.push(inList === 'ul' ? '</ul>' : '</ol>'); inList = null; }
+      output.push('<h1>' + trimmed.slice(2).trim() + '</h1>');
+      continue;
+    }
+
+    // Callout Box (> ...)
+    if (trimmed.startsWith('>')) {
+      if (inList) { output.push(inList === 'ul' ? '</ul>' : '</ol>'); inList = null; }
+      let content = trimmed.replace(/^>+\s*/, '');
+      let cls = 'callout-default';
+      if (/Regola Terapeutica|Terapia|Farmaco/i.test(content)) cls = 'callout-therapy';
+      else if (/Criteri ESC|Criteri|Linee Guida|Score/i.test(content)) cls = 'callout-criteria';
+      else if (/Attenzione|Controindicat|Pericolo/i.test(content)) cls = 'callout-warning';
+
+      content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      output.push('<div class="callout-box ' + cls + '">' + content + '</div>');
+      continue;
+    }
+
+    // Markdown Image (![alt](src))
+    let imgMatch = trimmed.match(/^!\[(.*?)\]\((.*?)\)$/);
+    if (imgMatch) {
+      if (inList) { output.push(inList === 'ul' ? '</ul>' : '</ol>'); inList = null; }
+      let alt = (imgMatch[1] || 'Illustrazione').trim();
+      let src = (imgMatch[2] || '').trim();
+      let realSrc = imagesMap[src] || src;
+
+      let isActualUrl = realSrc.startsWith('http') || realSrc.startsWith('data:');
+      if (isActualUrl) {
+        output.push('<div class="lesson-image-wrapper text-center my-6" contenteditable="false"><div class="inline-block relative group" style="width:72%;max-width:680px;"><img src="' + realSrc + '" alt="' + alt + '" class="lesson-img rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 w-full object-contain cursor-pointer transition hover:shadow-xl" /></div><p class="text-xs text-slate-500 dark:text-slate-400 italic mt-2.5 text-center font-medium"><strong>Figura:</strong> ' + alt + '</p></div>');
+      } else {
+        // Schema didattico elegante se l'immagine non ha un file collegato
+        output.push('<div class="lesson-image-wrapper text-center my-6" contenteditable="false"><div class="inline-block p-5 rounded-2xl bg-blue-50/60 dark:bg-geminiDarkSecondary border border-blue-200 dark:border-blue-500/30 text-center shadow-sm" style="width:72%;max-width:680px;"><div class="w-10 h-10 mx-auto rounded-xl bg-blue-600/20 text-blue-500 flex items-center justify-center mb-2 font-bold">📊</div><div class="text-xs font-bold text-slate-800 dark:text-gray-100">' + alt + '</div><div class="text-[11px] text-slate-500 dark:text-gray-400 mt-1">Schema clinico di riferimento accademico</div></div><p class="text-xs text-slate-500 dark:text-slate-400 italic mt-2 text-center font-medium"><strong>Figura:</strong> ' + alt + '</p></div>');
+      }
+      continue;
+    }
+
+    // Unordered List (- ...)
+    if (trimmed.startsWith('- ') || trimmed.startsWith('• ') || trimmed.startsWith('* ')) {
+      if (inList !== 'ul') {
+        if (inList) output.push('</ol>');
+        output.push('<ul>');
+        inList = 'ul';
+      }
+      let item = trimmed.replace(/^[-•*]\s+/, '');
+      item = item.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
+      output.push('<li>' + item + '</li>');
+      continue;
+    }
+
+    // Ordered List (1. ...)
+    let numMatch = trimmed.match(/^(\d+)\.\s+(.*)/);
+    if (numMatch) {
+      if (inList !== 'ol') {
+        if (inList) output.push('</ul>');
+        output.push('<ol>');
+        inList = 'ol';
+      }
+      let item = numMatch[2].replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
+      output.push('<li>' + item + '</li>');
+      continue;
+    }
+
+    // Regular paragraph
+    if (inList) { output.push(inList === 'ul' ? '</ul>' : '</ol>'); inList = null; }
+    let pContent = trimmed.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
+    output.push('<p>' + pContent + '</p>');
+  }
+
+  if (inTable) flushTable();
+  if (inList) output.push(inList === 'ul' ? '</ul>' : '</ol>');
+
+  return output.join('\n');
 }
 
 // Error Boundary
@@ -1130,16 +1174,13 @@ function MainAppContent() {
       const dayTitle = currentDayData?.dayTitle || '';
       const dayDate = currentDayData?.date || '';
 
-      // Crea contenitore per la stampa A4 perfettamente calibrato
+      // Contenitore A4 (794px) visibile a html2canvas con z-index basso per non disturbare la vista utente
       const printContainer = document.createElement('div');
-      printContainer.id = 'minerva-pdf-print-root';
-      printContainer.className = 'pdf-export-container light';
-      
-      // Posizionato a (0, 0) per html2canvas ma dietro l'interfaccia principale
-      printContainer.style.position = 'absolute';
+      printContainer.id = 'minerva-pdf-render-target';
+      printContainer.className = 'pdf-export-container';
+      printContainer.style.position = 'fixed';
       printContainer.style.left = '0';
       printContainer.style.top = '0';
-      printContainer.style.zIndex = '-999999';
       printContainer.style.width = '794px';
       printContainer.style.minWidth = '794px';
       printContainer.style.maxWidth = '794px';
@@ -1147,30 +1188,32 @@ function MainAppContent() {
       printContainer.style.color = '#0f172a';
       printContainer.style.padding = '36px 40px';
       printContainer.style.boxSizing = 'border-box';
-      printContainer.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
-      printContainer.style.lineHeight = '1.65';
+      printContainer.style.zIndex = '999999';
+      printContainer.style.overflow = 'visible';
 
       printContainer.innerHTML = `
-        <div style="border-bottom: 2px solid #2563eb; padding-bottom: 12px; margin-bottom: 24px;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+        <div style="border-bottom: 2.5px solid #2563eb; padding-bottom: 14px; margin-bottom: 24px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
             <div style="font-size: 11px; color: #2563eb; font-weight: 800; text-transform: uppercase; letter-spacing: 1.2px;">
               MinervaAI • Compendio Didattico Universitario
             </div>
-            <div style="font-size: 10px; color: #64748b; font-weight: 600;">
+            <div style="font-size: 11px; color: #64748b; font-weight: 600;">
               ${dayTitle ? `${dayTitle} • ` : ''}${dayDate || new Date().toLocaleDateString('it-IT')}
             </div>
           </div>
-          <h1 style="margin: 6px 0 4px 0; font-size: 24px; color: #0f172a; font-weight: 800; line-height: 1.25;">${topicTitle}</h1>
-          <div style="font-size: 12px; color: #475569; margin-top: 2px; font-style: italic;">
+          <h1 style="margin: 6px 0 6px 0; font-size: 24px; color: #0f172a; font-weight: 800; line-height: 1.3;">
+            ${topicTitle}
+          </h1>
+          <div style="font-size: 12px; color: #475569; font-style: italic;">
             <strong>Materia:</strong> ${examName}
           </div>
         </div>
-        <div class="pdf-body-content" style="font-size: 12.5px; color: #1e293b; line-height: 1.65;">
+        <div class="pdf-body-content" style="font-size: 12.5px; color: #1e293b; line-height: 1.7;">
           ${wysiwygEditorRef.current.innerHTML}
         </div>
         <div style="border-top: 1px solid #e2e8f0; margin-top: 36px; padding-top: 12px; font-size: 10px; color: #94a3b8; display: flex; justify-content: space-between; align-items: center;">
-          <span>Documento generato con MinervaAI • Piattaforma di Studio Universitario</span>
-          <span>Data: ${new Date().toLocaleDateString('it-IT')}</span>
+          <span>MinervaAI • Piattaforma per lo Studio Universitario</span>
+          <span>Data esportazione: ${new Date().toLocaleDateString('it-IT')}</span>
         </div>
       `;
 
@@ -1178,18 +1221,18 @@ function MainAppContent() {
 
       const opt = {
         margin: [10, 10, 10, 10],
-        filename: `${topicTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}_Compendio_MinervaAI.pdf`,
+        filename: `${topicTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}_Compendio.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { 
           scale: 2, 
           useCORS: true, 
           logging: false,
-          scrollY: 0,
           scrollX: 0,
-          width: 794,
-          windowWidth: 794
+          scrollY: 0,
+          width: 794
         },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
       };
 
       const cleanup = () => {
@@ -1199,18 +1242,15 @@ function MainAppContent() {
         setIsExportingPDF(false);
       };
 
-      // Attesa breve per il render completo di KaTeX e immagini
-      setTimeout(() => {
-        if (typeof window !== 'undefined' && window.html2pdf) {
-          window.html2pdf().set(opt).from(printContainer).save().then(cleanup).catch(err => {
-            console.error("html2pdf save error:", err);
-            cleanup();
-          });
-        } else {
+      if (typeof window !== 'undefined' && window.html2pdf) {
+        window.html2pdf().set(opt).from(printContainer).save().then(cleanup).catch(err => {
+          console.error("html2pdf save error:", err);
           cleanup();
-          window.print();
-        }
-      }, 350);
+        });
+      } else {
+        cleanup();
+        window.print();
+      }
     } catch (err) {
       console.error("Errore esportazione PDF:", err);
       alert("Errore durante la generazione del PDF: " + err.message);
