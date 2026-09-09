@@ -570,7 +570,7 @@ Genera il piano di studio JSON.`;
         }
         const fileContent = (f.text || f.extractedText || '').trim();
         if (fileContent) {
-          relevantSources += `\n\n=== DOCUMENTO: "${f.name || `File ${idx + 1}`}" ===\n${fileContent.slice(0, 60000)}\n=== FINE DOCUMENTO ===\n`;
+          relevantSources += `\n\n=== DOCUMENTO: "${f.name || `File ${idx + 1}`}" ===\n${fileContent.slice(0, 30000)}\n=== FINE DOCUMENTO ===\n`;
         }
       });
 
@@ -618,18 +618,18 @@ ARGOMENTO SPECIFICO: "${topicTitle}"
 LIVELLO PREPARAZIONE RICHIESTO: ${prepLevel || 80}%
 STILE: ${languageStyle || 'automatico'} (discorsivo accademico con punti analitici e tabelle)
 
-${relevantSources ? `TESTO INTEGRALE DEI DOCUMENTI CARICATI DALLO STUDENTE:\n${relevantSources.slice(0, 100000)}` : 'Sviluppa la trattazione accademica completa per questo argomento.'}
+${relevantSources ? `TESTO INTEGRALE DEI DOCUMENTI CARICATI DALLO STUDENTE:\n${relevantSources.slice(0, 45000)}` : 'Sviluppa la trattazione accademica completa per questo argomento.'}
 
 Redigi ora il COMPENDIO RAGIONATO COMPLETO. Rispetta tutti i vincoli: tabelle markdown, dati numerici precisi, formule LaTeX, farmaci con dosaggi, linee guida societarie e scaletta esaustiva. Non fare riassunti o sintesi brevi: redigi un testo esteso, profondo ed enciclopedico.`;
 
-      const { response: completion, modelUsed } = await callOpenAIWithFallback(openai, 'gpt-5.6-sol', {
+      const { response: completion, modelUsed } = await callOpenAIWithFallback(openai, 'gpt-4o', {
         messages: [
           { role: 'system', content: lessonSystemPrompt },
           { role: 'user', content: lessonUserPrompt }
         ],
         temperature: 0.2,
-        max_tokens: 7000,
-      }, ['gpt-5.6-terra', 'gpt-5-pro', 'gpt-4o', 'gpt-4o-mini']);
+        max_tokens: 3500,
+      }, ['gpt-4o-mini']);
 
       const reply = completion.choices[0]?.message?.content || 'Nessuna lezione generata.';
       return {

@@ -1714,8 +1714,8 @@ function MainAppContent() {
         }),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Errore nella generazione della lezione.');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || (res.status === 504 ? 'Timeout serverless: la generazione ha richiesto troppo tempo. Riprova ora.' : `Errore server (${res.status}): generazione non riuscita.`));
 
       const lessonContent = data.reply;
       updateTopicLessonContent(dayNum, topic.id, lessonContent);
