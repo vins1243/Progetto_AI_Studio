@@ -1130,13 +1130,16 @@ function MainAppContent() {
       const dayTitle = currentDayData?.dayTitle || '';
       const dayDate = currentDayData?.date || '';
 
-      // Crea contenitore temporaneo agganciato al DOM con larghezza A4 fissa (794px = 210mm a 96 DPI)
+      // Crea contenitore per la stampa A4 perfettamente calibrato
       const printContainer = document.createElement('div');
       printContainer.id = 'minerva-pdf-print-root';
-      printContainer.className = 'pdf-export-container';
-      printContainer.style.position = 'fixed';
-      printContainer.style.left = '-9999px';
+      printContainer.className = 'pdf-export-container light';
+      
+      // Posizionato a (0, 0) per html2canvas ma dietro l'interfaccia principale
+      printContainer.style.position = 'absolute';
+      printContainer.style.left = '0';
       printContainer.style.top = '0';
+      printContainer.style.zIndex = '-999999';
       printContainer.style.width = '794px';
       printContainer.style.minWidth = '794px';
       printContainer.style.maxWidth = '794px';
@@ -1145,7 +1148,7 @@ function MainAppContent() {
       printContainer.style.padding = '36px 40px';
       printContainer.style.boxSizing = 'border-box';
       printContainer.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
-      printContainer.style.zIndex = '-999';
+      printContainer.style.lineHeight = '1.65';
 
       printContainer.innerHTML = `
         <div style="border-bottom: 2px solid #2563eb; padding-bottom: 12px; margin-bottom: 24px;">
@@ -1181,6 +1184,8 @@ function MainAppContent() {
           scale: 2, 
           useCORS: true, 
           logging: false,
+          scrollY: 0,
+          scrollX: 0,
           width: 794,
           windowWidth: 794
         },
@@ -1194,15 +1199,18 @@ function MainAppContent() {
         setIsExportingPDF(false);
       };
 
-      if (typeof window !== 'undefined' && window.html2pdf) {
-        window.html2pdf().set(opt).from(printContainer).save().then(cleanup).catch(err => {
-          console.error("html2pdf save error:", err);
+      // Attesa breve per il render completo di KaTeX e immagini
+      setTimeout(() => {
+        if (typeof window !== 'undefined' && window.html2pdf) {
+          window.html2pdf().set(opt).from(printContainer).save().then(cleanup).catch(err => {
+            console.error("html2pdf save error:", err);
+            cleanup();
+          });
+        } else {
           cleanup();
-        });
-      } else {
-        cleanup();
-        window.print();
-      }
+          window.print();
+        }
+      }, 350);
     } catch (err) {
       console.error("Errore esportazione PDF:", err);
       alert("Errore durante la generazione del PDF: " + err.message);
