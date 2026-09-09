@@ -1130,53 +1130,82 @@ function MainAppContent() {
       const dayTitle = currentDayData?.dayTitle || '';
       const dayDate = currentDayData?.date || '';
 
-      // Crea contenitore temporaneo per la formattazione A4 pulita
+      // Crea contenitore temporaneo agganciato al DOM con larghezza A4 fissa (794px = 210mm a 96 DPI)
       const printContainer = document.createElement('div');
+      printContainer.id = 'minerva-pdf-print-root';
       printContainer.className = 'pdf-export-container';
-      
+      printContainer.style.position = 'fixed';
+      printContainer.style.left = '-9999px';
+      printContainer.style.top = '0';
+      printContainer.style.width = '794px';
+      printContainer.style.minWidth = '794px';
+      printContainer.style.maxWidth = '794px';
+      printContainer.style.backgroundColor = '#ffffff';
+      printContainer.style.color = '#0f172a';
+      printContainer.style.padding = '36px 40px';
+      printContainer.style.boxSizing = 'border-box';
+      printContainer.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+      printContainer.style.zIndex = '-999';
+
       printContainer.innerHTML = `
-        <div style="border-bottom: 2px solid #2563eb; padding-bottom: 12px; margin-bottom: 20px;">
-          <div style="font-size: 11px; color: #2563eb; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;">
-            MinervaAI • Guida Didattica
+        <div style="border-bottom: 2px solid #2563eb; padding-bottom: 12px; margin-bottom: 24px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+            <div style="font-size: 11px; color: #2563eb; font-weight: 800; text-transform: uppercase; letter-spacing: 1.2px;">
+              MinervaAI • Compendio Didattico Universitario
+            </div>
+            <div style="font-size: 10px; color: #64748b; font-weight: 600;">
+              ${dayTitle ? `${dayTitle} • ` : ''}${dayDate || new Date().toLocaleDateString('it-IT')}
+            </div>
           </div>
-          <h1 style="margin: 6px 0 2px 0; font-size: 22px; color: #0f172a;">${topicTitle}</h1>
-          <div style="font-size: 12px; color: #64748b; margin-top: 4px;">
-            <strong>Materia:</strong> ${examName} • <strong>${dayTitle}</strong> (${dayDate})
+          <h1 style="margin: 6px 0 4px 0; font-size: 24px; color: #0f172a; font-weight: 800; line-height: 1.25;">${topicTitle}</h1>
+          <div style="font-size: 12px; color: #475569; margin-top: 2px; font-style: italic;">
+            <strong>Materia:</strong> ${examName}
           </div>
         </div>
-        <div style="font-size: 13px; color: #1e293b; line-height: 1.7;">
+        <div class="pdf-body-content" style="font-size: 12.5px; color: #1e293b; line-height: 1.65;">
           ${wysiwygEditorRef.current.innerHTML}
         </div>
-        <div style="border-top: 1px solid #e2e8f0; margin-top: 30px; padding-top: 10px; font-size: 10px; color: #94a3b8; text-align: center;">
-          Documento generato con MinervaAI • ${new Date().toLocaleDateString('it-IT')}
+        <div style="border-top: 1px solid #e2e8f0; margin-top: 36px; padding-top: 12px; font-size: 10px; color: #94a3b8; display: flex; justify-content: space-between; align-items: center;">
+          <span>Documento generato con MinervaAI • Piattaforma di Studio Universitario</span>
+          <span>Data: ${new Date().toLocaleDateString('it-IT')}</span>
         </div>
       `;
 
+      document.body.appendChild(printContainer);
+
       const opt = {
-        margin: [12, 12, 12, 12],
-        filename: `${topicTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}_Lezione.pdf`,
+        margin: [10, 10, 10, 10],
+        filename: `${topicTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}_Compendio_MinervaAI.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, logging: false },
+        html2canvas: { 
+          scale: 2, 
+          useCORS: true, 
+          logging: false,
+          width: 794,
+          windowWidth: 794
+        },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
+      const cleanup = () => {
+        if (printContainer && printContainer.parentNode) {
+          printContainer.parentNode.removeChild(printContainer);
+        }
+        setIsExportingPDF(false);
+      };
+
       if (typeof window !== 'undefined' && window.html2pdf) {
-        window.html2pdf().set(opt).from(printContainer).save().then(() => {
-          setIsExportingPDF(false);
+        window.html2pdf().set(opt).from(printContainer).save().then(cleanup).catch(err => {
+          console.error("html2pdf save error:", err);
+          cleanup();
         });
       } else {
-        // Fallback stampa browser
-        const printWin = window.open('', '', 'width=800,height=900');
-        printWin.document.write(`<html><head><title>${topicTitle}</title><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"/></head><body style="padding:20px; font-family:sans-serif;">${printContainer.innerHTML}</body></html>`);
-        printWin.document.close();
-        printWin.focus();
-        printWin.print();
-        printWin.close();
-        setIsExportingPDF(false);
+        cleanup();
+        window.print();
       }
     } catch (err) {
       console.error("Errore esportazione PDF:", err);
-      alert("Errore durante la generazione del PDF.");
+      alert("Errore durante la generazione del PDF: " + err.message);
       setIsExportingPDF(false);
     }
   };
