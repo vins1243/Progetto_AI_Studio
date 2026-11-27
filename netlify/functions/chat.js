@@ -589,61 +589,62 @@ ${isOnlineSearch ? 'Genera il programma completo.' : `DOCUMENTI:\n${perFileSumma
             ? 'LIVELLO ALTO (75-89%): trattazione completa e approfondita con tutti i concetti chiave, meccanismi, tabelle comparative, formule ed esempi.'
             : 'LIVELLO SOLIDO (fino a 74%): trattazione chiara, completa e lineare focalizzata sui pilastri fondamentali ben spiegati senza banalizzazioni.';
 
-      const lessonSystemPrompt = `Sei un professore universitario ordinario e autore di manuali didattici d'eccellenza.
-Il tuo obiettivo è scrivere una **LEZIONE DEFINITIVA DI ALTISSIMA DENSITÀ DIDATTICA** sull'argomento richiesto per la materia "${examDescription || 'Studio'}", superiore per rigore, profondità e chiarezza ai migliori manuali universitari.
+      const lessonSystemPrompt = `Sei un professore universitario ordinario e autore di trattati universitari d'eccellenza.
+Il tuo compito è redigere una **LEZIONE COMPLETA, MONUMENTALE E OPERATIVA** sull'argomento specifico "${topicTitle}" per la materia "${examDescription || 'Studio'}".
 
 ${depthInstruction}
 
-REGOLE FERREE DI QUALITÀ (STILE EDITORIALE D'ELITE):
-1. **ZERO FUFFA E ZERO INDICI RIDONDANTI**:
-   - **NON inserire l'Indice Analitico** (spreca spazio e ripete i titoli). Parti SUBITO con il Capitolo 1 (## 1. ...).
-   - **VIETATI capitoli riempitivi generici** (come "Implicazioni nella ricerca", "Conclusioni generali", "Importanza clinica generica"). Ogni singolo paragrafo deve contenere nozioni ad alta resa d'esame.
-2. **ESTRAZIONE FORENSE DALLE DISPENSE DEL DOCENTE (PRIORITÀ ASSOLUTA)**:
-   - Se sono presenti documenti caricati dallo studente, DEVI estrarre, citare esplicitamente e spiegare a fondo **OGNI singolo dettaglio specifico delle dispense**: nomi di autori/professori, studi citati (con rivista, anno, campione, percentuali), geni/loci cromosomici, biomarcatori, segni clinici eponimi, sottoclassi complete (es. C0s, C2r, C4a, C4b, C4c, C6r), calibri/cut-off numerici, meccanismi molecolari e classificazioni aggiornate.
-   - Non sostituire mai i dettagli specifici delle dispense con generalizzazioni scolastiche!
-3. **REGOLA ANTI-COMPRESSIONE (SPIEGAZIONE DISCORSIVA COMPLETA IN OGNI SOTTOCAPITOLO)**:
-   - **VIETATO comprimere o riassumere la seconda metà della lezione!** Ogni singolo sottocapitolo (###) DEVE avere almeno **2–3 paragrafi discorsivi completi (120–180+ parole ciascuno)**, mai 2–4 righe telegrafiche.
-   - **NON limitarti a nominare** una manovra, un segno, una tecnica o uno studio: **spiega sempre il COME e il PERCHÉ** (es. come si esegue passo passo una manovra semeiologica o ecografica, cosa corrisponde anatomicamente a un segno clinico/ecografico, come agisce una classe farmacologica o una procedura, e quali sono i numeri/percentuali/campioni/risultati esatti di ogni studio citato nelle dispense).
-   - Spiega ogni processo causale passo dopo passo (cascate fisiopatologiche, dimostrazioni, nessi storici/giuridici/tecnici) con elenchi numerati argomentati e prosa chiara da manuale universitario.
-4. **FORMATTING RICCO E SCANSIONABILE**:
-   - Usa grassetti selettivi solo sui termini tecnici chiave (**termine**).
-   - Inserisci **almeno 1–2 TABELLE MARKDOWN** dettagliate per classificazioni, sottoclassi o confronti.
-   - Usa **LaTeX** ($...$ / $$...$$) per qualsiasi formula, unità o parametro matematico/scientifico.
-   - Inserisci **2–3 box callout** di valore reale (es. un caso/studio citato nelle dispense e una regola d'esame):
-     > **Esempio / Studio di Riferimento:** [Dettagli concreti dalle dispense o dalla letteratura]
-     > **Attenzione / Distinzione Chiave d'Esame:** [Errore tipico da evitare]
+REGOLE INDEROGABILI DI QUALITÀ E COMPLETEZZA:
+1. **FOCUS ASSOLUTO SULL'ARGOMENTO SPECIFICO ("${topicTitle}")**:
+   - Dedica il 90% del testo SPECIFICAMENTE a "${topicTitle}", senza sprecare spazio ripetendo introduzioni generiche di altri capitoli già studiati.
+   - **NON inserire l'Indice Analitico** e **NON scrivere frasi conclusive vuote** (tipo "Questa lezione ha fornito una panoramica..."). Parti subito con ## 1. ...
+2. **ESTRAZIONE FORENSE TOTALE DALLE DISPENSE DEL DOCENTE**:
+   - Riporta OGNI singolo dettaglio presente nei documenti caricati relativo a "${topicTitle}": nomi di professori/autori, studi (rivista, anno, campione N, percentuali esatte), geni/loci (es. FOXC2 16q24), meccanismi molecolari (es. MMP/TIMP, white cell trapping, emosiderina), segni clinici/ecografici eponimi, prove semeiologiche eseguite passo dopo passo (es. Trendelenburg, Perthes, Valsalva, Squeeze test con tempi e criteri di positività), e TUTTE le sottoclassi e i cut-off numerici (es. CEAP C0, C0s, C1 <1mm e 1-3mm, C2/C2r >=3mm, C3, C4a, C4b, C4c Corona phlebectatica, C5, C6/C6r + assi E, A, P).
+3. **REGOLA ANTI-COMPRESSIONE (MINIMO 1.800–3.000 PAROLE)**:
+   - **VIETATO fare paragrafi riassuntivi da 3–4 righe!** Ogni sezione (## e ###) DEVE contenere spiegazioni estese, discorsive, ricche di meccanismi passo-passo, razionale anatomo-fisiopatologico e correlazioni cliniche.
+   - Se nomini una manovra, un esame, un segno o una terapia, DEVI spiegare nel dettaglio **come si esegue, cosa si osserva, come si interpreta il risultato positivo/negativo e quali sono le indicazioni/controindicazioni**.
+4. **ELEMENTI OBBLIGATORI IN OGNI LEZIONE**:
+   - **Almeno 1–2 TABELLE MARKDOWN COMPLETE E DETTAGLIATE** (es. classificazione completa con sottoclassi e cut-off, oppure tabella comparativa di prove/manovre/terapie con meccanismo, indicazioni e risultati).
+   - **Almeno 2 BOX CALLOUT** ricchi di dati reali dalle dispense:
+     > **Esempio / Studio di Riferimento:** [Riporta numeri, autori, campione e risultati concreti delle dispense]
+     > **Attenzione / Distinzione Chiave d'Esame:** [Errore tipico d'esame o distinzione critica]
+   - **Formule LaTeX** ($...$ / $$...$$) quando pertinenti.
 5. **IMMAGINI REALI DAI DOCUMENTI**:
 ${
   availableImagesList.length > 0
-    ? `Sono disponibili queste ${availableImagesList.length} immagini/slide REALI estratte dai documenti dello studente:
+    ? `Sono disponibili queste ${availableImagesList.length} immagini REALI ritagliate dai documenti dello studente:
 ${availableImagesList
-  .map((img) => `- ID ESATTO: "${img.id}" -> ${img.name} (${img.fileName})`)
+  .map((img) => `- ID: "${img.id}" -> ${img.name} (${img.fileName})`)
   .join('\n')}
-Inserisci nei capitoli pertinenti almeno 2–5 di queste figure reali usando ESATTAMENTE questa sintassi su una riga dedicata (senza backtick), sostituendo il testo tra parentesi quadre con la didascalia reale della figura:
-![Stadio CEAP C1-C2 / Eco-Color-Doppler / nome reale della figura](ID_ESATTO)`
-    : 'Non inventare URL di immagini esterne; usa tabelle Markdown ricche per schematizzare.'
+Inserisci nei punti pertinenti 2–5 di queste immagini usando ESATTAMENTE questa sintassi su una riga dedicata:
+![Scrivi una didascalia clinica breve e precisa](ID_ESATTO)
+Regola didascalia: scrivi solo il titolo clinico pulito tra parentesi quadre (mai barre o segnaposto).`
+    : 'Usa tabelle Markdown dettagliate per schematizzare i concetti chiave.'
 }
-6. **CHIUSURA INTERATTIVA (AUTO-VERIFICA RAPIDA)**:
-   - Chiudi la lezione con una breve sezione "## Verifica Rapida (Vero o Falso)" con **3 affermazioni trabocchetto d'esame** basate sui dettagli più fini delle dispense (con risposta corretta e spiegazione in 1 riga).`;
+6. **CHIUSURA CON VERIFICA RAPIDA**:
+   - Chiudi con "## Verifica Rapida (Vero o Falso)" contenente **3 affermazioni trabocchetto d'esame** (ognuna su una riga numerata con risposta Vero/Falso + spiegazione concisa).`;
 
       const lessonUserPrompt = `MATERIA: "${examDescription || 'Trattazione di Studio'}"
-ARGOMENTO SPECIFICO: "${topicTitle}"
+ARGOMENTO SPECIFICO DA SVILUPPARE A FONDO: "${topicTitle}"
 LIVELLO TARGET: ${prepTarget}%
-STILE: ${languageStyle || 'automatico'}
 ${
   relevantSources
-    ? `\nFONTI INTEGRALI / ESTRATTI DEL DOCENTE (USA OGNI DETTAGLIO SPECIFICO PRESENTE QUI):\n${relevantSources}`
-    : '\n(Nessun file allegato: sviluppa la trattazione al massimo livello universitario citando classificazioni aggiornate, cut-off numerici, meccanismi molecolari/teorici e criteri ufficiali).'
+    ? `\nFONTI DEL DOCENTE (ESTRAI E SVILUPPA OGNI SINGOLO DETTAGLIO, NUMERO, STUDIO, SOTTOCLASSE E MANOVRA RELATIVA A "${topicTitle}"):\n${relevantSources}`
+    : '\n(Nessun file allegato: sviluppa la trattazione al massimo livello universitario con tabelle complete, sottoclassi, meccanismi e cut-off ufficiali).'
 }
 
-Redigi ora la lezione definitiva partendo direttamente dal Capitolo 1 (senza indice).`;
+CHECKLIST OBBLIGATORIA PRIMA DI RISPONDERE:
+- Sviluppa SOLO "${topicTitle}" in profondità (almeno 1.800–2.500 parole reali, zero riassunti brevi).
+- Inserisci OBBLIGATORIAMENTE almeno 1 TABELLA MARKDOWN completa (con tutte le classi/sottoclassi o confronti) e 2 BOX CALLOUT (> **...**).
+- Spiega passo-passo ogni manovra, segno, meccanismo e studio citato nelle fonti.
+- Inizia subito con ## 1. ... (senza indice e senza frasi conclusive generiche).`;
 
       if (stream) {
         return await streamAIResponse({
           tier: 'heavy',
           systemPrompt: lessonSystemPrompt,
           messages: [{ role: 'user', content: lessonUserPrompt }],
-          temperature: 0.25,
+          temperature: 0.35,
           maxTokens: 16384,
           onComplete: () => incrementUsage(profile, bucket),
         });
@@ -653,7 +654,7 @@ Redigi ora la lezione definitiva partendo direttamente dal Capitolo 1 (senza ind
         tier: 'heavy',
         systemPrompt: lessonSystemPrompt,
         messages: [{ role: 'user', content: lessonUserPrompt }],
-        temperature: 0.25,
+        temperature: 0.35,
         maxTokens: 16384,
       });
 
