@@ -133,6 +133,9 @@ export async function fetchProjectsFromCloud(userId) {
       files: row.files || [],
       lessonsContent: row.lessons_content || {},
       conceptMaps: row.concept_maps || [],
+      flashcards: row.flashcards || [],
+      errorBank: row.error_bank || [],
+      glossary: row.glossary || [],
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }));
@@ -245,6 +248,9 @@ export async function saveProjectToCloud(userId, project) {
       })),
       lessons_content: project.lessonsContent || {},
       concept_maps: project.conceptMaps || [],
+      flashcards: project.flashcards || [],
+      error_bank: project.errorBank || [],
+      glossary: project.glossary || [],
       updated_at: new Date().toISOString(),
     };
 
@@ -365,6 +371,41 @@ export async function deleteChatFromCloud(userId, chatId) {
   }
 }
 
+
+export async function fetchSharedItem(shareId) {
+  if (!client || !shareId) return null;
+  try {
+    const { data, error } = await client
+      .from('shared_items')
+      .select('*')
+      .eq('id', shareId)
+      .single();
+    if (error) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+export async function createSharedItem(userId, { itemType, title, subtitle = '', payload = {} }) {
+  if (!client || !isValidUUID(userId)) {
+    throw new Error('Devi accedere al tuo account per creare un link condivisibile.');
+  }
+  const shareId = `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const { error } = await client.from('shared_items').insert({
+    id: shareId,
+    user_id: userId,
+    item_type: itemType,
+    title: String(title || 'Contenuto MinervaAI').slice(0, 180),
+    subtitle: String(subtitle || '').slice(0, 180),
+    payload,
+  });
+  if (error) {
+    throw new Error(error.message || 'Impossibile creare il link pubblico. Verifica di aver eseguito schema.sql su Supabase.');
+  }
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://progettoaistudio.netlify.app';
+  return { id: shareId, url: `${origin}/?share=${encodeURIComponent(shareId)}` };
+}
 
 export async function fetchUserProfile(userId) {
   if (!client || !isValidUUID(userId)) return null;

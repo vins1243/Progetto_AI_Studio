@@ -51,7 +51,7 @@ export function splitLessonAndTrueFalse(markdownText = '') {
   return { cleanLesson, questions };
 }
 
-export default function QuickTrueFalseWidget({ questions = [], topicId = '' }) {
+export default function QuickTrueFalseWidget({ questions = [], topicId = '', onWrongAnswer }) {
   const [answers, setAnswers] = useState({});
 
   useEffect(() => {
@@ -123,7 +123,16 @@ export default function QuickTrueFalseWidget({ questions = [], topicId = '' }) {
               <button
                 type="button"
                 disabled={hasAnswered}
-                onClick={() => setAnswers((prev) => ({ ...prev, [q.id]: val }))}
+                onClick={() => {
+                  setAnswers((prev) => ({ ...prev, [q.id]: val }));
+                  if (val !== q.correctAnswer && typeof onWrongAnswer === 'function') {
+                    onWrongAnswer({
+                      question: q.statement,
+                      correctAnswer: q.correctAnswer ? 'Vero' : 'Falso',
+                      explanation: q.explanation || '',
+                    });
+                  }
+                }}
                 className={`flex-1 py-3 px-4 rounded-2xl border-2 text-sm font-semibold flex items-center justify-center gap-2 transition ${cls}`}
               >
                 {hasAnswered && isSelected && isCorrectOption && <Check size={16} />}

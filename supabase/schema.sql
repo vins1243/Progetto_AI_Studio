@@ -119,6 +119,9 @@ create table if not exists public.projects (
 
 alter table public.projects add column if not exists lessons_content jsonb not null default '{}'::jsonb;
 alter table public.projects add column if not exists concept_maps jsonb not null default '[]'::jsonb;
+alter table public.projects add column if not exists flashcards jsonb not null default '[]'::jsonb;
+alter table public.projects add column if not exists error_bank jsonb not null default '[]'::jsonb;
+alter table public.projects add column if not exists glossary jsonb not null default '[]'::jsonb;
 create index if not exists idx_projects_user_id on public.projects(user_id);
 
 -- 5. TABELLA CONVERSATIONS (Chat AI)
@@ -221,3 +224,31 @@ create policy "Users can delete own lesson-assets"
     and auth.uid() is not null
     and (storage.foldername(name))[1] = auth.uid()::text
   );
+
+-- 9. CONDIVISIONE PUBBLICA IN SOLA LETTURA (Link virali per Mappe e Compendi)
+create table if not exists public.shared_items (
+  id text primary key,
+  user_id uuid references auth.users(id) on delete set null,
+  item_type text not null default 'lesson',
+  title text not null,
+  subtitle text,
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+alter table public.shared_items enable row level security;
+
+drop policy if exists "Anyone can view shared items" on public.shared_items;
+create policy "Anyone can view shared items"
+  on public.shared_items for select
+  using (true);
+
+drop policy if exists "Authenticated users can create shared items" on public.shared_items;
+create policy "Authenticated users can create shared items"
+  on public.shared_items for insert
+  with check (auth.uid() is not null and auth.uid() = user_id);
+
+drop policy if exists "Owners can delete shared items" on public.shared_items;
+create policy "Owners can delete shared items"
+  on public.shared_items for delete
+  using (auth.uid() = user_id);

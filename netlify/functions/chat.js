@@ -100,6 +100,10 @@ export default async (req) => {
     audioBase64,
     audioMimeType,
     mapStyle,
+    oralHistory,
+    finishOral,
+    errorItems,
+    transcriptText,
   } = payload;
 
   try {
@@ -304,6 +308,375 @@ Restituisci SOLO il JSON valido della mappa mentale a 4 livelli.`;
       await recordUsage();
       return jsonResponse({
         map: normalizeMap(parsed),
+        modelUsed,
+      });
+    }
+
+    // -------------------------------------------------------------
+    // AZIONE 2B: GENERAZIONE FLASHCARD CON RIPETIZIONE DILAZIONATA (SRS)
+    // -------------------------------------------------------------
+    if (action === 'generate_flashcards') {
+      const focusTitle = (topicTitle || examDescription || 'Ripasso').trim();
+      const errorListText = Array.isArray(errorItems) && errorItems.length > 0
+        ? `\nERRORI PRECEDENTI DELLO STUDENTE SU CUI CREARE CARTE MIRATE:\n${errorItems
+            .slice(0, 20)
+            .map((e, i) => `${i + 1}. Domanda: ${e.question} | Risposta corretta: ${e.correctAnswer} | Nota: ${e.explanation || ''}`)
+            .join('\n')}`
+        : '';
+      const sourceText =
+        (lessonContent || '').trim() ||
+        extractRelevantChunks(allFiles, `${focusTitle} ${examDescription || ''}`, 18000);
+
+      const fcSystemPrompt = `Sei un esperto di Active Recall e Spaced Repetition (stile Anki / Quizlet) per studenti universitari italiani.
+Crea un mazzo di 12-16 FLASHCARD ad alta resa d'esame sull'argomento richiesto.
+Restituisci ESCLUSIVAMENTE un JSON valido:
+{
+  "cards": [
+    {
+      "front": "Domanda secca, chiara e mirata (max 140 caratteri)",
+      "back": "Risposta precisa, completa di valori numerici/cut-off/meccanismo chiave (max 280 caratteri)",
+      "tag": "Categoria breve (es. Classificazione, Cut-off, Meccanismo, Terapia)"
+    }
+  ]
+}
+REGOLE: zero domande vaghe, prediligi definizioni esatte, soglie numeriche, distinzioni d'esame e meccanismi causa-effetto.`;
+
+      const fcUserPrompt = `ARGOMENTO: "${focusTitle}"
+MATERIA: "${examDescription || 'Studio'}"
+${errorListText}
+${sourceText ? `\nMATERIALE DI RIFERIMENTO:\n${sourceText.slice(0, 18000)}` : ''}`;
+
+      const normalizeCards = (parsed) =>
+        (parsed?.cards || []).map((c, idx) => ({
+          id: `fc_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 6)}`,
+          topicTitle: focusTitle,
+          front: String(c.front || '').trim().slice(0, 220),
+          back: String(c.back || '').trim().slice(0, 480),
+          tag: String(c.tag || 'Concetto').trim().slice(0, 32),
+          intervalDays: 0,
+          ease: 2.5,
+          reps: 0,
+          dueAt: new Date().toISOString(),
+        })).filter((c) => c.front && c.back);
+
+      if (stream) {
+        const encoder = new TextEncoder();
+        const sseStream = new ReadableStream({
+          async start(controller) {
+            const sendEvent = (evt) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(evt)}\n\n`));
+            try {
+              sendEvent({ type: 'status', text: 'Creazione flashcard Active Recall...' });
+              const { fullText, modelUsed } = await streamAIToWriter({
+                tier: 'light',
+                systemPrompt: fcSystemPrompt,
+                messages: [{ role: 'user', content: fcUserPrompt }],
+                temperature: 0.25,
+                maxTokens: 4500,
+                sendEvent: (evt) => { if (evt.type === 'meta') sendEvent(evt); },
+              });
+              const parsed = safeParseJson(fullText, null);
+              const cards = normalizeCards(parsed);
+              if (cards.length === 0) {
+                sendEvent({ type: 'error', error: 'Impossibile generare le flashcard. Riprova.' });
+              } else {
+                await recordUsage();
+                sendEvent({ type: 'done', cards, modelUsed });
+              }
+            } catch (err) {
+              sendEvent({ type: 'error', error: err.message || 'Errore generazione flashcard.' });
+            } finally {
+              controller.close();
+            }
+          },
+        });
+        return new Response(sseStream, {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive' },
+        });
+      }
+
+      const { text, modelUsed } = await generateAI({
+        tier: 'light',
+        systemPrompt: fcSystemPrompt,
+        messages: [{ role: 'user', content: fcUserPrompt }],
+        temperature: 0.25,
+        maxTokens: 4500,
+        jsonMode: true,
+      });
+      const cards = normalizeCards(safeParseJson(text, null));
+      if (cards.length === 0) return jsonResponse({ error: 'Impossibile generare le flashcard.' }, 500);
+      await recordUsage();
+      return jsonResponse({ cards, modelUsed });
+    }
+
+    // -------------------------------------------------------------
+    // AZIONE 2C: SIMULATORE ESAME ORALE CON VOCE (PROFESSORE AI)
+    // -------------------------------------------------------------
+    if (action === 'oral_exam_turn') {
+      const focusTitle = (topicTitle || examDescription || 'Esame Orale').trim();
+      const sourceText =
+        (lessonContent || '').trim() ||
+        extractRelevantChunks(allFiles, `${focusTitle} ${examDescription || ''}`, 18000);
+      const turns = Array.isArray(oralHistory) ? oralHistory : [];
+
+      if (finishOral) {
+        const evalSystem = `Sei un professore universitario ordinario alla fine di un esame orale sull'argomento "${focusTitle}" (materia: "${examDescription || 'Studio'}").
+Valuta l'intera interrogazione orale dello studente con rigore accademico ma spirito costruttivo.
+Restituisci ESCLUSIVAMENTE un JSON valido:
+{
+  "grade": 27,
+  "laude": false,
+  "verdict": "Giudizio sintetico in 2-3 frasi",
+  "strengths": ["punto forte 1", "punto forte 2"],
+  "missingPoints": ["concetto dimenticato o impreciso 1", "concetto 2"],
+  "honorsQuestion": "Una domanda finale da 30 e Lode su cui esercitarsi"
+}`;
+        const evalUser = `TRASCRIZIONE DELL'ESAME ORALE:\n${turns
+          .map((t) => `${t.role === 'professor' ? 'PROFESSORE' : 'STUDENTE'}: ${t.text}`)
+          .join('\n')}\n\nMATERIALE DI RIFERIMENTO:\n${sourceText.slice(0, 12000)}`;
+
+        const { text, modelUsed } = await generateAI({
+          tier: 'light',
+          systemPrompt: evalSystem,
+          messages: [{ role: 'user', content: evalUser }],
+          temperature: 0.2,
+          maxTokens: 1800,
+          jsonMode: true,
+        });
+        const report = safeParseJson(text, {
+          grade: 24,
+          laude: false,
+          verdict: 'Buona prova complessiva con margini di miglioramento sui dettagli tecnici.',
+          strengths: ['Esposizione ordinata'],
+          missingPoints: ['Approfondire i criteri classificativi e i valori numerici'],
+          honorsQuestion: `Qual e la correlazione fisiopatologica piu critica in ${focusTitle}?`,
+        });
+        await recordUsage();
+        return jsonResponse({ report, modelUsed });
+      }
+
+      const turnSystem = `Sei un professore universitario esaminatore che conduce un ESAME ORALE realistico, stimolante e diretto in italiano su "${focusTitle}" (${examDescription || 'Esame'}).
+REGOLE:
+1. Se l'interrogazione e appena iniziata (nessuna risposta dello studente), saluta brevemente in 1 frase e fai SUBITO la prima domanda d'esame chiara e mirata.
+2. Se lo studente ha appena risposto:
+   - Dai un feedback rapidissimo (1-2 frasi) dicendo cosa e corretto e cosa manca/e impreciso.
+   - Poi fai la domanda successiva (o di approfondimento), naturale da ascoltare a voce (niente markdown, niente elenchi puntati, solo italiano parlato chiaro e scorrevole, max 90 parole).
+Restituisci ESCLUSIVAMENTE JSON valido:
+{
+  "professorMessage": "Testo naturale da leggere a voce allo studente",
+  "microFeedback": "Breve valutazione della risposta precedente (vuoto al primo turno)",
+  "turnScore": 8
+}`;
+
+      const turnUser = `ARGOMENTO: "${focusTitle}"
+STORICO INTERROGAZIONE:
+${turns.length > 0 ? turns.map((t) => `${t.role === 'professor' ? 'PROFESSORE' : 'STUDENTE'}: ${t.text}`).join('\n') : '(Inizio esame: poni la prima domanda)'}
+
+MATERIALE DI RIFERIMENTO:\n${sourceText.slice(0, 14000)}`;
+
+      const { text, modelUsed } = await generateAI({
+        tier: 'light',
+        systemPrompt: turnSystem,
+        messages: [{ role: 'user', content: turnUser }],
+        temperature: 0.35,
+        maxTokens: 1200,
+        jsonMode: true,
+      });
+      const parsed = safeParseJson(text, null);
+      return jsonResponse({
+        professorMessage: parsed?.professorMessage || `Bene, iniziamo l'esame su ${focusTitle}. Mi parli dei concetti fondamentali e della classificazione principale.`,
+        microFeedback: parsed?.microFeedback || '',
+        turnScore: Number(parsed?.turnScore) || null,
+        modelUsed,
+      });
+    }
+
+    // -------------------------------------------------------------
+    // AZIONE 2D: MODALITA PODCAST / AUDIO-RIASSUNTO DIALOGATO (STILE NOTEBOOKLM)
+    // -------------------------------------------------------------
+    if (action === 'generate_podcast_script') {
+      const focusTitle = (topicTitle || examDescription || 'Podcast di Ripasso').trim();
+      const sourceText =
+        (lessonContent || '').trim() ||
+        extractRelevantChunks(allFiles, `${focusTitle} ${examDescription || ''}`, 18000);
+
+      const podSystem = `Sei un autore di podcast didattici in stile NotebookLM per studenti universitari italiani.
+Trasforma il contenuto della lezione in un AUDIO-RIASSUNTO DIALOGATO coinvolgente di 3-5 minuti tra due voci:
+- "Marco" (conduttore curioso, fa le domande giuste che uno studente avrebbe in testa)
+- "Elena" (professoressa brillante, spiega in modo vivido, memorabile, con analogie, numeri esatti e consigli d'esame)
+
+Restituisci ESCLUSIVAMENTE un JSON valido:
+{
+  "title": "Titolo accattivante dell'episodio",
+  "durationEstimate": "4 min",
+  "segments": [
+    { "speaker": "Marco", "text": "Battuta naturale da leggere a voce (niente markdown o simboli strani)" },
+    { "speaker": "Elena", "text": "Spiegazione chiara e ricca di concetti chiave reali" }
+  ]
+}
+Genera 12-16 battute dense di contenuto reale (mai banali), perfette da ascoltare in autobus o prima dell'esame.`;
+
+      const podUser = `LEZIONE: "${focusTitle}" (${examDescription || 'Studio'})
+CONTENUTO:\n${sourceText.slice(0, 16000)}`;
+
+      if (stream) {
+        const encoder = new TextEncoder();
+        const sseStream = new ReadableStream({
+          async start(controller) {
+            const sendEvent = (evt) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(evt)}\n\n`));
+            try {
+              sendEvent({ type: 'status', text: 'Scrittura episodio Podcast di ripasso...' });
+              const { fullText, modelUsed } = await streamAIToWriter({
+                tier: 'light',
+                systemPrompt: podSystem,
+                messages: [{ role: 'user', content: podUser }],
+                temperature: 0.45,
+                maxTokens: 4500,
+                sendEvent: (evt) => { if (evt.type === 'meta') sendEvent(evt); },
+              });
+              const parsed = safeParseJson(fullText, null);
+              if (!parsed || !Array.isArray(parsed.segments) || parsed.segments.length === 0) {
+                sendEvent({ type: 'error', error: 'Impossibile generare il podcast. Riprova.' });
+              } else {
+                await recordUsage();
+                sendEvent({ type: 'done', podcast: parsed, modelUsed });
+              }
+            } catch (err) {
+              sendEvent({ type: 'error', error: err.message || 'Errore generazione podcast.' });
+            } finally {
+              controller.close();
+            }
+          },
+        });
+        return new Response(sseStream, {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive' },
+        });
+      }
+
+      const { text, modelUsed } = await generateAI({
+        tier: 'light',
+        systemPrompt: podSystem,
+        messages: [{ role: 'user', content: podUser }],
+        temperature: 0.45,
+        maxTokens: 4500,
+        jsonMode: true,
+      });
+      const podcast = safeParseJson(text, null);
+      if (!podcast?.segments?.length) return jsonResponse({ error: 'Impossibile generare il podcast.' }, 500);
+      await recordUsage();
+      return jsonResponse({ podcast, modelUsed });
+    }
+
+    // -------------------------------------------------------------
+    // AZIONE 2E: GLOSSARIO & FORMULARIO AUTOMATICO DEL CORSO
+    // -------------------------------------------------------------
+    if (action === 'generate_glossary') {
+      const focusTitle = (examDescription || topicTitle || 'Corso').trim();
+      const sourceText =
+        (lessonContent || '').trim() ||
+        extractRelevantChunks(allFiles, focusTitle, 24000);
+
+      const glSystem = `Sei un curatore editoriale universitario. Estrai dal materiale un GLOSSARIO & FORMULARIO completo, ricercabile e ad alta densita d'esame (20-35 voci).
+Restituisci ESCLUSIVAMENTE un JSON valido:
+{
+  "entries": [
+    {
+      "term": "Termine, segno, legge, formula o classificazione",
+      "category": "Definizione" | "Formula" | "Classificazione" | "Valore/Cut-off" | "Manovra/Test",
+      "definition": "Spiegazione precisa, autonoma e completa (1-3 frasi)",
+      "formulaOrValue": "Eventuale formula, soglia numerica, range o sigla esatta (oppure stringa vuota)"
+    }
+  ]
+}
+Ordina le voci in ordine alfabetico per "term".`;
+
+      const glUser = `CORSO: "${focusTitle}"
+MATERIALE:\n${sourceText.slice(0, 24000)}`;
+
+      if (stream) {
+        const encoder = new TextEncoder();
+        const sseStream = new ReadableStream({
+          async start(controller) {
+            const sendEvent = (evt) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(evt)}\n\n`));
+            try {
+              sendEvent({ type: 'status', text: 'Estrazione definizioni, formule e cut-off...' });
+              const { fullText, modelUsed } = await streamAIToWriter({
+                tier: 'light',
+                systemPrompt: glSystem,
+                messages: [{ role: 'user', content: glUser }],
+                temperature: 0.2,
+                maxTokens: 5500,
+                sendEvent: (evt) => { if (evt.type === 'meta') sendEvent(evt); },
+              });
+              const parsed = safeParseJson(fullText, null);
+              const entries = Array.isArray(parsed?.entries) ? parsed.entries : [];
+              if (entries.length === 0) {
+                sendEvent({ type: 'error', error: 'Impossibile estrarre il glossario. Riprova.' });
+              } else {
+                await recordUsage();
+                sendEvent({ type: 'done', entries, modelUsed });
+              }
+            } catch (err) {
+              sendEvent({ type: 'error', error: err.message || 'Errore estrazione glossario.' });
+            } finally {
+              controller.close();
+            }
+          },
+        });
+        return new Response(sseStream, {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive' },
+        });
+      }
+
+      const { text, modelUsed } = await generateAI({
+        tier: 'light',
+        systemPrompt: glSystem,
+        messages: [{ role: 'user', content: glUser }],
+        temperature: 0.2,
+        maxTokens: 5500,
+        jsonMode: true,
+      });
+      const entries = safeParseJson(text, null)?.entries || [];
+      if (entries.length === 0) return jsonResponse({ error: 'Impossibile estrarre il glossario.' }, 500);
+      await recordUsage();
+      return jsonResponse({ entries, modelUsed });
+    }
+
+    // -------------------------------------------------------------
+    // AZIONE 2F: SBOBINA & COMPENDIO DA LEZIONE REGISTRATA IN AULA
+    // -------------------------------------------------------------
+    if (action === 'transcribe_lecture_to_notes') {
+      let rawTranscript = String(transcriptText || '').trim();
+      if (!rawTranscript && audioBase64) {
+        const tr = await transcribeAudio({ audioBase64, audioMimeType });
+        rawTranscript = (tr?.text || '').trim();
+      }
+      if (!rawTranscript) {
+        return jsonResponse({ error: 'Nessun audio o trascrizione fornita.' }, 400);
+      }
+
+      const notesSystem = `Sei un esperto sbobinatore universitario. Trasforma la trascrizione grezza di una lezione registrata in aula in una SBOBINA PULITA, STRUTTURATA E COMPLETA in Markdown:
+- Correggi errori di dettatura, eliminando intercalari ("cioe", "allora", "ehm"), ma SENZA perdere nessun concetto tecnico, numero, esempio o precisazione del professore.
+- Organizza con titoli ## e ### chiari, grassetti sui termini chiave, eventuali tabelle Markdown, box callout (> **Nota del Docente:** ...) e chiudi con "## Verifica Rapida (Vero o Falso)" con 3 domande.`;
+
+      const notesUser = `MATERIA: "${examDescription || 'Lezione in Aula'}"
+TITOLO LEZIONE: "${topicTitle || 'Sbobina Lezione'}"
+TRASCRIZIONE GREZZA:\n${rawTranscript.slice(0, 35000)}`;
+
+      const { text, modelUsed } = await generateAI({
+        tier: 'light',
+        systemPrompt: notesSystem,
+        messages: [{ role: 'user', content: notesUser }],
+        temperature: 0.25,
+        maxTokens: 8192,
+      });
+
+      await recordUsage();
+      return jsonResponse({
+        transcript: rawTranscript,
+        notes: text || rawTranscript,
         modelUsed,
       });
     }

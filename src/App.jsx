@@ -79,13 +79,28 @@ import {
   VolumeX,
   Eye,
   Copy,
-  Pencil
+  Pencil,
+  Headphones,
+  Layers,
+  Share2,
+  BookMarked,
+  FileAudio,
+  AlertTriangle
 } from 'lucide-react';
 
 import LandingPage from './components/LandingPage.jsx';
 import ConceptMapView from './components/ConceptMapView.jsx';
 import BillingModal from './components/BillingModal.jsx';
 import QuickTrueFalseWidget, { splitLessonAndTrueFalse } from './components/QuickTrueFalseWidget.jsx';
+import OralExamModal from './components/OralExamModal.jsx';
+import FlashcardsView from './components/FlashcardsView.jsx';
+import PodcastPlayerModal from './components/PodcastPlayerModal.jsx';
+import LectureRecorderModal from './components/LectureRecorderModal.jsx';
+import ErrorBankModal from './components/ErrorBankModal.jsx';
+import PomodoroStreakBar from './components/PomodoroStreakBar.jsx';
+import GlossaryModal from './components/GlossaryModal.jsx';
+import PublicShareView from './components/PublicShareView.jsx';
+import { exportLessonToWord, exportFullCoursePDF } from './utils/exportUtils.js';
 import {
   callAiApi,
   streamAiApi,
@@ -112,6 +127,8 @@ import {
   saveChatToCloud, 
   deleteChatFromCloud,
   fetchUserProfile,
+  createSharedItem,
+  fetchSharedItem,
   setSubscriptionActive,
   cancelUserSubscription,
   isValidUUID
@@ -790,7 +807,25 @@ function MainAppContent() {
   const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
   const [billingReason, setBillingReason] = useState('');
   const [usageInfo, setUsageInfo] = useState(null);
-  const [lessonStudyTab, setLessonStudyTab] = useState('compendio'); // 'compendio' | 'mappa'
+  const [lessonStudyTab, setLessonStudyTab] = useState('compendio'); // 'compendio' | 'mappa' | 'flashcards'
+  const [isOralExamOpen, setIsOralExamOpen] = useState(false);
+  const [isPodcastOpen, setIsPodcastOpen] = useState(false);
+  const [isLectureRecorderOpen, setIsLectureRecorderOpen] = useState(false);
+  const [isErrorBankOpen, setIsErrorBankOpen] = useState(false);
+  const [isGlossaryOpen, setIsGlossaryOpen] = useState(false);
+  const [shareToast, setShareToast] = useState('');
+  const [publicSharedItem, setPublicSharedItem] = useState(null);
+
+  // Caricamento link pubblico condiviso (?share=...)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const shareId = params.get('share');
+    if (!shareId) return;
+    fetchSharedItem(shareId).then((item) => {
+      if (item) setPublicSharedItem(item);
+    });
+  }, []);
 
   // Quando si cambia lezione o giorno, torna sempre al Compendio della nuova lezione
   useEffect(() => {
@@ -2754,7 +2789,30 @@ function MainAppContent() {
         });
       }
 
-      const updatedProj = { ...activeProject, quizHistory: updatedHistory, schedule: updatedSchedule };
+      // Salva automaticamente in Banca degli Errori le domande del quiz sbagliate
+      const existingErrors = activeProject.errorBank || [];
+      const newQuizErrors = [];
+      (quizQuestions || []).forEach((q) => {
+        const ev = immediateEvaluations[q.id];
+        const isWrong = ev ? (ev.isCorrect === false || (typeof ev.score === 'number' && ev.score < 18)) : false;
+        if (isWrong && q.question && !existingErrors.some((e) => e.question === q.question)) {
+          newQuizErrors.push({
+            id: `err_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            question: q.question,
+            correctAnswer: String(q.correctAnswer || q.idealAnswerCriteria || 'Vedi spiegazione'),
+            explanation: q.explanation || ev?.feedback || '',
+            topicTitle: currentSelectedTopic?.title || (selectedTopicsForQuiz || []).join(', ') || activeProject.description || 'Quiz',
+            createdAt: new Date().toISOString(),
+          });
+        }
+      });
+
+      const updatedProj = {
+        ...activeProject,
+        quizHistory: updatedHistory,
+        schedule: updatedSchedule,
+        errorBank: [...newQuizErrors, ...existingErrors],
+      };
       setActiveProject(updatedProj);
       setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProj : p));
       if (user) {
@@ -3055,6 +3113,138 @@ function MainAppContent() {
     }
   };
 
+  const handleSaveFlashcards = (nextCards) => {
+    if (!activeProject) return;
+    const updatedProject = { ...activeProject, flashcards: nextCards };
+    setActiveProject(updatedProject);
+    setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProject : p));
+    if (user?.id) saveProjectToCloud(user.id, updatedProject);
+  };
+
+  const handleAddErrorToBank = ({ question, correctAnswer, explanation = '', topicTitle = '' }) => {
+    if (!activeProject || !question) return;
+    const existing = activeProject.errorBank || [];
+    if (existing.some((e) => e.question === question)) return;
+    const newEntry = {
+      id: `err_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      question,
+      correctAnswer: String(correctAnswer || ''),
+      explanation,
+      topicTitle: topicTitle || currentSelectedTopic?.title || activeProject.description || 'Ripasso',
+      createdAt: new Date().toISOString(),
+    };
+    const updatedProject = { ...activeProject, errorBank: [newEntry, ...existing] };
+    setActiveProject(updatedProject);
+    setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProject : p));
+    if (user?.id) saveProjectToCloud(user.id, updatedProject);
+  };
+
+  const handleResolveError = (errId) => {
+    if (!activeProject) return;
+    const updatedProject = {
+      ...activeProject,
+      errorBank: (activeProject.errorBank || []).filter((e) => e.id !== errId),
+    };
+    setActiveProject(updatedProject);
+    setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProject : p));
+    if (user?.id) saveProjectToCloud(user.id, updatedProject);
+  };
+
+  const handleClearErrorBank = () => {
+    if (!activeProject) return;
+    const updatedProject = { ...activeProject, errorBank: [] };
+    setActiveProject(updatedProject);
+    setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProject : p));
+    if (user?.id) saveProjectToCloud(user.id, updatedProject);
+  };
+
+  const handleSaveGlossary = (nextEntries) => {
+    if (!activeProject) return;
+    const updatedProject = { ...activeProject, glossary: nextEntries };
+    setActiveProject(updatedProject);
+    setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProject : p));
+    if (user?.id) saveProjectToCloud(user.id, updatedProject);
+  };
+
+  const handleSaveRecordedLecture = ({ title, notes }) => {
+    if (!activeProject || !notes) return;
+    const newTopicId = `rec_${Date.now()}`;
+    const targetDayNum = currentDayData?.dayNumber || activeProject.schedule?.[0]?.dayNumber || 1;
+    const updatedSchedule = (activeProject.schedule || []).map((d) =>
+      d.dayNumber === targetDayNum
+        ? {
+            ...d,
+            topics: [
+              ...(d.topics || []),
+              {
+                id: newTopicId,
+                title: title || 'Sbobina Lezione in Aula',
+                completed: false,
+                lesson: notes,
+              },
+            ],
+          }
+        : d
+    );
+    const updatedProject = { ...activeProject, schedule: updatedSchedule };
+    setActiveProject(updatedProject);
+    setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProject : p));
+    if (user?.id) saveProjectToCloud(user.id, updatedProject);
+    setSelectedDayNumber(targetDayNum);
+    setSelectedTopicId(newTopicId);
+    setLessonStudyTab('compendio');
+    setCurrentView('day_detail');
+  };
+
+  const handleShareCurrentLesson = async () => {
+    if (!user?.id) {
+      alert('Accedi al tuo account per creare un link pubblico condivisibile.');
+      return;
+    }
+    if (!currentSelectedTopic?.lesson) return;
+    try {
+      const { cleanLesson } = splitLessonAndTrueFalse(currentSelectedTopic.lesson);
+      const imagesMap = buildImagesMapFromFiles(activeProject?.files || []);
+      const res = await createSharedItem(user.id, {
+        itemType: 'lesson',
+        title: currentSelectedTopic.title || 'Lezione MinervaAI',
+        subtitle: activeProject?.description || 'Compendio Didattico',
+        payload: { lesson: cleanLesson, imagesMap },
+      });
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(res.url);
+      }
+      setShareToast(`Link copiato! Condividilo su WhatsApp/Telegram: ${res.url}`);
+      setTimeout(() => setShareToast(''), 5500);
+    } catch (err) {
+      alert(err.message || 'Errore nella creazione del link pubblico.');
+    }
+  };
+
+  const handleDownloadLessonWord = () => {
+    if (!wysiwygEditorRef.current || !currentSelectedTopic) return;
+    const { questions } = splitLessonAndTrueFalse(currentSelectedTopic?.lesson || '');
+    exportLessonToWord({
+      topicTitle: currentSelectedTopic.title || 'Lezione',
+      examName: activeProject?.description || 'Studio',
+      bodyHtml: wysiwygEditorRef.current.innerHTML,
+      tfQuestions: questions,
+    });
+  };
+
+  const handleDownloadFullCoursePDF = async () => {
+    if (!activeProject) return;
+    const dbData = await getProjectDataFromDB(activeProject.id);
+    const filesForImgs = dbData?.files?.length ? dbData.files : (activeProject.files || []);
+    const imagesMap = buildImagesMapFromFiles(filesForImgs);
+    exportFullCoursePDF({
+      activeProject,
+      renderMarkdownAndLatexToHtml,
+      splitLessonAndTrueFalse,
+      imagesMap,
+    });
+  };
+
   // Lettore vocale integrato (Audio-Lezione TTS stile Algor Education)
   const handleStopSpeaking = () => {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
@@ -3114,6 +3304,21 @@ function MainAppContent() {
     setHasAcceptedTos(true);
   };
 
+
+  if (publicSharedItem) {
+    return (
+      <PublicShareView
+        sharedItem={publicSharedItem}
+        renderMarkdownAndLatexToHtml={renderMarkdownAndLatexToHtml}
+        onTryMinerva={() => {
+          setPublicSharedItem(null);
+          if (typeof window !== 'undefined') {
+            window.history.replaceState({}, '', window.location.pathname);
+          }
+        }}
+      />
+    );
+  }
 
   if (isAuthInitializing) {
     return (
@@ -4902,13 +5107,51 @@ function MainAppContent() {
                 <ArrowLeft size={14} />
                 <span>Torna alla Chat</span>
               </button>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   onClick={() => setCurrentView('concept_maps')}
                   className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-1.5 rounded-full flex items-center gap-1.5 font-semibold shadow-sm transition"
                 >
                   <Network size={13} />
-                  <span>Mappe Concettuali ({(activeProject?.conceptMaps || []).length})</span>
+                  <span>Mappe ({(activeProject?.conceptMaps || []).length})</span>
+                </button>
+                <button
+                  onClick={() => setIsOralExamOpen(true)}
+                  className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-full flex items-center gap-1.5 font-semibold shadow-sm transition"
+                  title="Simula un esame orale con il Professore AI a voce"
+                >
+                  <GraduationCap size={13} />
+                  <span>Esame Orale</span>
+                </button>
+                <button
+                  onClick={() => setIsLectureRecorderOpen(true)}
+                  className="text-xs bg-rose-600 hover:bg-rose-500 text-white px-3.5 py-1.5 rounded-full flex items-center gap-1.5 font-semibold shadow-sm transition"
+                  title="Registra una lezione in aula o carica un audio per sbobinarla"
+                >
+                  <FileAudio size={13} />
+                  <span>Sbobina Aula</span>
+                </button>
+                <button
+                  onClick={() => setIsErrorBankOpen(true)}
+                  className="text-xs bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-300 border border-amber-500/30 px-3 py-1.5 rounded-full flex items-center gap-1.5 font-semibold transition"
+                >
+                  <AlertTriangle size={13} />
+                  <span>Errori ({(activeProject?.errorBank || []).length})</span>
+                </button>
+                <button
+                  onClick={() => setIsGlossaryOpen(true)}
+                  className="text-xs bg-slate-100 dark:bg-geminiDarkSecondary hover:bg-indigo-500/15 border border-geminiBorder px-3 py-1.5 rounded-full flex items-center gap-1.5 font-semibold transition"
+                >
+                  <BookMarked size={13} className="text-indigo-500" />
+                  <span>Glossario</span>
+                </button>
+                <button
+                  onClick={handleDownloadFullCoursePDF}
+                  className="text-xs bg-slate-100 dark:bg-geminiDarkSecondary hover:bg-indigo-500/15 border border-geminiBorder px-3 py-1.5 rounded-full flex items-center gap-1.5 font-semibold transition"
+                  title="Esporta tutto il corso in un unico PDF rilegato con copertina e indice"
+                >
+                  <Download size={13} className="text-indigo-500" />
+                  <span>PDF Corso</span>
                 </button>
                 <button
                   onClick={() => openBillingWithReason('')}
@@ -5250,12 +5493,44 @@ function MainAppContent() {
                     }`}
                   >
                     <Network size={13} />
-                    <span>Mappa Interattiva</span>
+                    <span>Mappa</span>
+                  </button>
+                  <button
+                    onClick={() => { handleStopSpeaking(); setLessonStudyTab('flashcards'); }}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
+                      lessonStudyTab === 'flashcards'
+                        ? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-sm'
+                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Layers size={13} />
+                    <span>Flashcard</span>
                   </button>
                 </div>
               </div>
               
               <div className="flex items-center gap-1.5 flex-wrap">
+                <PomodoroStreakBar />
+                {/* ESAME ORALE VOCALE */}
+                <button
+                  onClick={() => setIsOralExamOpen(true)}
+                  disabled={!currentSelectedTopic?.lesson}
+                  className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-xl border bg-indigo-500/10 hover:bg-indigo-500/20 disabled:opacity-40 text-indigo-600 dark:text-indigo-300 border-indigo-500/30 transition"
+                  title="Simula interrogazione orale a voce su questa lezione"
+                >
+                  <GraduationCap size={14} />
+                  <span className="hidden lg:inline">Orale</span>
+                </button>
+                {/* PODCAST DI RIPASSO */}
+                <button
+                  onClick={() => setIsPodcastOpen(true)}
+                  disabled={!currentSelectedTopic?.lesson}
+                  className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-xl border bg-fuchsia-500/10 hover:bg-fuchsia-500/20 disabled:opacity-40 text-fuchsia-600 dark:text-fuchsia-300 border-fuchsia-500/30 transition"
+                  title="Genera un Podcast dialogato di ripasso (3-5 min)"
+                >
+                  <Headphones size={14} />
+                  <span className="hidden lg:inline">Podcast</span>
+                </button>
                 {/* AUDIO-LEZIONE TTS */}
                 <button
                   onClick={handleToggleSpeakLesson}
@@ -5312,7 +5587,22 @@ function MainAppContent() {
               </div>
             )}
 
-            <div className={`flex-1 flex flex-col md:flex-row h-full w-full overflow-hidden relative ${lessonStudyTab === 'mappa' ? 'hidden' : ''}`}>
+            {lessonStudyTab === 'flashcards' && (
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-6xl mx-auto w-full">
+                <FlashcardsView
+                  theme={theme}
+                  activeProject={activeProject}
+                  topicTitle={currentSelectedTopic?.title || activeProject?.description || ''}
+                  lessonContent={currentSelectedTopic?.lesson || ''}
+                  cards={activeProject?.flashcards || []}
+                  errorBank={activeProject?.errorBank || []}
+                  onSaveCards={handleSaveFlashcards}
+                  onQuotaExceeded={(msg) => openBillingWithReason(msg)}
+                />
+              </div>
+            )}
+
+            <div className={`flex-1 flex flex-col md:flex-row h-full w-full overflow-hidden relative ${lessonStudyTab !== 'compendio' ? 'hidden' : ''}`}>
 
               {/* SIDEBAR SINISTRA CORSO STILE ALGOR (Sezioni / Pagine + Vedi progressi + Avvia verifica) */}
               <aside className={`hidden lg:flex w-64 shrink-0 flex-col border-r overflow-hidden ${
@@ -5508,17 +5798,35 @@ function MainAppContent() {
                     </div>
 
                     {currentSelectedTopic && (
-                      <div className="flex items-center gap-2 ml-auto shrink-0">
+                      <div className="flex items-center gap-1.5 ml-auto shrink-0 flex-wrap">
                         {currentSelectedTopic.lesson && (
-                          <button
-                            onClick={handleDownloadLessonPDF}
-                            disabled={isExportingPDF}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border border-geminiBorder/70 hover:bg-geminiHover transition"
-                            title="Scarica il documento PDF formattato di questa lezione"
-                          >
-                            {isExportingPDF ? <RefreshCw size={12} className="animate-spin" /> : <Download size={12} />}
-                            <span>PDF</span>
-                          </button>
+                          <>
+                            <button
+                              onClick={handleShareCurrentLesson}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold border border-geminiBorder/70 hover:bg-geminiHover transition"
+                              title="Crea un link pubblico in sola lettura da condividere"
+                            >
+                              <Share2 size={12} className="text-indigo-400" />
+                              <span className="hidden sm:inline">Condividi</span>
+                            </button>
+                            <button
+                              onClick={handleDownloadLessonWord}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold border border-geminiBorder/70 hover:bg-geminiHover transition"
+                              title="Esporta questa lezione in formato Word (.doc)"
+                            >
+                              <FileText size={12} className="text-blue-400" />
+                              <span className="hidden sm:inline">Word</span>
+                            </button>
+                            <button
+                              onClick={handleDownloadLessonPDF}
+                              disabled={isExportingPDF}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border border-geminiBorder/70 hover:bg-geminiHover transition"
+                              title="Scarica il documento PDF formattato di questa lezione"
+                            >
+                              {isExportingPDF ? <RefreshCw size={12} className="animate-spin" /> : <Download size={12} />}
+                              <span>PDF</span>
+                            </button>
+                          </>
                         )}
 
                         <button
@@ -5725,10 +6033,11 @@ function MainAppContent() {
                           className={`wysiwyg-editor focus:outline-none select-text transition ${readingComfortMode ? 'reading-comfort rounded-2xl p-5' : ''}`}
                         />
 
-                        {/* CARD INTERATTIVE VERO O FALSO STILE ALGOR (VERDE SE GIUSTO, ROSSO SE SBAGLIATO) */}
+                        {/* CARD INTERATTIVE VERO O FALSO STILE ALGOR (VERDE SE GIUSTO, ROSSO SE SBAGLIATO -> SALVA IN BANCA ERRORI) */}
                         <QuickTrueFalseWidget
                           questions={splitLessonAndTrueFalse(currentSelectedTopic?.lesson || '').questions}
                           topicId={currentSelectedTopic?.id || ''}
+                          onWrongAnswer={(err) => handleAddErrorToBank({ ...err, topicTitle: currentSelectedTopic?.title || '' })}
                         />
                       </div>
 
@@ -7039,6 +7348,64 @@ function MainAppContent() {
           </div>
         </div>
       )}
+
+      {shareToast && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl bg-emerald-600 text-white text-xs font-bold shadow-2xl max-w-[92vw] truncate">
+          {shareToast}
+        </div>
+      )}
+
+      <OralExamModal
+        isOpen={isOralExamOpen}
+        onClose={() => setIsOralExamOpen(false)}
+        theme={theme}
+        topicTitle={currentSelectedTopic?.title || activeProject?.description || ''}
+        examDescription={activeProject?.description || ''}
+        lessonContent={currentSelectedTopic?.lesson || ''}
+        onQuotaExceeded={(msg) => openBillingWithReason(msg)}
+      />
+
+      <PodcastPlayerModal
+        isOpen={isPodcastOpen}
+        onClose={() => setIsPodcastOpen(false)}
+        theme={theme}
+        topicTitle={currentSelectedTopic?.title || activeProject?.description || ''}
+        examDescription={activeProject?.description || ''}
+        lessonContent={currentSelectedTopic?.lesson || ''}
+        onQuotaExceeded={(msg) => openBillingWithReason(msg)}
+      />
+
+      <LectureRecorderModal
+        isOpen={isLectureRecorderOpen}
+        onClose={() => setIsLectureRecorderOpen(false)}
+        theme={theme}
+        examDescription={activeProject?.description || ''}
+        onSaveAsLesson={handleSaveRecordedLecture}
+        onQuotaExceeded={(msg) => openBillingWithReason(msg)}
+      />
+
+      <ErrorBankModal
+        isOpen={isErrorBankOpen}
+        onClose={() => setIsErrorBankOpen(false)}
+        theme={theme}
+        errorBank={activeProject?.errorBank || []}
+        onResolveError={handleResolveError}
+        onClearAll={handleClearErrorBank}
+        onTurnIntoFlashcards={() => {
+          setCurrentView('day_detail');
+          setLessonStudyTab('flashcards');
+        }}
+      />
+
+      <GlossaryModal
+        isOpen={isGlossaryOpen}
+        onClose={() => setIsGlossaryOpen(false)}
+        theme={theme}
+        activeProject={activeProject}
+        entries={activeProject?.glossary || []}
+        onSaveEntries={handleSaveGlossary}
+        onQuotaExceeded={(msg) => openBillingWithReason(msg)}
+      />
 
       <BillingModal
         isOpen={isBillingModalOpen}
