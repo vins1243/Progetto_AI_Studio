@@ -617,6 +617,9 @@ function MainAppContent() {
   const [readingComfortMode, setReadingComfortMode] = useState(false);
   const [isSpeakingLesson, setIsSpeakingLesson] = useState(false);
   const [speechRate, setSpeechRate] = useState(1);
+  const [isTutorDrawerOpen, setIsTutorDrawerOpen] = useState(false);
+  const [showEditorToolbar, setShowEditorToolbar] = useState(false);
+  const [expandedSections, setExpandedSections] = useState({});
   const [isCheckingPayment, setIsCheckingPayment] = useState(false);
   const [isSubManageModalOpen, setIsSubManageModalOpen] = useState(false);
   const [isCropModalOpen, setIsCropModalOpen] = useState(false);
@@ -5055,15 +5058,114 @@ function MainAppContent() {
               </div>
             )}
 
-            <div className={`flex-1 flex flex-col md:flex-row h-full w-full overflow-hidden ${lessonStudyTab === 'mappa' ? 'hidden' : ''}`}>
+            <div className={`flex-1 flex flex-col md:flex-row h-full w-full overflow-hidden relative ${lessonStudyTab === 'mappa' ? 'hidden' : ''}`}>
+
+              {/* SIDEBAR SINISTRA CORSO STILE ALGOR (Sezioni / Pagine + Vedi progressi + Avvia verifica) */}
+              <aside className={`hidden lg:flex w-64 shrink-0 flex-col border-r overflow-hidden ${
+                theme === 'light'
+                  ? 'bg-[#f8fafc] border-slate-200 text-slate-800'
+                  : 'bg-[#12141f] border-geminiBorder/60 text-gray-200'
+              }`}>
+                <div className="p-4 space-y-3 border-b border-geminiBorder/40">
+                  <div className="text-xs font-bold leading-snug line-clamp-2 opacity-90">
+                    {activeProject?.description || 'Progetto di Studio'}
+                  </div>
+                  <button
+                    onClick={() => { handleStopSpeaking(); setCurrentView('project'); }}
+                    className={`w-full py-2 px-3 rounded-xl text-xs font-semibold border flex items-center justify-center gap-2 transition ${
+                      theme === 'light'
+                        ? 'bg-white hover:bg-slate-100 border-slate-200 text-slate-700'
+                        : 'bg-[#171a26] hover:bg-geminiHover border-geminiBorder text-gray-200'
+                    }`}
+                  >
+                    <Target size={14} className="text-indigo-400" />
+                    <span>Vedi progressi</span>
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5">
+                  <div className="px-2 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    Pagine
+                  </div>
+                  {(activeProject?.schedule || []).map((day) => {
+                    const isCurrentDay = day.dayNumber === currentDayData?.dayNumber;
+                    const isOpen = expandedSections[day.dayNumber] ?? isCurrentDay;
+                    return (
+                      <div key={day.dayNumber} className="space-y-0.5">
+                        <button
+                          onClick={() => setExpandedSections(prev => ({ ...prev, [day.dayNumber]: !isOpen }))}
+                          className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-bold hover:bg-geminiHover/50 transition text-left"
+                        >
+                          <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform ${isOpen ? '' : '-rotate-90'}`} />
+                          <span className="truncate flex-1">Sezione {day.dayNumber}</span>
+                          <span className="text-[11px] text-slate-500">({(day.topics || []).length})</span>
+                        </button>
+                        {isOpen && (
+                          <div className="pl-4 space-y-0.5">
+                            {(day.topics || []).map((t) => {
+                              const isActiveTopic = isCurrentDay && currentSelectedTopic?.id === t.id;
+                              return (
+                                <button
+                                  key={t.id}
+                                  onClick={() => {
+                                    handleStopSpeaking();
+                                    setSelectedDayNumber(day.dayNumber);
+                                    setSelectedTopicId(t.id);
+                                    setFloatingPopup(null);
+                                    setSelectedImageEl(null);
+                                    setImageBoxRect(null);
+                                    lastLoadedTopicIdRef.current = null;
+                                  }}
+                                  className={`w-full text-left px-2.5 py-2 rounded-xl text-xs truncate transition flex items-center gap-2 ${
+                                    isActiveTopic
+                                      ? 'bg-indigo-600/20 text-indigo-300 font-bold'
+                                      : 'text-slate-400 hover:text-gray-200 hover:bg-geminiHover/40'
+                                  }`}
+                                  title={t.title}
+                                >
+                                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${t.completed ? 'bg-emerald-400' : isActiveTopic ? 'bg-indigo-400' : 'bg-slate-600'}`} />
+                                  <span className="truncate">{t.title}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* CTA IN BASSO STILE ALGOR */}
+                <div className="p-3 border-t border-geminiBorder/40 space-y-2">
+                  <button
+                    onClick={() => { handleStopSpeaking(); setLessonStudyTab('mappa'); }}
+                    className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 transition ${
+                      theme === 'light'
+                        ? 'bg-white hover:bg-slate-100 border-slate-200 text-slate-800'
+                        : 'bg-[#171a26] hover:bg-geminiHover border-geminiBorder text-gray-200'
+                    }`}
+                  >
+                    <Network size={14} className="text-teal-400" />
+                    <span>Mappa Concettuale</span>
+                  </button>
+                  <button
+                    onClick={handleOpenSingleLessonQuizModal}
+                    disabled={!currentSelectedTopic?.lesson}
+                    className="w-full py-2.5 px-3 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/25 transition"
+                  >
+                    <HelpCircle size={14} />
+                    <span>Avvia verifica</span>
+                  </button>
+                </div>
+              </aside>
               
-              {/* COLONNA SINISTRA: FOGLIO WYSIWYG CON EXPORT PDF E IMMAGINI */}
-              <div className="flex-1 flex flex-col h-full overflow-hidden border-r border-geminiBorder/40">
+              {/* AREA LETTURA CENTRALE PULITA STILE ALGOR */}
+              <div className="flex-1 flex flex-col h-full overflow-hidden">
                 
-                <div className="px-4 py-2 border-b border-geminiBorder/40 bg-geminiDarkSecondary/30 shrink-0 space-y-2">
+                <div className="px-4 sm:px-6 py-2 border-b border-geminiBorder/30 shrink-0 space-y-2">
                   
-                  <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1">
-                    <div className="flex items-center gap-1.5">
+                  <div className="flex items-center justify-between gap-2 overflow-x-auto">
+                    <div className="flex items-center gap-1.5 lg:hidden">
                       {(currentDayData?.topics || []).map(topic => (
                         <button
                           key={topic.id}
@@ -5076,7 +5178,7 @@ function MainAppContent() {
                           }}
                           className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 border ${
                             currentSelectedTopic?.id === topic.id
-                              ? 'bg-blue-600 text-white border-blue-500 shadow-sm'
+                              ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
                               : 'bg-geminiDarkSecondary text-gray-400 border-geminiBorder hover:text-gray-200'
                           }`}
                         >
@@ -5086,37 +5188,53 @@ function MainAppContent() {
                       ))}
                     </div>
 
+                    <div className="hidden lg:flex items-center gap-2 text-xs text-slate-400">
+                      <button
+                        onClick={() => setShowEditorToolbar(v => !v)}
+                        className={`px-2.5 py-1 rounded-lg border text-xs font-semibold transition ${
+                          showEditorToolbar
+                            ? 'bg-indigo-600/20 text-indigo-300 border-indigo-500/40'
+                            : 'border-geminiBorder/60 hover:text-white'
+                        }`}
+                      >
+                        {showEditorToolbar ? 'Nascondi strumenti' : '✏️ Formatta testo'}
+                      </button>
+                      {currentSelectedTopic?.lesson && (
+                        <button
+                          onClick={() => handleToggleTopicComplete(currentDayData.dayNumber, currentSelectedTopic.id)}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
+                            currentSelectedTopic.completed
+                              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                              : 'border-geminiBorder/60 hover:text-white'
+                          }`}
+                        >
+                          {currentSelectedTopic.completed ? <CheckCircle2 size={13} /> : <CheckSquare size={13} />}
+                          <span>{currentSelectedTopic.completed ? 'Studiato' : 'Segna studiato'}</span>
+                        </button>
+                      )}
+                    </div>
+
                     {currentSelectedTopic && (
-                      <div className="flex items-center gap-2 shrink-0">
-                        {/* TASTO SCARICA PDF */}
+                      <div className="flex items-center gap-2 ml-auto shrink-0">
                         {currentSelectedTopic.lesson && (
                           <button
                             onClick={handleDownloadLessonPDF}
                             disabled={isExportingPDF}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 transition shadow-sm"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border border-geminiBorder/70 hover:bg-geminiHover transition"
                             title="Scarica il documento PDF formattato di questa lezione"
                           >
                             {isExportingPDF ? <RefreshCw size={12} className="animate-spin" /> : <Download size={12} />}
-                            <span>Scarica PDF</span>
+                            <span>PDF</span>
                           </button>
                         )}
 
                         <button
-                          onClick={handleOpenSingleLessonQuizModal}
-                          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 transition shadow-sm"
-                          title="Avvia una verifica specifica solo su questa lezione"
-                        >
-                          <GraduationCap size={13} />
-                          <span>Verifica Lezione</span>
-                        </button>
-
-                        <button
                           onClick={() => handleGenerateLesson(currentDayData.dayNumber, currentSelectedTopic)}
                           disabled={isGeneratingLesson}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition shadow-sm ${
+                          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm ${
                             isGeneratingLesson 
                               ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
-                              : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/20'
+                              : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/25'
                           }`}
                         >
                           {isGeneratingLesson ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
@@ -5126,8 +5244,8 @@ function MainAppContent() {
                     )}
                   </div>
 
-                  {/* BARRA FORMATTAZIONE CON TASTO IMMAGINE */}
-                  {currentSelectedTopic?.lesson && (
+                  {/* BARRA FORMATTAZIONE (VISIBILE SOLO SU RICHIESTA PER LETTURA PULITA STILE ALGOR) */}
+                  {showEditorToolbar && currentSelectedTopic?.lesson && (
                     <div className="flex items-center gap-1 pt-1 overflow-x-auto text-xs text-gray-300 border-t border-geminiBorder/40">
                       
                       <select 
@@ -5264,39 +5382,21 @@ function MainAppContent() {
                       <div className="text-xs text-gray-400">Elaborazione con formule LaTeX e schemi didattici</div>
                     </div>
                   ) : currentSelectedTopic?.lesson ? (
-                    <div className="max-w-3xl mx-auto space-y-4">
-                      
-                      <div className="flex flex-wrap items-center justify-between text-xs text-gray-400 bg-geminiDarkSecondary/60 px-4 py-2 rounded-2xl border border-geminiBorder gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px]">✏️ <strong>Modifica testo attiva</strong> • Trascina gli angoli per ridimensionare le immagini</span>
-                          {currentSelectedTopic.quizScore && (
-                            <span className="bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-md border border-amber-500/30 text-[10px] font-bold">
-                              Verifica: {currentSelectedTopic.quizScore}/30
-                            </span>
-                          )}
+                    <div className="max-w-3xl mx-auto px-2 sm:px-6 py-4 space-y-4">
+                      {currentSelectedTopic.quizScore && (
+                        <div className="inline-flex items-center gap-1.5 bg-amber-500/15 text-amber-300 px-3 py-1 rounded-full border border-amber-500/30 text-xs font-bold">
+                          <GraduationCap size={13} /> Ultima verifica: {currentSelectedTopic.quizScore}/30
                         </div>
-                        
-                        <button
-                          onClick={() => handleToggleTopicComplete(currentDayData.dayNumber, currentSelectedTopic.id)}
-                          className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition ${
-                            currentSelectedTopic.completed 
-                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
-                              : 'bg-geminiHover text-gray-300 hover:text-white border border-geminiBorder'
-                          }`}
-                        >
-                          {currentSelectedTopic.completed ? <CheckCircle2 size={13} /> : <CheckSquare size={13} />}
-                          <span>{currentSelectedTopic.completed ? 'Studiato' : 'Segna studiato'}</span>
-                        </button>
-                      </div>
+                      )}
 
-                      <div className="bg-geminiDarkSecondary/70 border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-xl min-h-[520px]">
+                      <div className="min-h-[540px] pb-24">
                         <div
                           ref={wysiwygEditorRef}
                           contentEditable="true"
                           suppressContentEditableWarning={true}
                           onInput={handleEditorInput}
                           onPaste={handleEditorPaste}
-                          className={`wysiwyg-editor focus:outline-none select-text transition ${readingComfortMode ? 'reading-comfort rounded-2xl p-4' : ''}`}
+                          className={`wysiwyg-editor focus:outline-none select-text transition ${readingComfortMode ? 'reading-comfort rounded-2xl p-5' : ''}`}
                         />
                       </div>
 
@@ -5315,17 +5415,35 @@ function MainAppContent() {
 
               </div>
 
-              {/* COLONNA DESTRA: CHATBOT LEZIONE */}
-              <div className="w-full md:w-80 lg:w-96 h-80 md:h-full flex flex-col bg-geminiDarkSecondary border-l border-geminiBorder/60 shrink-0 overflow-hidden">
+              {/* PULSANTE FLUTTUANTE "CHIEDI ALL'AI" STILE ALGOR (IN BASSO A DESTRA) */}
+              {!isTutorDrawerOpen && (
+                <button
+                  onClick={() => setIsTutorDrawerOpen(true)}
+                  className="fixed bottom-6 right-6 z-30 flex items-center gap-2.5 pl-2.5 pr-4 py-2 rounded-full bg-[#171a26] hover:bg-[#222638] text-white border border-indigo-500/40 shadow-2xl shadow-indigo-500/25 transition hover:-translate-y-0.5"
+                >
+                  <span className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-teal-400 flex items-center justify-center shadow-md">
+                    <Sparkles size={15} className="text-white" />
+                  </span>
+                  <span className="text-xs font-bold">Chiedi all&apos;AI</span>
+                  <Send size={13} className="text-indigo-300" />
+                </button>
+              )}
+
+              {/* DRAWER LATERALE TUTOR AI (SI APRE SOLO SU RICHIESTA) */}
+              <div className={`${isTutorDrawerOpen ? 'flex' : 'hidden'} fixed md:static inset-y-0 right-0 z-40 w-full sm:w-96 h-full flex-col bg-geminiDarkSecondary border-l border-geminiBorder/60 shrink-0 overflow-hidden shadow-2xl`}>
                 
                 <div className="px-4 py-3 border-b border-geminiBorder/40 bg-geminiDarkSecondary flex items-center justify-between shrink-0">
                   <div className="flex items-center gap-2 text-xs font-bold text-gray-100">
-                    <Bot size={16} className="text-blue-400" />
+                    <Bot size={16} className="text-indigo-400" />
                     <span>Tutor della Lezione</span>
                   </div>
-                  <span className="text-[10px] text-gray-400 bg-geminiDark px-2 py-0.5 rounded-md border border-geminiBorder">
-                    Contestuale
-                  </span>
+                  <button
+                    onClick={() => setIsTutorDrawerOpen(false)}
+                    className="p-1 rounded-lg hover:bg-geminiHover text-gray-400 hover:text-white transition"
+                    title="Chiudi Tutor AI"
+                  >
+                    <X size={16} />
+                  </button>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-3 space-y-3 text-xs">
