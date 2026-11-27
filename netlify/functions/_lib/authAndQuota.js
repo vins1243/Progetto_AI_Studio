@@ -184,7 +184,10 @@ export function checkQuota(profile, bucket) {
     quizzes: Number(profile.usage_quiz_count || 0),
   };
 
-  if (!bucket) {
+  // Modalità test: blocco quote disattivato di default.
+  // Per riattivarlo al lancio commerciale, imposta ENFORCE_QUOTAS=true su Netlify.
+  const enforceQuotas = process.env.ENFORCE_QUOTAS === 'true';
+  if (!enforceQuotas || !bucket) {
     return { allowed: true, pro, limits, usage };
   }
 
