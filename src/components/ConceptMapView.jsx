@@ -137,7 +137,7 @@ const TREE_H_GAP = 28;
 const TREE_V_GAP = 72;
 
 // Calcola layout Mappa Mentale Bilaterale (sx/dx dal centro) oppure Albero Verticale
-function computeMapLayout(nodes, orientation = 'mindmap', collapsedIds = new Set()) {
+function computeMapLayout(nodes, orientation = 'mindmap', collapsedIds = new Set(), dragPreview = null) {
   if (!Array.isArray(nodes) || nodes.length === 0) {
     return { positioned: [], edges: [], width: 1200, height: 640, childCounts: new Map() };
   }
@@ -358,6 +358,14 @@ function computeMapLayout(nodes, orientation = 'mindmap', collapsedIds = new Set
     placeW(root.id, 48, 0);
   }
 
+  // Applica eventuali spostamenti manuali (drag & drop dei nodi)
+  for (const p of positioned) {
+    const manualDx = dragPreview && dragPreview.id === p.id ? dragPreview.dx : (p.dx || 0);
+    const manualDy = dragPreview && dragPreview.id === p.id ? dragPreview.dy : (p.dy || 0);
+    p.x += manualDx;
+    p.y += manualDy;
+  }
+
   const edges = [];
   for (const p of positioned) {
     if (p.id === root.id) continue;
@@ -372,6 +380,17 @@ function computeMapLayout(nodes, orientation = 'mindmap', collapsedIds = new Set
     }
   }
 
+  const minX = Math.min(...positioned.map((p) => p.x), 0);
+  const minY = Math.min(...positioned.map((p) => p.y), 0);
+  if (minX < 40 || minY < 40) {
+    const shiftX = minX < 40 ? 48 - minX : 0;
+    const shiftY = minY < 40 ? 48 - minY : 0;
+    for (const p of positioned) {
+      p.x += shiftX;
+      p.y += shiftY;
+    }
+  }
+
   const maxX = Math.max(...positioned.map((p) => p.x + p.w), 1100) + 72;
   const maxY = Math.max(...positioned.map((p) => p.y + p.h), 600) + 72;
 
@@ -381,6 +400,7 @@ function computeMapLayout(nodes, orientation = 'mindmap', collapsedIds = new Set
 export default function ConceptMapView({
   theme = 'dark',
   activeProject,
+  topicId = null,
   defaultTopicTitle = '',
   defaultLessonContent = '',
   maps = [],
@@ -401,9 +421,27 @@ export default function ConceptMapView({
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
 
   const [selectedNodeId, setSelectedNodeId] = useState(null);
+  const [editingNodeId, setEditingNodeId] = useState(null);
+  const [editingText, setEditingText] = useState('');
+  const [dragPreview, setDragPreview] = useState(null); // { id, dx, dy }
+  const dragNodeRef = useRef(null); // { id, startX, startY, origDx, origDy, moved }
   const [undoStack, setUndoStack] = useState([]);
   const svgRef = useRef(null);
   const canvasBoxRef = useRef(null);
+
+  // Se siamo dentro una lezione specifica (compact + topicId), filtra solo le mappe di QUESTA lezione
+  const visibleMaps = useMemo(() => {
+    if (!compact || !topicId) return maps;
+    const normTitle = String(defaultTopicTitle || '').trim().toLowerCase();
+    return (maps || []).filter((m) => {
+      if (m.topicId) return m.topicId === topicId;
+      if (normTitle && m.title) {
+        const mt = String(m.title).trim().toLowerCase();
+        return mt === normTitle || mt.includes(normTitle) || normTitle.includes(mt);
+      }
+      return false;
+    });
+  }, [maps, compact, topicId, defaultTopicTitle]);
 
   useEffect(() => {
     if (defaultTopicTitle) {
@@ -411,20 +449,32 @@ export default function ConceptMapView({
     }
   }, [defaultTopicTitle]);
 
+  // Quando cambia la lezione (topicId), aggiorna la mappa selezionata a quella di QUESTA lezione (o null se non esiste)
   useEffect(() => {
-    if (!selectedMapId && maps.length > 0) {
-      setSelectedMapId(maps[0].id);
+    if (compact && topicId) {
+      const firstMatch = visibleMaps[0]?.id || null;
+      setSelectedMapId(firstMatch);
+      setSelectedNodeId(null);
+      setEditingNodeId(null);
+      setCollapsedIds(new Set());
+    } else if (!selectedMapId && visibleMaps.length > 0) {
+      setSelectedMapId(visibleMaps[0].id);
     }
-  }, [maps, selectedMapId]);
+  }, [topicId, compact, visibleMaps.length]);
 
   const activeMap = useMemo(
-    () => maps.find((m) => m.id === selectedMapId) || maps[0] || null,
-    [maps, selectedMapId]
+    () => visibleMaps.find((m) => m.id === selectedMapId) || visibleMaps[0] || null,
+    [visibleMaps, selectedMapId]
   );
 
   const layout = useMemo(
-    () => computeMapLayout(activeMap?.nodes || [], orientation, collapsedIds),
-    [activeMap, orientation, collapsedIds]
+    () => computeMapLayout(activeMap?.nodes || [], orientation, collapsedIds, dragPreview),
+    [activeMap, orientation, collapsedIds, dragPreview]
+  );
+
+  const hasManualOffsets = useMemo(
+    () => Boolean(activeMap?.nodes?.some((n) => n.dx || n.dy)),
+    [activeMap]
   );
 
   const fitMapToViewport = () => {
@@ -448,9 +498,9 @@ export default function ConceptMapView({
 
   useEffect(() => {
     if (!activeMap?.id) return;
-    const t = setTimeout(() => fitMapToViewport(), 40);
+    const t = setTimeout(() => fitMapToViewport(), 60);
     return () => clearTimeout(t);
-  }, [activeMap?.id, orientation, layout.width, layout.height]);
+  }, [activeMap?.id, orientation]);
 
   const selectedNode = useMemo(
     () => activeMap?.nodes?.find((n) => n.id === selectedNodeId) || null,
@@ -499,12 +549,16 @@ export default function ConceptMapView({
       });
 
       if (data?.map) {
-        const nextMaps = [data.map, ...maps];
+        const taggedMap = {
+          ...data.map,
+          topicId: topicId || data.map.topicId || null,
+        };
+        const nextMaps = [taggedMap, ...maps];
         onSaveMaps?.(nextMaps);
-        setSelectedMapId(data.map.id);
-        setSelectedNodeId(data.map.nodes?.[0]?.id || null);
+        setSelectedMapId(taggedMap.id);
+        setSelectedNodeId(taggedMap.nodes?.[0]?.id || null);
         setCollapsedIds(new Set());
-        setZoom(0.88);
+        setZoom(0.72);
         setPan({ x: 0, y: 0 });
       }
     } catch (err) {
@@ -573,40 +627,241 @@ export default function ConceptMapView({
     commitMapUpdate(previous, false);
   };
 
+  const handleResetPositions = () => {
+    if (!activeMap) return;
+    const nextNodes = activeMap.nodes.map((n) => {
+      const copy = { ...n };
+      delete copy.dx;
+      delete copy.dy;
+      return copy;
+    });
+    commitMapUpdate({ ...activeMap, nodes: nextNodes });
+    setTimeout(() => fitMapToViewport(), 40);
+  };
+
+  const startInlineEdit = (node) => {
+    if (!node) return;
+    setSelectedNodeId(node.id);
+    setEditingNodeId(node.id);
+    setEditingText(node.label || '');
+  };
+
+  const commitInlineEdit = () => {
+    if (!editingNodeId) return;
+    const trimmed = editingText.trim();
+    if (trimmed) {
+      handleUpdateNode(editingNodeId, { label: trimmed });
+    }
+    setEditingNodeId(null);
+    setEditingText('');
+  };
+
+  // Export PNG 2x HD in puro Canvas2D (funziona su Safari, Chrome, Firefox, iOS/macOS senza blocchi foreignObject)
   const handleExportPng = () => {
-    if (!svgRef.current || !activeMap) return;
-    const serializer = new XMLSerializer();
-    const svgString = serializer.serializeToString(svgRef.current);
-    const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-    const url = URL.createObjectURL(svgBlob);
-    const img = new Image();
-    img.onload = () => {
+    if (!activeMap || !layout.positioned.length) return;
+    try {
       const scale = 2;
       const canvas = document.createElement('canvas');
-      canvas.width = layout.width * scale;
-      canvas.height = layout.height * scale;
+      canvas.width = Math.ceil(layout.width * scale);
+      canvas.height = Math.ceil(layout.height * scale);
       const ctx = canvas.getContext('2d');
-      ctx.fillStyle = theme === 'dark' ? '#120a10' : '#fdf7f9';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.scale(scale, scale);
-      ctx.drawImage(img, 0, 0);
-      URL.revokeObjectURL(url);
+      if (!ctx) return;
 
-      const link = document.createElement('a');
-      link.download = `${(activeMap.title || 'mappa-concettuale').replace(/[^a-z0-9]/gi, '_')}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
+      const isDark = theme === 'dark';
+      ctx.scale(scale, scale);
+
+      // Sfondo pulito
+      ctx.fillStyle = isDark ? '#120a10' : '#ffffff';
+      ctx.fillRect(0, 0, layout.width, layout.height);
+
+      // Helper rettangolo arrotondato compatibile ovunque
+      const drawRoundedRect = (x, y, w, h, r) => {
+        const radius = Math.min(r, w / 2, h / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.lineTo(x + w - radius, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+        ctx.lineTo(x + w, y + h - radius);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+        ctx.lineTo(x + radius, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+        ctx.lineTo(x, y + radius);
+        ctx.quadraticCurveTo(x, y, x + radius, y);
+        ctx.closePath();
+      };
+
+      // 1. Connettori curvi Bezier
+      layout.edges.forEach((e) => {
+        const st = COLOR_STYLES[e.to.branchColor] || COLOR_STYLES.crimson;
+        ctx.beginPath();
+        if (orientation === 'mindmap') {
+          const goesLeft = e.to.side === -1;
+          const x1 = goesLeft ? e.from.x : e.from.x + e.from.w;
+          const y1 = e.from.y + e.from.h / 2;
+          const x2 = goesLeft ? e.to.x + e.to.w : e.to.x;
+          const y2 = e.to.y + e.to.h / 2;
+          const cx = (x1 + x2) / 2;
+          ctx.moveTo(x1, y1);
+          ctx.bezierCurveTo(cx, y1, cx, y2, x2, y2);
+        } else {
+          const x1 = e.from.x + e.from.w / 2;
+          const y1 = e.from.y + e.from.h;
+          const x2 = e.to.x + e.to.w / 2;
+          const y2 = e.to.y;
+          const cy = (y1 + y2) / 2;
+          ctx.moveTo(x1, y1);
+          ctx.bezierCurveTo(x1, cy, x2, cy, x2, y2);
+        }
+        ctx.strokeStyle = isDark ? st.border : '#94a3b8';
+        ctx.globalAlpha = isDark ? 0.65 : 0.8;
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      });
+
+      // 2. Nodi e testo centrato con word-wrap
+      layout.positioned.forEach((node) => {
+        const st = COLOR_STYLES[node.branchColor] || COLOR_STYLES.crimson;
+        const displayText = getDisplayText(node, node.depth).toUpperCase();
+
+        let rectFill, rectStroke, rectStrokeW, textColor, fontSize, fontWeight;
+        if (node.depth === 0) {
+          rectFill = isDark ? '#271422' : '#1e293b';
+          rectStroke = isDark ? '#f43f5e' : '#0f172a';
+          rectStrokeW = 2;
+          textColor = '#ffffff';
+          fontSize = 12.5;
+          fontWeight = 800;
+        } else if (node.depth === 1) {
+          rectFill = st.solid;
+          rectStroke = st.solid;
+          rectStrokeW = 1.5;
+          textColor = '#ffffff';
+          fontSize = 11.5;
+          fontWeight = 800;
+        } else if (node.depth === 2) {
+          rectFill = isDark ? st.darkPastel : st.pastel;
+          rectStroke = st.border;
+          rectStrokeW = 1.6;
+          textColor = isDark ? st.darkPastelText : st.pastelText;
+          fontSize = 11;
+          fontWeight = 700;
+        } else {
+          rectFill = isDark ? '#1a0f17' : '#ffffff';
+          rectStroke = st.border;
+          rectStrokeW = 1.3;
+          textColor = isDark ? '#f3e8ee' : '#1e293b';
+          fontSize = 10.5;
+          fontWeight = 600;
+        }
+
+        ctx.save();
+        ctx.shadowColor = isDark ? 'rgba(0,0,0,0.45)' : 'rgba(15,23,42,0.08)';
+        ctx.shadowBlur = 8;
+        ctx.shadowOffsetY = 3;
+        drawRoundedRect(node.x, node.y, node.w, node.h, 11);
+        ctx.fillStyle = rectFill;
+        ctx.fill();
+        ctx.restore();
+
+        drawRoundedRect(node.x, node.y, node.w, node.h, 11);
+        ctx.strokeStyle = rectStroke;
+        ctx.lineWidth = rectStrokeW;
+        ctx.stroke();
+
+        // Word-wrap testo
+        ctx.fillStyle = textColor;
+        ctx.font = `${fontWeight} ${fontSize}px "Plus Jakarta Sans", Inter, -apple-system, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const maxTextW = node.w - 22;
+        const words = displayText.split(/\s+/).filter(Boolean);
+        const lines = [];
+        let currentLine = '';
+        for (const word of words) {
+          const testLine = currentLine ? `${currentLine} ${word}` : word;
+          if (ctx.measureText(testLine).width > maxTextW && currentLine) {
+            lines.push(currentLine);
+            currentLine = word;
+          } else {
+            currentLine = testLine;
+          }
+        }
+        if (currentLine) lines.push(currentLine);
+
+        const lineHeight = fontSize * 1.32;
+        const totalTextH = lines.length * lineHeight;
+        let textY = node.y + (node.h - totalTextH) / 2 + lineHeight / 2;
+        const textX = node.x + node.w / 2;
+        lines.forEach((line) => {
+          ctx.fillText(line, textX, textY, maxTextW);
+          textY += lineHeight;
+        });
+      });
+
+      const fileName = `${(activeMap.title || 'mappa-concettuale').replace(/[^a-z0-9]/gi, '_')}.png`;
+      if (canvas.toBlob) {
+        canvas.toBlob((blob) => {
+          if (!blob) return;
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = fileName;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          setTimeout(() => URL.revokeObjectURL(url), 1500);
+        }, 'image/png');
+      } else {
+        const link = document.createElement('a');
+        link.href = canvas.toDataURL('image/png');
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    } catch (err) {
+      console.error('Errore esportazione PNG:', err);
+      alert('Impossibile esportare il PNG. Riprova.');
+    }
+  };
+
+  const onMouseDownNode = (e, node) => {
+    if (editingNodeId === node.id) return;
+    if (e.target.closest('[data-collapse-btn]')) return;
+    e.stopPropagation();
+    setSelectedNodeId(node.id);
+    dragNodeRef.current = {
+      id: node.id,
+      startX: e.clientX,
+      startY: e.clientY,
+      origDx: node.dx || 0,
+      origDy: node.dy || 0,
+      moved: false,
     };
-    img.src = url;
   };
 
   const onMouseDownCanvas = (e) => {
-    if (e.target.closest('[data-node-id]')) return;
+    if (e.target.closest('[data-node-id]') || e.target.closest('[data-floating-bar]')) return;
+    if (editingNodeId) commitInlineEdit();
+    setSelectedNodeId(null);
     setIsPanning(true);
     panStartRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
   };
 
   const onMouseMoveCanvas = (e) => {
+    if (dragNodeRef.current) {
+      const d = dragNodeRef.current;
+      const dist = Math.hypot(e.clientX - d.startX, e.clientY - d.startY);
+      if (dist > 3 || d.moved) {
+        d.moved = true;
+        const nextDx = Math.round(d.origDx + (e.clientX - d.startX) / zoom);
+        const nextDy = Math.round(d.origDy + (e.clientY - d.startY) / zoom);
+        setDragPreview({ id: d.id, dx: nextDx, dy: nextDy });
+      }
+      return;
+    }
     if (!isPanning) return;
     setPan({
       x: panStartRef.current.panX + (e.clientX - panStartRef.current.x),
@@ -614,13 +869,23 @@ export default function ConceptMapView({
     });
   };
 
-  const onMouseUpCanvas = () => setIsPanning(false);
+  const onMouseUpCanvas = () => {
+    if (dragNodeRef.current) {
+      const d = dragNodeRef.current;
+      dragNodeRef.current = null;
+      if (d.moved && dragPreview && dragPreview.id === d.id) {
+        handleUpdateNode(d.id, { dx: dragPreview.dx, dy: dragPreview.dy });
+      }
+      setDragPreview(null);
+    }
+    setIsPanning(false);
+  };
 
   const onWheelCanvas = (e) => {
     if (!e.ctrlKey && !e.metaKey) return;
     e.preventDefault();
     const delta = e.deltaY > 0 ? -0.08 : 0.08;
-    setZoom((z) => Math.max(0.35, Math.min(1.8, Number((z + delta).toFixed(2)))));
+    setZoom((z) => Math.max(0.25, Math.min(1.8, Number((z + delta).toFixed(2)))));
   };
 
   return (
@@ -660,9 +925,9 @@ export default function ConceptMapView({
       )}
 
       {/* PILL SELECTOR MAPPE SALVATE */}
-      {maps.length > 0 && (
+      {visibleMaps.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
-          {maps.map((m) => (
+          {visibleMaps.map((m) => (
             <button
               key={m.id}
               onClick={() => {
@@ -696,7 +961,17 @@ export default function ConceptMapView({
                 </span>
               </div>
 
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {hasManualOffsets && (
+                  <button
+                    onClick={handleResetPositions}
+                    className="px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-300 text-xs font-semibold flex items-center gap-1 transition"
+                    title="Riporta tutti i nodi spostati alla griglia automatica"
+                  >
+                    <Maximize2 size={12} />
+                    <span>Riordina</span>
+                  </button>
+                )}
                 <button
                   onClick={() => setOrientation((o) => (o === 'mindmap' ? 'tree' : 'mindmap'))}
                   className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-[#2b1824] hover:bg-indigo-500/15 text-xs font-semibold flex items-center gap-1.5 transition"
@@ -737,6 +1012,9 @@ export default function ConceptMapView({
             >
               <div
                 style={{
+                  position: 'relative',
+                  width: `${layout.width}px`,
+                  height: `${layout.height}px`,
                   transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
                   transformOrigin: 'top left',
                 }}
@@ -845,13 +1123,23 @@ export default function ConceptMapView({
                     const badgeY =
                       orientation === 'mindmap' && node.side !== 0 ? node.h / 2 : node.h;
 
+                    const isEditing = editingNodeId === node.id;
+
                     return (
                       <g
                         key={node.id}
                         data-node-id={node.id}
                         transform={`translate(${node.x}, ${node.y})`}
-                        onClick={() => setSelectedNodeId(node.id)}
-                        style={{ cursor: 'pointer' }}
+                        onMouseDown={(e) => onMouseDownNode(e, node)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedNodeId(node.id);
+                        }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          startInlineEdit(node);
+                        }}
+                        style={{ cursor: isEditing ? 'text' : dragPreview?.id === node.id ? 'grabbing' : 'grab' }}
                         filter="url(#algorCardShadow)"
                       >
                         <rect
@@ -863,32 +1151,67 @@ export default function ConceptMapView({
                           strokeWidth={rectStrokeW}
                         />
                         <foreignObject x="10" y="6" width={node.w - 20} height={node.h - 12}>
-                          <div
-                            xmlns="http://www.w3.org/1999/xhtml"
-                            style={{
-                              color: textColor,
-                              fontFamily: '"Plus Jakarta Sans", Inter, sans-serif',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              justifyContent: 'center',
-                              alignItems: 'center',
-                              height: '100%',
-                              textAlign: 'center',
-                              fontSize,
-                              fontWeight,
-                              lineHeight: 1.32,
-                              letterSpacing: node.depth <= 2 ? '0.02em' : '0.01em',
-                              textTransform,
-                              wordBreak: 'break-word',
-                            }}
-                          >
-                            {displayText}
-                          </div>
+                          {isEditing ? (
+                            <textarea
+                              xmlns="http://www.w3.org/1999/xhtml"
+                              autoFocus
+                              value={editingText}
+                              onChange={(e) => setEditingText(e.target.value)}
+                              onBlur={commitInlineEdit}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                  e.preventDefault();
+                                  commitInlineEdit();
+                                } else if (e.key === 'Escape') {
+                                  setEditingNodeId(null);
+                                  setEditingText('');
+                                }
+                              }}
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                background: 'transparent',
+                                color: textColor,
+                                border: 'none',
+                                outline: 'none',
+                                resize: 'none',
+                                textAlign: 'center',
+                                fontFamily: '"Plus Jakarta Sans", Inter, sans-serif',
+                                fontSize,
+                                fontWeight,
+                                lineHeight: 1.3,
+                              }}
+                            />
+                          ) : (
+                            <div
+                              xmlns="http://www.w3.org/1999/xhtml"
+                              style={{
+                                color: textColor,
+                                fontFamily: '"Plus Jakarta Sans", Inter, sans-serif',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                height: '100%',
+                                textAlign: 'center',
+                                fontSize,
+                                fontWeight,
+                                lineHeight: 1.32,
+                                letterSpacing: node.depth <= 2 ? '0.02em' : '0.01em',
+                                textTransform,
+                                wordBreak: 'break-word',
+                              }}
+                            >
+                              {displayText}
+                            </div>
+                          )}
                         </foreignObject>
 
                         {/* Badge espandi / comprimi ramo */}
                         {kidsCount > 0 && node.depth > 0 && (
                           <g
+                            data-collapse-btn="true"
                             transform={`translate(${badgeX}, ${badgeY})`}
                             onClick={(e) => toggleCollapseNode(e, node.id)}
                             style={{ cursor: 'pointer' }}
@@ -909,6 +1232,67 @@ export default function ConceptMapView({
                     );
                   })}
                 </svg>
+
+                {/* BARRA RAPIDA FLUTTUANTE SOPRA IL NODO SELEZIONATO */}
+                {selectedNodeId && !dragPreview && !editingNodeId && (() => {
+                  const selPos = layout.positioned.find((p) => p.id === selectedNodeId);
+                  if (!selPos) return null;
+                  return (
+                    <div
+                      data-floating-bar="true"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      style={{
+                        position: 'absolute',
+                        left: `${selPos.x + selPos.w / 2}px`,
+                        top: `${Math.max(4, selPos.y - 44)}px`,
+                        transform: 'translateX(-50%)',
+                        zIndex: 20,
+                      }}
+                      className="flex items-center gap-1 px-2 py-1 rounded-xl bg-white/95 dark:bg-[#1c1018]/95 border border-slate-200 dark:border-[#3e2133] shadow-xl backdrop-blur-md"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleAddChildNode(selPos.id)}
+                        className="px-2 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold flex items-center gap-1 transition whitespace-nowrap"
+                        title="Aggiungi sotto-nodo"
+                      >
+                        <Plus size={12} /> Figlio
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => startInlineEdit(selPos)}
+                        className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-[#2b1824] text-slate-700 dark:text-gray-200 transition"
+                        title="Modifica testo (oppure doppio click sul nodo)"
+                      >
+                        <Edit3 size={12} />
+                      </button>
+                      <div className="w-px h-3.5 bg-slate-200 dark:bg-[#3e2133] mx-0.5" />
+                      {Object.entries(COLOR_STYLES).map(([cName, cStyle]) => (
+                        <button
+                          key={cName}
+                          type="button"
+                          onClick={() => handleUpdateNode(selPos.id, { color: cName })}
+                          className="w-3.5 h-3.5 rounded-full hover:scale-125 transition"
+                          style={{ backgroundColor: cStyle.dot }}
+                          title={`Colore ${cName}`}
+                        />
+                      ))}
+                      {selPos.parentId && (
+                        <>
+                          <div className="w-px h-3.5 bg-slate-200 dark:bg-[#3e2133] mx-0.5" />
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteNode(selPos.id)}
+                            className="p-1.5 rounded-lg hover:bg-rose-500/15 text-rose-500 transition"
+                            title="Elimina nodo e sotto-rami"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* DOCK FLUTTUANTE IN BASSO (STILE ALGOR / FIGJAM) */}

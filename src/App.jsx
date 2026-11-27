@@ -790,6 +790,11 @@ function MainAppContent() {
   const [billingReason, setBillingReason] = useState('');
   const [usageInfo, setUsageInfo] = useState(null);
   const [lessonStudyTab, setLessonStudyTab] = useState('compendio'); // 'compendio' | 'mappa'
+
+  // Quando si cambia lezione o giorno, torna sempre al Compendio della nuova lezione
+  useEffect(() => {
+    setLessonStudyTab('compendio');
+  }, [selectedTopicId, selectedDayNumber, activeProject?.id]);
   const [readingComfortMode, setReadingComfortMode] = useState(false);
   const [isSpeakingLesson, setIsSpeakingLesson] = useState(false);
   const [speechRate, setSpeechRate] = useState(1);
@@ -5339,6 +5344,7 @@ function MainAppContent() {
                   compact
                   theme={theme}
                   activeProject={activeProject}
+                  topicId={currentSelectedTopic?.id || null}
                   defaultTopicTitle={currentSelectedTopic?.title || activeProject?.description || ''}
                   defaultLessonContent={currentSelectedTopic?.lesson || ''}
                   maps={activeProject?.conceptMaps || []}
