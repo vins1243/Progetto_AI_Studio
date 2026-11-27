@@ -206,6 +206,15 @@ html.light .to-amber-950\/10 {
   min-height: 480px;
   line-height: 1.85;
   font-size: 15.5px;
+  text-align: justify;
+  hyphens: auto;
+}
+
+.wysiwyg-editor h1,
+.wysiwyg-editor h2,
+.wysiwyg-editor h3 {
+  text-align: left;
+  hyphens: none;
 }
 
 .wysiwyg-editor:focus {

@@ -1408,9 +1408,9 @@ function MainAppContent() {
     h1 { font-size: 16pt; font-weight: 800; color: #881337; margin: 18px 0 8px; page-break-after: avoid; break-after: avoid; }
     h2 { font-size: 13pt; font-weight: 800; color: #9f1239; margin: 18px 0 7px; page-break-after: avoid; break-after: avoid; }
     h3 { font-size: 11pt; font-weight: 700; color: #a21caf; margin: 13px 0 5px; page-break-after: avoid; break-after: avoid; }
-    p { margin: 0 0 8px 0; orphans: 3; widows: 3; }
+    p { margin: 0 0 8px 0; orphans: 3; widows: 3; text-align: justify; hyphens: auto; }
     ul, ol { margin: 4px 0 10px 20px; padding: 0; }
-    li { margin-bottom: 4px; page-break-inside: avoid; break-inside: avoid; }
+    li { margin-bottom: 4px; page-break-inside: avoid; break-inside: avoid; text-align: justify; hyphens: auto; }
     li::marker { color: #be123c; font-weight: 700; }
     strong, b { color: #0f172a; font-weight: 700; }
     table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 9.5pt; page-break-inside: auto; }
@@ -1426,7 +1426,7 @@ function MainAppContent() {
       background: #fff1f2; border-left: 3.5px solid #be123c;
       padding: 9px 13px; border-radius: 6px; margin: 12px 0;
       page-break-inside: avoid; break-inside: avoid;
-      color: #4c0519; font-size: 9.8pt;
+      color: #4c0519; font-size: 9.8pt; text-align: justify; hyphens: auto;
     }
     .lesson-image-wrapper {
       page-break-inside: avoid; break-inside: avoid;
