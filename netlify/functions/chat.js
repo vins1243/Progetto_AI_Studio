@@ -153,12 +153,12 @@ export default async (req) => {
     }
 
     // -------------------------------------------------------------
-    // AZIONE 2: GENERAZIONE MAPPA CONCETTUALE INTERATTIVA (ALGOR+ - GEMINI FLASH)
+    // AZIONE 2: GENERAZIONE MAPPA CONCETTUALE INTERATTIVA (STREAMING ANTI-502 NETLIFY)
     // -------------------------------------------------------------
     if (action === 'generate_concept_map') {
       const focusTitle = (topicTitle || prompt || examDescription || 'Mappa Concettuale').trim();
       const sourceText = (lessonContent || '').trim() ||
-        extractRelevantChunks(allFiles, `${focusTitle} ${examDescription || ''}`, 28000);
+        extractRelevantChunks(allFiles, `${focusTitle} ${examDescription || ''}`, 16000);
 
       const mapSystemPrompt = `Sei un esperto di didattica visuale e mappe mentali bilaterali (stile Algor Education / XMind) per studenti delle scuole superiori e dell'universita.
 Crea una mappa mentale gerarchica a 4 LIVELLI, ricca, completa e visivamente bilanciata (meta rami a sinistra, meta a destra del concetto centrale).
@@ -180,7 +180,7 @@ Restituisci ESCLUSIVAMENTE un JSON valido con questa struttura esatta:
     {
       "id": "b1",
       "label": "PRIMO RAMO PRINCIPALE (max 5 parole)",
-      "summary": "Tema del primo grande pilastro",
+      "summary": "",
       "level": 1,
       "parentId": "root",
       "color": "crimson"
@@ -188,14 +188,14 @@ Restituisci ESCLUSIVAMENTE un JSON valido con questa struttura esatta:
     {
       "id": "b1_1",
       "label": "Sottocategoria 1.1 (max 4 parole)",
-      "summary": "Sottotema specifico",
+      "summary": "",
       "level": 2,
       "parentId": "b1",
       "color": "crimson"
     },
     {
       "id": "b1_1_1",
-      "label": "Frase completa, chiara e autonoma che spiega il concetto chiave, meccanismo, classificazione o valore clinico/tecnico (15-26 parole).",
+      "label": "Frase completa, chiara e autonoma che spiega il concetto chiave, meccanismo, classificazione o valore clinico/tecnico (14-24 parole).",
       "summary": "",
       "level": 3,
       "parentId": "b1_1",
@@ -205,27 +205,94 @@ Restituisci ESCLUSIVAMENTE un JSON valido con questa struttura esatta:
 }
 
 VINCOLI DIDATTICI TASSATIVI:
-1. STRUTTURA A 4 LIVELLI (28-40 nodi totali):
+1. STRUTTURA A 4 LIVELLI (24-34 nodi totali):
    - level 0: 1 solo nodo centrale ("id": "root", "parentId": null).
-   - level 1: ESATTAMENTE 4 rami principali (oppure 6 se l'argomento e molto vasto) collegati a "root".
-   - level 2: 2-3 sottocategorie per ciascun ramo principale (etichette brevi di 2-5 parole, es. "I PILASTRI DELLE 4 P", "COMPARTIMENTI VASCOLARI").
-   - level 3: 2-3 schede foglia per ciascuna sottocategoria. Ogni nodo di level 3 DEVE contenere nel campo "label" una frase didattica completa, precisa e memorizzabile (15-26 parole, es. "Il sistema arterioso trasporta sangue ossigenato dal cuore ai tessuti periferici operando ad alta pressione in senso centrifugo.").
+   - level 1: ESATTAMENTE 4 rami principali collegati a "root".
+   - level 2: 2-3 sottocategorie per ciascun ramo principale (etichette brevi di 2-5 parole).
+   - level 3: 2 schede foglia per ciascuna sottocategoria. Ogni nodo di level 3 DEVE contenere nel campo "label" una frase didattica completa, precisa e memorizzabile (14-24 parole).
 2. COERENZA COLORI PER RAMO: assegna un colore DIVERSO a ciascun ramo di level 1 scegliendo in ordine da: "crimson", "orange", "emerald", "violet", "teal", "blue". Tutti i figli di level 2 e level 3 DEVONO ereditare lo stesso "color" del proprio ramo di level 1.
 3. Ogni nodo figlio DEVE avere "parentId" uguale all'"id" di un nodo genitore esistente.
 4. NON usare elenchi puntati o markdown dentro "label": solo testo pulito in italiano accademico.`;
 
       const mapUserPrompt = `ARGOMENTO DELLA MAPPA: "${focusTitle}"
 MATERIA/CONTESTO: "${examDescription || 'Studio generale'}"
-${sourceText ? `\nMATERIALE DI RIFERIMENTO:\n${sourceText.slice(0, 28000)}` : '\nGenera la mappa mentale completa a 4 livelli attingendo alle conoscenze accademiche consolidate.'}
+${sourceText ? `\nMATERIALE DI RIFERIMENTO:\n${sourceText.slice(0, 16000)}` : '\nGenera la mappa mentale completa a 4 livelli attingendo alle conoscenze accademiche consolidate.'}
 
 Restituisci SOLO il JSON valido della mappa mentale a 4 livelli.`;
+
+      const allowedColors = ['crimson', 'orange', 'emerald', 'violet', 'teal', 'blue', 'amber', 'rose', 'cyan'];
+      const normalizeMap = (parsed) => {
+        const nodes = parsed.nodes.map((n, idx) => ({
+          id: String(n.id || `n_${idx}`),
+          label: String(n.label || 'Concetto').slice(0, 260),
+          summary: String(n.summary || '').slice(0, 400),
+          level: Number.isFinite(Number(n.level)) ? Number(n.level) : idx === 0 ? 0 : 1,
+          parentId: idx === 0 ? null : n.parentId ? String(n.parentId) : 'root',
+          color: allowedColors.includes(n.color) ? n.color : 'crimson',
+          edgeLabel: n.edgeLabel ? String(n.edgeLabel).slice(0, 35) : '',
+        }));
+        return {
+          id: `map_${Date.now()}`,
+          title: parsed.title || focusTitle,
+          layout: parsed.layout || 'mindmap',
+          nodes,
+          createdAt: new Date().toISOString(),
+        };
+      };
+
+      if (stream) {
+        const encoder = new TextEncoder();
+        const sseStream = new ReadableStream({
+          async start(controller) {
+            const sendEvent = (evt) => {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(evt)}\n\n`));
+            };
+            try {
+              sendEvent({ type: 'status', text: 'Generazione mappa mentale bilaterale a 4 livelli...' });
+              const { fullText, modelUsed } = await streamAIToWriter({
+                tier: 'light',
+                systemPrompt: mapSystemPrompt,
+                messages: [{ role: 'user', content: mapUserPrompt }],
+                temperature: 0.25,
+                maxTokens: 6000,
+                sendEvent: (evt) => {
+                  // Invia keep-alive leggero senza esporre JSON grezzo come testo
+                  if (evt.type === 'meta') sendEvent(evt);
+                },
+              });
+
+              const parsed = safeParseJson(fullText, null);
+              if (!parsed || !Array.isArray(parsed.nodes) || parsed.nodes.length === 0) {
+                sendEvent({ type: 'error', error: 'Impossibile generare la mappa concettuale. Riprova.' });
+              } else {
+                const mapObj = normalizeMap(parsed);
+                await recordUsage();
+                sendEvent({ type: 'done', map: mapObj, modelUsed });
+              }
+            } catch (err) {
+              sendEvent({ type: 'error', error: err.message || 'Errore generazione mappa.' });
+            } finally {
+              controller.close();
+            }
+          },
+        });
+
+        return new Response(sseStream, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/event-stream; charset=utf-8',
+            'Cache-Control': 'no-cache, no-transform',
+            Connection: 'keep-alive',
+          },
+        });
+      }
 
       const { text, modelUsed } = await generateAI({
         tier: 'light',
         systemPrompt: mapSystemPrompt,
         messages: [{ role: 'user', content: mapUserPrompt }],
         temperature: 0.25,
-        maxTokens: 8192,
+        maxTokens: 6000,
         jsonMode: true,
       });
 
@@ -234,26 +301,9 @@ Restituisci SOLO il JSON valido della mappa mentale a 4 livelli.`;
         return jsonResponse({ error: 'Impossibile generare la mappa concettuale. Riprova.' }, 500);
       }
 
-      // Normalizza nodi garantendo sempre un nodo root valido
-      const nodes = parsed.nodes.map((n, idx) => ({
-        id: String(n.id || `n_${idx}`),
-        label: String(n.label || 'Concetto').slice(0, 80),
-        summary: String(n.summary || '').slice(0, 400),
-        level: Number.isFinite(Number(n.level)) ? Number(n.level) : idx === 0 ? 0 : 1,
-        parentId: idx === 0 ? null : n.parentId ? String(n.parentId) : 'root',
-        color: ['blue', 'emerald', 'violet', 'amber', 'rose', 'cyan'].includes(n.color) ? n.color : 'blue',
-        edgeLabel: n.edgeLabel ? String(n.edgeLabel).slice(0, 35) : '',
-      }));
-
       await recordUsage();
       return jsonResponse({
-        map: {
-          id: `map_${Date.now()}`,
-          title: parsed.title || focusTitle,
-          layout: parsed.layout || mapStyle || 'tree',
-          nodes,
-          createdAt: new Date().toISOString(),
-        },
+        map: normalizeMap(parsed),
         modelUsed,
       });
     }

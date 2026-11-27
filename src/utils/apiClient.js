@@ -87,6 +87,7 @@ export async function streamAiApi(payload, { onChunk, onMeta, onStatus } = {}) {
   let buffer = '';
   let fullText = '';
   let modelUsed = null;
+  let donePayload = {};
 
   while (true) {
     const { done, value } = await reader.read();
@@ -118,13 +119,14 @@ export async function streamAiApi(payload, { onChunk, onMeta, onStatus } = {}) {
         if (onChunk) onChunk(evt.text, fullText);
       } else if (evt.type === 'done') {
         modelUsed = evt.modelUsed || modelUsed;
+        donePayload = evt;
       } else if (evt.type === 'error') {
         throw new Error(evt.error || 'Errore durante lo streaming AI.');
       }
     }
   }
 
-  return { reply: fullText, modelUsed };
+  return { ...donePayload, reply: fullText, modelUsed };
 }
 
 export async function fetchUsageQuota() {

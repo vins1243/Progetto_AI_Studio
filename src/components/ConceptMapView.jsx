@@ -18,7 +18,7 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
-import { callAiApi, QuotaExceededError } from '../utils/apiClient.js';
+import { streamAiApi, QuotaExceededError } from '../utils/apiClient.js';
 import { getProjectDataIDB } from '../utils/indexedDb.js';
 
 const BRANCH_PALETTE_ORDER = ['crimson', 'orange', 'emerald', 'violet', 'teal', 'blue'];
@@ -487,7 +487,7 @@ export default function ConceptMapView({
         if (dbData?.files?.length) fullFiles = dbData.files;
       }
 
-      const data = await callAiApi({
+      const data = await streamAiApi({
         action: 'generate_concept_map',
         topicTitle: customPrompt.trim() || defaultTopicTitle || activeProject?.description || 'Mappa Concettuale',
         examDescription: activeProject?.description || '',
