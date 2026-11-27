@@ -106,6 +106,7 @@ import {
   resetUserPassword, 
   fetchProjectsFromCloud, 
   saveProjectToCloud, 
+  uploadProjectImagesToCloud,
   deleteProjectFromCloud, 
   fetchChatsFromCloud, 
   saveChatToCloud, 
@@ -1988,9 +1989,26 @@ function MainAppContent() {
       };
 
       setSavedProjects(old => [newProject, ...(old || [])]);
-    if (user) {
-      saveProjectToCloud(user.id, newProject);
-    }
+      if (user) {
+        saveProjectToCloud(user.id, newProject);
+        const hasExtractedImages = !isOnlineSearch && readyFiles.some(f => (f.images || []).length > 0);
+        if (hasExtractedImages) {
+          uploadProjectImagesToCloud(user.id, projectId, readyFiles)
+            .then((cloudFiles) => {
+              const mergedFiles = (newProject.files || []).map((f) => {
+                const match = cloudFiles.find((cf) => cf.id === f.id);
+                return match?.images?.length ? { ...f, images: match.images } : f;
+              });
+              const hasAnyCloudImg = mergedFiles.some((f) => (f.images || []).length > 0);
+              if (!hasAnyCloudImg) return;
+              const updatedWithCloudImgs = { ...newProject, files: mergedFiles };
+              setSavedProjects((prev) => (prev || []).map((p) => (p.id === projectId ? { ...p, files: mergedFiles } : p)));
+              setActiveProject((prev) => (prev?.id === projectId ? { ...prev, files: mergedFiles } : prev));
+              saveProjectToCloud(user.id, updatedWithCloudImgs);
+            })
+            .catch((e) => console.warn('Sync immagini cloud fallito:', e));
+        }
+      }
       setActiveProject(newProject);
       setSidebarTab('projects');
 

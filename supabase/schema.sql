@@ -178,3 +178,46 @@ create table if not exists public.device_free_usage (
 
 alter table public.device_free_usage enable row level security;
 -- Nessuna policy client: accessibile SOLO dal backend tramite service_role key!
+
+-- 8. SUPABASE STORAGE: BUCKET IMMAGINI ESTRATTE DAI PDF (Sincronizzazione multi-dispositivo)
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'lesson-assets',
+  'lesson-assets',
+  true,
+  5242880,
+  array['image/jpeg', 'image/png', 'image/webp']
+)
+on conflict (id) do nothing;
+
+drop policy if exists "Public read lesson-assets" on storage.objects;
+create policy "Public read lesson-assets"
+  on storage.objects for select
+  using (bucket_id = 'lesson-assets');
+
+drop policy if exists "Users can upload own lesson-assets" on storage.objects;
+create policy "Users can upload own lesson-assets"
+  on storage.objects for insert
+  with check (
+    bucket_id = 'lesson-assets'
+    and auth.uid() is not null
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "Users can update own lesson-assets" on storage.objects;
+create policy "Users can update own lesson-assets"
+  on storage.objects for update
+  using (
+    bucket_id = 'lesson-assets'
+    and auth.uid() is not null
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "Users can delete own lesson-assets" on storage.objects;
+create policy "Users can delete own lesson-assets"
+  on storage.objects for delete
+  using (
+    bucket_id = 'lesson-assets'
+    and auth.uid() is not null
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );

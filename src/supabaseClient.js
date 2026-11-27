@@ -142,6 +142,82 @@ export async function fetchProjectsFromCloud(userId) {
   }
 }
 
+// -------------------------------------------------------------
+// HELPER UPLOAD IMMAGINI ESTRATTE DAI PDF SU SUPABASE STORAGE
+// -------------------------------------------------------------
+function dataUrlToBlob(dataUrl) {
+  const [header, base64] = String(dataUrl || '').split(',');
+  if (!base64) return null;
+  const mimeMatch = header.match(/data:([^;]+);base64/i);
+  const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+  const binary = atob(base64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+  return { blob: new Blob([bytes], { type: mimeType }), mimeType };
+}
+
+export async function uploadProjectImagesToCloud(userId, projectId, files = []) {
+  if (!client || !isValidUUID(userId) || !projectId || !Array.isArray(files)) return files;
+  const bucket = 'lesson-assets';
+
+  const uploadedFiles = await Promise.all(
+    files.map(async (file) => {
+      const imgs = Array.isArray(file.images) ? file.images : [];
+      if (imgs.length === 0) return file;
+
+      const cloudImages = await Promise.all(
+        imgs.map(async (img, idx) => {
+          if (!img?.dataUrl) return null;
+          if (/^https?:\/\//i.test(img.dataUrl)) {
+            return { id: img.id, name: img.name, label: img.label, dataUrl: img.dataUrl };
+          }
+          try {
+            const parsed = dataUrlToBlob(img.dataUrl);
+            if (!parsed) return null;
+            const ext = parsed.mimeType.includes('png') ? 'png' : parsed.mimeType.includes('webp') ? 'webp' : 'jpg';
+            const safeImgId = String(img.id || `img_${idx}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+            const path = `${userId}/${projectId}/${safeImgId}.${ext}`;
+
+            const { error: uploadErr } = await client.storage
+              .from(bucket)
+              .upload(path, parsed.blob, {
+                contentType: parsed.mimeType,
+                upsert: true,
+                cacheControl: '31536000',
+              });
+
+            if (uploadErr) {
+              console.warn('Upload immagine su Supabase Storage non riuscito:', uploadErr.message);
+              return null;
+            }
+
+            const { data: pub } = client.storage.from(bucket).getPublicUrl(path);
+            if (!pub?.publicUrl) return null;
+
+            return {
+              id: img.id,
+              name: img.name,
+              label: img.label,
+              dataUrl: pub.publicUrl,
+            };
+          } catch (err) {
+            console.warn('Eccezione upload immagine cloud:', err);
+            return null;
+          }
+        })
+      );
+
+      return {
+        ...file,
+        images: cloudImages.filter(Boolean),
+      };
+    })
+  );
+
+  return uploadedFiles;
+}
+
 export async function saveProjectToCloud(userId, project) {
   if (!client || !isValidUUID(userId) || !project) return;
   try {
@@ -163,6 +239,9 @@ export async function saveProjectToCloud(userId, project) {
         extractedText: (f.extractedText || f.text || '').slice(0, 150000),
         wordsCount: f.wordsCount || 0,
         pagesCount: f.pagesCount || 1,
+        images: (f.images || [])
+          .filter((img) => img?.dataUrl && /^https?:\/\//i.test(img.dataUrl))
+          .map((img) => ({ id: img.id, name: img.name, label: img.label, dataUrl: img.dataUrl })),
       })),
       lessons_content: project.lessonsContent || {},
       concept_maps: project.conceptMaps || [],
