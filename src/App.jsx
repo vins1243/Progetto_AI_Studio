@@ -5957,7 +5957,7 @@ function MainAppContent() {
                             Cosa vuoi studiare oggi?
                           </h1>
                           <p className="text-xs text-slate-500 dark:text-gray-400">
-                            Scegli una sezione qui sotto oppure scrivi subito nella barra in basso.
+                            Scegli se aprire una Chat AI oppure gestire i tuoi Progetti di studio.
                           </p>
                         </div>
                       </div>
@@ -6412,6 +6412,7 @@ function MainAppContent() {
               </div>
             </div>
 
+            {(messages.length > 0 || homeTab === 'chats') && (
             <footer className={`absolute bottom-0 inset-x-0 p-4 z-10 ${theme === 'light' ? 'bg-gradient-to-t from-[#fdf7f9] via-[#fdf7f9]/95 to-transparent' : 'bg-gradient-to-t from-geminiDark via-geminiDark to-transparent'}`}>
 
               <div className="max-w-3xl mx-auto">
@@ -6542,6 +6543,7 @@ function MainAppContent() {
                 </div>
               </div>
             </footer>
+            )}
 
           </div>
         )}
