@@ -1,7 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = 'https://qxjamqwbgeysnoipqnih.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_kCmRAz-yQsd4VCDvtmV98g_y5phq6wZ';
+const SUPABASE_URL = import.meta.env?.VITE_SUPABASE_URL || 'https://qxjamqwbgeysnoipqnih.supabase.co';
+const SUPABASE_ANON_KEY = import.meta.env?.VITE_SUPABASE_ANON_KEY || 'sb_publishable_kCmRAz-yQsd4VCDvtmV98g_y5phq6wZ';
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function isValidUUID(value) {
+  return typeof value === 'string' && UUID_REGEX.test(value);
+}
 
 let client = null;
 
@@ -91,7 +96,7 @@ export async function getSessionUser() {
 // HELPER SINCRONIZZAZIONE PROGETTI
 // -------------------------------------------------------------
 export async function fetchProjectsFromCloud(userId) {
-  if (!client || !userId) return [];
+  if (!client || !isValidUUID(userId)) return [];
   try {
     const { data, error } = await client
       .from('projects')
@@ -125,7 +130,7 @@ export async function fetchProjectsFromCloud(userId) {
 }
 
 export async function saveProjectToCloud(userId, project) {
-  if (!client || !userId || !project) return;
+  if (!client || !isValidUUID(userId) || !project) return;
   try {
     const payload = {
       user_id: userId,
@@ -171,7 +176,7 @@ export async function saveProjectToCloud(userId, project) {
 }
 
 export async function deleteProjectFromCloud(userId, projectId) {
-  if (!client || !userId || !projectId) return;
+  if (!client || !isValidUUID(userId) || !projectId) return;
   try {
     const { error } = await client
       .from('projects')
@@ -189,7 +194,7 @@ export async function deleteProjectFromCloud(userId, projectId) {
 // HELPER SINCRONIZZAZIONE CHAT
 // -------------------------------------------------------------
 export async function fetchChatsFromCloud(userId) {
-  if (!client || !userId) return [];
+  if (!client || !isValidUUID(userId)) return [];
   try {
     const { data, error } = await client
       .from('conversations')
@@ -216,7 +221,7 @@ export async function fetchChatsFromCloud(userId) {
 }
 
 export async function saveChatToCloud(userId, chat) {
-  if (!client || !userId || !chat) return;
+  if (!client || !isValidUUID(userId) || !chat) return;
   try {
     const firstMsg = (chat.messages || []).find((m) => m.role === 'user');
     const title = chat.title || (firstMsg ? firstMsg.text?.slice(0, 40) : 'Nuova Conversazione');
@@ -251,7 +256,7 @@ export async function saveChatToCloud(userId, chat) {
 }
 
 export async function deleteChatFromCloud(userId, chatId) {
-  if (!client || !userId || !chatId) return;
+  if (!client || !isValidUUID(userId) || !chatId) return;
   try {
     const { error } = await client
       .from('conversations')
@@ -267,7 +272,7 @@ export async function deleteChatFromCloud(userId, chatId) {
 
 
 export async function fetchUserProfile(userId) {
-  if (!client || !userId) return null;
+  if (!client || !isValidUUID(userId)) return null;
   try {
     const { data, error } = await client.from('profiles').select('*').eq('id', userId).single();
     if (error) return null;
@@ -278,7 +283,7 @@ export async function fetchUserProfile(userId) {
 }
 
 export async function setSubscriptionActive(userId) {
-  if (!client || !userId) return false;
+  if (!client || !isValidUUID(userId)) return false;
   try {
     const { error } = await client.from('profiles').upsert({
       id: userId,
@@ -301,7 +306,7 @@ export async function setSubscriptionActive(userId) {
 }
 
 export async function cancelUserSubscription(userId) {
-  if (!client || !userId) return false;
+  if (!client || !isValidUUID(userId)) return false;
   try {
     const { error } = await client.from('profiles').update({
       subscription_status: 'canceled',

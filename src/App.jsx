@@ -1,3 +1,4 @@
+import logoImg from './logo.png';
 import React, { useState, useEffect, useRef, Component } from 'react';
 import { 
   Menu, 
@@ -58,13 +59,46 @@ import {
   Mic,
   MicOff,
   Image as ImageIcon,
+  Sun,
+  Moon,
+  Download
+,
+  User,
+  LogIn,
+  LogOut,
+  Mail,
+  Lock,
+  Key,
+  Cloud,
+  CreditCard,
   Crop,
-  Maximize,
-  Minimize
+  Maximize2
 } from 'lucide-react';
 
+import { 
+  supabase, 
+  isSupabaseConfigured, 
+  signUpUser, 
+  signInUser, 
+  signOutUser, 
+  resetUserPassword, 
+  fetchProjectsFromCloud, 
+  saveProjectToCloud, 
+  deleteProjectFromCloud, 
+  fetchChatsFromCloud, 
+  saveChatToCloud, 
+  deleteChatFromCloud,
+  fetchUserProfile,
+  setSubscriptionActive,
+  cancelUserSubscription,
+  isValidUUID
+} from './supabaseClient.js';
+
+const STRIPE_PAYMENT_URL = 'https://buy.stripe.com/test_fZu14p1No81J5Eg9nme7m00';
+
+
 // IndexedDB Helper
-const DB_NAME = 'StudyAIDB_V10';
+const DB_NAME = 'MinervaAIDB_V11';
 const STORE_NAME = 'project_data_store';
 
 function getDB() {
@@ -120,14 +154,19 @@ async function extractTextFromPdf(arrayBuffer) {
   const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
   const pdf = await loadingTask.promise;
   let text = '';
+  const extractedImages = [];
   const maxPages = Math.min(pdf.numPages, 120);
   for (let i = 1; i <= maxPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    const pageText = content.items.map(item => item.str).join(' ');
-    text += `\n[Pagina ${i}]: ` + pageText;
+    try {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items.map(item => item.str).join(' ');
+      text += `\n[Pagina ${i}]: ` + pageText;
+    } catch (pageErr) {
+      console.warn(`Errore lettura pagina ${i} del PDF:`, pageErr);
+    }
   }
-  return { text: text.trim(), pagesCount: pdf.numPages };
+  return { text: text.trim(), pagesCount: pdf.numPages, images: extractedImages };
 }
 
 async function extractTextFromDocx(arrayBuffer) {
@@ -135,7 +174,33 @@ async function extractTextFromDocx(arrayBuffer) {
     throw new Error("Libreria Word non pronta.");
   }
   const result = await window.mammoth.extractRawText({ arrayBuffer });
-  return { text: result.value || '', pagesCount: 1 };
+  const extractedImages = [];
+  if (typeof window !== 'undefined' && window.JSZip) {
+    try {
+      const zip = await window.JSZip.loadAsync(arrayBuffer);
+      const mediaFiles = [];
+      zip.forEach((path, file) => {
+        if (path.startsWith('word/media/') && !file.dir) mediaFiles.push({ path, file });
+      });
+      for (let idx = 0; idx < Math.min(mediaFiles.length, 15); idx++) {
+        const mf = mediaFiles[idx];
+        const ext = mf.path.split('.').pop().toLowerCase();
+        if (['png', 'jpg', 'jpeg', 'webp'].includes(ext)) {
+          const mime = ext === 'png' ? 'image/png' : (ext === 'webp' ? 'image/webp' : 'image/jpeg');
+          const b64 = await mf.file.async('base64');
+          extractedImages.push({
+            id: `FIGURA_DOCX_${idx + 1}`,
+            name: mf.path.split('/').pop(),
+            dataUrl: `data:${mime};base64,${b64}`,
+            label: `Figura Word ${idx + 1}`
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("DOCX image extract error:", err);
+    }
+  }
+  return { text: result.value || '', pagesCount: 1, images: extractedImages };
 }
 
 async function extractTextFromPptx(arrayBuffer) {
@@ -145,9 +210,12 @@ async function extractTextFromPptx(arrayBuffer) {
   const zip = await window.JSZip.loadAsync(arrayBuffer);
   let text = '';
   const slideFiles = [];
+  const mediaFiles = [];
   zip.forEach((path, file) => {
     if (path.startsWith('ppt/slides/slide') && path.endsWith('.xml')) {
       slideFiles.push({ path, file });
+    } else if (path.startsWith('ppt/media/') && !file.dir) {
+      mediaFiles.push({ path, file });
     }
   });
   slideFiles.sort((a, b) => {
@@ -161,65 +229,195 @@ async function extractTextFromPptx(arrayBuffer) {
     const slideText = matches.map(m => m.replace(/<[^>]+>/g, '')).join(' ');
     text += `\n[Slide ${i + 1}]: ${slideText}`;
   }
-  return { text: text.trim(), pagesCount: slideFiles.length };
+
+  const extractedImages = [];
+  for (let idx = 0; idx < Math.min(mediaFiles.length, 20); idx++) {
+    const mf = mediaFiles[idx];
+    const ext = mf.path.split('.').pop().toLowerCase();
+    if (['png', 'jpg', 'jpeg', 'webp'].includes(ext)) {
+      try {
+        const mime = ext === 'png' ? 'image/png' : (ext === 'webp' ? 'image/webp' : 'image/jpeg');
+        const b64 = await mf.file.async('base64');
+        extractedImages.push({
+          id: `FIGURA_PPTX_${idx + 1}`,
+          name: mf.path.split('/').pop(),
+          dataUrl: `data:${mime};base64,${b64}`,
+          label: `Figura dalle slide (${mf.path.split('/').pop()})`
+        });
+      } catch (err) {
+        console.warn("PPTX image extract error:", err);
+      }
+    }
+  }
+
+  return { text: text.trim(), pagesCount: slideFiles.length, images: extractedImages };
 }
 
-// RENDERING AUTOMATICO MARKDOWN + LATEX KATEX VERSO HTML WYSIWYG
-function renderMarkdownAndLatexToHtml(md) {
+// RENDERING AUTOMATICO MARKDOWN + LATEX KATEX + TABELLE + CALLOUT + FIGURE
+function renderMarkdownAndLatexToHtml(md, imagesMap = {}) {
   if (!md) return '';
-  let html = md;
 
-  // 1. Render LaTeX display blocks $$ ... $$
-  html = html.replace(/\$\$([\s\S]*?)\$\$/g, (match, expr) => {
+  // 1. Display Math $$ ... $$
+  let html = md.replace(/\$\$([\s\S]*?)\$\$/g, (m, expr) => {
     try {
       if (typeof window !== 'undefined' && window.katex) {
-        return `<div class="katex-display" contenteditable="false">${window.katex.renderToString(expr.trim(), { displayMode: true, throwOnError: false })}</div>`;
+        return '<div class="katex-display" contenteditable="false">' + window.katex.renderToString(expr.trim(), { displayMode: true, throwOnError: false }) + '</div>';
       }
     } catch (e) {
       console.warn("KaTeX display error:", e);
     }
-    return `<div class="katex-display" contenteditable="false">${expr}</div>`;
+    return '<div class="katex-display" contenteditable="false">' + expr + '</div>';
   });
 
-  // 2. Render LaTeX inline math $ ... $
-  html = html.replace(/\$([^\$\n]+?)\$/g, (match, expr) => {
+  // 2. Inline Math $ ... $
+  html = html.replace(/\$([^\$\n]+?)\$/g, (m, expr) => {
     try {
       if (typeof window !== 'undefined' && window.katex) {
-        return `<span class="katex-inline" contenteditable="false">${window.katex.renderToString(expr.trim(), { displayMode: false, throwOnError: false })}</span>`;
+        return '<span class="katex-inline" contenteditable="false">' + window.katex.renderToString(expr.trim(), { displayMode: false, throwOnError: false }) + '</span>';
       }
     } catch (e) {
       console.warn("KaTeX inline error:", e);
     }
-    return `<span class="katex-inline" contenteditable="false">${expr}</span>`;
+    return '<span class="katex-inline" contenteditable="false">' + expr + '</span>';
   });
 
-  // 3. Intestazioni Markdown
-  html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
-  html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
-  html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
+  let lines = html.split('\n');
+  let output = [];
+  let inList = null; // 'ul' | 'ol' | null
+  let tableRows = [];
+  let inTable = false;
 
-  // 4. Grassetto e Corsivo
-  html = html.replace(/\*\*\*(.*?)\*\*\*/gim, '<b><i>$1</i></b>');
-  html = html.replace(/\*\*(.*?)\*\*/gim, '<b>$1</b>');
-  html = html.replace(/\*(.*?)\*/gim, '<i>$1</i>');
-
-  // 5. Elenchi
-  html = html.replace(/^\s*-\s+(.*$)/gim, '<ul><li>$1</li></ul>');
-  html = html.replace(/<\/ul>\s*<ul>/gim, '');
-  html = html.replace(/^\s*\d+\.\s+(.*$)/gim, '<ol><li>$1</li></ol>');
-  html = html.replace(/<\/ol>\s*<ol>/gim, '');
-
-  // 6. Citazioni
-  html = html.replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>');
-
-  // 7. Paragrafi
-  html = html.replace(/\n\n/gim, '</p><p>');
-  html = html.replace(/\n/gim, '<br/>');
-
-  if (!html.startsWith('<h') && !html.startsWith('<p') && !html.startsWith('<ul') && !html.startsWith('<ol') && !html.startsWith('<div')) {
-    html = '<p>' + html + '</p>';
+  function flushTable() {
+    if (!tableRows.length) return;
+    let startIdx = 1;
+    let headers = tableRows[0].split('|').slice(1, -1).map(c => c.trim());
+    if (tableRows[1] && /^[|\s\-:]+$/.test(tableRows[1].replace(/\|/g, '').trim() || tableRows[1])) {
+      startIdx = 2;
+    }
+    let ths = headers.map(h => '<th class="py-3 px-4 text-left font-bold text-xs uppercase tracking-wider">' + h + '</th>').join('');
+    let trs = [];
+    for (let j = startIdx; j < tableRows.length; j++) {
+      let cells = tableRows[j].split('|').slice(1, -1).map(c => c.trim());
+      if (cells.length === 0 || !cells.some(Boolean)) continue;
+      let tds = cells.map(c => '<td class="py-2.5 px-4 text-xs align-top">' + c + '</td>').join('');
+      trs.push('<tr class="border-b border-slate-200 dark:border-slate-800 transition">' + tds + '</tr>');
+    }
+    output.push('<div class="academic-table-container my-6 overflow-x-auto" contenteditable="false"><table class="academic-table w-full border-collapse rounded-2xl overflow-hidden border border-slate-300 dark:border-slate-700 shadow-sm"><thead><tr class="bg-slate-900 text-white dark:bg-slate-800 border-b border-slate-700">' + ths + '</tr></thead><tbody class="divide-y divide-slate-200 dark:divide-slate-800">' + trs.join('') + '</tbody></table></div>');
+    tableRows = [];
+    inTable = false;
   }
-  return html;
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    let trimmed = line.trim();
+
+    // Table detection: line starts and ends with |
+    if (trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.length > 2) {
+      if (inList) { output.push(inList === 'ul' ? '</ul>' : '</ol>'); inList = null; }
+      inTable = true;
+      tableRows.push(trimmed);
+      continue;
+    } else if (inTable) {
+      flushTable();
+    }
+
+    // Empty line
+    if (!trimmed) {
+      if (inList) { output.push(inList === 'ul' ? '</ul>' : '</ol>'); inList = null; }
+      continue;
+    }
+
+    // Headings
+    if (trimmed.startsWith('### ')) {
+      if (inList) { output.push(inList === 'ul' ? '</ul>' : '</ol>'); inList = null; }
+      output.push('<h3>' + trimmed.slice(4).trim() + '</h3>');
+      continue;
+    }
+    if (trimmed.startsWith('## ')) {
+      if (inList) { output.push(inList === 'ul' ? '</ul>' : '</ol>'); inList = null; }
+      output.push('<h2>' + trimmed.slice(3).trim() + '</h2>');
+      continue;
+    }
+    if (trimmed.startsWith('# ')) {
+      if (inList) { output.push(inList === 'ul' ? '</ul>' : '</ol>'); inList = null; }
+      output.push('<h1>' + trimmed.slice(2).trim() + '</h1>');
+      continue;
+    }
+
+    // Callout Box (> ...)
+    if (trimmed.startsWith('>')) {
+      if (inList) { output.push(inList === 'ul' ? '</ul>' : '</ol>'); inList = null; }
+      let content = trimmed.replace(/^>+\s*/, '');
+      let cls = 'callout-default';
+      if (/Regola Terapeutica|Terapia|Farmaco/i.test(content)) cls = 'callout-therapy';
+      else if (/Criteri ESC|Criteri|Linee Guida|Score/i.test(content)) cls = 'callout-criteria';
+      else if (/Attenzione|Controindicat|Pericolo/i.test(content)) cls = 'callout-warning';
+
+      content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      output.push('<div class="callout-box ' + cls + '">' + content + '</div>');
+      continue;
+    }
+
+    // Markdown Image (![alt](src))
+    let imgMatch = trimmed.match(/^!\[(.*?)\]\((.*?)\)$/);
+    if (imgMatch) {
+      if (inList) { output.push(inList === 'ul' ? '</ul>' : '</ol>'); inList = null; }
+      let alt = (imgMatch[1] || 'Illustrazione').trim();
+      let src = (imgMatch[2] || '').trim();
+      let realSrc = imagesMap[src] || src;
+
+      let isActualUrl = realSrc.startsWith('http') || realSrc.startsWith('data:');
+      if (isActualUrl) {
+        output.push('<div class="lesson-image-wrapper text-center my-6" contenteditable="false"><div class="inline-block relative group" style="width:72%;max-width:680px;"><img src="' + realSrc + '" alt="' + alt + '" class="lesson-img rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 w-full object-contain cursor-pointer transition hover:shadow-xl" /></div><p class="text-xs text-slate-500 dark:text-slate-400 italic mt-2.5 text-center font-medium"><strong>Figura:</strong> ' + alt + '</p></div>');
+      } else {
+        // Schema didattico elegante se l'immagine non ha un file collegato
+        output.push('<div class="lesson-image-wrapper text-center my-6" contenteditable="false"><div class="inline-block p-5 rounded-2xl bg-blue-50/60 dark:bg-geminiDarkSecondary border border-blue-200 dark:border-blue-500/30 text-center shadow-sm" style="width:72%;max-width:680px;"><div class="w-10 h-10 mx-auto rounded-xl bg-blue-600/20 text-blue-500 flex items-center justify-center mb-2 font-bold">📊</div><div class="text-xs font-bold text-slate-800 dark:text-gray-100">' + alt + '</div><div class="text-[11px] text-slate-500 dark:text-gray-400 mt-1">Schema clinico di riferimento accademico</div></div><p class="text-xs text-slate-500 dark:text-slate-400 italic mt-2 text-center font-medium"><strong>Figura:</strong> ' + alt + '</p></div>');
+      }
+      continue;
+    }
+
+    // Unordered List (- ...)
+    if (trimmed.startsWith('- ') || trimmed.startsWith('• ') || trimmed.startsWith('* ')) {
+      if (inList !== 'ul') {
+        if (inList) output.push('</ol>');
+        output.push('<ul>');
+        inList = 'ul';
+      }
+      let item = trimmed.replace(/^[-•*]\s+/, '');
+      item = item.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
+      output.push('<li>' + item + '</li>');
+      continue;
+    }
+
+    // Ordered List (1. ...)
+    let numMatch = trimmed.match(/^(\d+)\.\s+(.*)/);
+    if (numMatch) {
+      if (inList !== 'ol') {
+        if (inList) output.push('</ul>');
+        output.push('<ol>');
+        inList = 'ol';
+      }
+      let item = numMatch[2].replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
+      output.push('<li>' + item + '</li>');
+      continue;
+    }
+
+    // Regular paragraph
+    if (inList) { output.push(inList === 'ul' ? '</ul>' : '</ol>'); inList = null; }
+    let pContent = trimmed.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
+    output.push('<p>' + pContent + '</p>');
+  }
+
+  if (inTable) flushTable();
+  if (inList) output.push(inList === 'ul' ? '</ul>' : '</ol>');
+
+  const rawHtml = output.join('\n');
+  // Sanitizzazione difensiva contro XSS (rimuove script, iframe, event handler inline e javascript: URL)
+  return rawHtml
+    .replace(/<(script|iframe|object|embed|form)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+    .replace(/<(script|iframe|object|embed)\b[^>]*\/?>/gi, '')
+    .replace(/\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/(href|src)\s*=\s*(["'])\s*javascript:[^"']*\2/gi, '$1=$2#$2');
 }
 
 // Error Boundary
@@ -244,12 +442,17 @@ class ErrorBoundary extends Component {
             <p className="text-xs text-gray-400">
               I tuoi dati sono al sicuro. Clicca qui sotto per ricaricare l'app.
             </p>
+            {this.state.error && (
+              <div className="p-3 bg-red-950/50 border border-red-500/30 rounded-2xl text-left text-[11px] text-red-300 font-mono overflow-auto max-h-36">
+                {this.state.error.message || String(this.state.error)}
+              </div>
+            )}
             <button 
               onClick={() => {
                 this.setState({ hasError: false });
                 window.location.reload();
               }}
-              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-full text-xs font-semibold transition"
+              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-full text-xs font-bold transition shadow-lg shadow-blue-600/30"
             >
               Ricarica applicazione
             </button>
@@ -259,6 +462,20 @@ class ErrorBoundary extends Component {
     }
     return this.props.children;
   }
+}
+
+
+// Componente Logo Ufficiale MinervaAI
+function AppLogo({ className = "w-8 h-8", imgClassName = "w-full h-full object-contain" }) {
+  return (
+    <div className={`${className} flex items-center justify-center shrink-0 select-none overflow-hidden`}>
+      <img 
+        src={logoImg} 
+        alt="MinervaAI Logo" 
+        className={imgClassName} 
+      />
+    </div>
+  );
 }
 
 export default function App() {
@@ -272,21 +489,14 @@ export default function App() {
 function MainAppContent() {
   const [currentView, setCurrentView] = useState('chat');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [sidebarTab, setSidebarTab] = useState('projects'); // 'conversations' | 'projects'
+  const [sidebarTab, setSidebarTab] = useState('projects');
 
-  // Chat Homepage (Supporto fino a 10 file simultanei)
-  const [conversations, setConversations] = useState(() => {
-    try {
-      const saved = localStorage.getItem('study_ai_chats');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Chat Homepage (Supportata solo per utente autenticato)
+  const [conversations, setConversations] = useState([]);
   const [currentChatId, setCurrentChatId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputPrompt, setInputPrompt] = useState('');
-  const [attachedFiles, setAttachedFiles] = useState([]); // Array fino a 10 file
+  const [attachedFiles, setAttachedFiles] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isDraggingOverChat, setIsDraggingOverChat] = useState(false);
 
@@ -296,32 +506,105 @@ function MainAppContent() {
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
 
-  // Projects
-  const [savedProjects, setSavedProjects] = useState(() => {
-    try {
-      const saved = localStorage.getItem('study_ai_projects');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Progetti salvati (Cloud Supabase)
+  const [savedProjects, setSavedProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
   const [selectedDayNumber, setSelectedDayNumber] = useState(1);
   const [selectedTopicId, setSelectedTopicId] = useState(null);
   const [isGeneratingLesson, setIsGeneratingLesson] = useState(false);
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
 
   // POPUP FLUTTUANTE SU SELEZIONE TESTO
   const [floatingPopup, setFloatingPopup] = useState(null);
   const [isRewriting, setIsRewriting] = useState(false);
 
-  // CONTROLLI IMMAGINE NELLA LEZIONE
+  // GESTIONE SELEZIONE E RIDIMENSIONAMENTO TRASCINABILE IMMAGINI
   const [selectedImageEl, setSelectedImageEl] = useState(null);
+  const [imageBoxRect, setImageBoxRect] = useState(null); // { left, top, width, height }
   const [imageToolPos, setImageToolPos] = useState(null);
+  const resizingStateRef = useRef(null); // { handle, startX, startY, startW, startH }
 
   // CHATBOT LEZIONE CON MODIFICA DIRETTA
   const [lessonChatMessages, setLessonChatMessages] = useState([]);
   const [lessonChatInput, setLessonChatInput] = useState('');
   const [isLessonChatLoading, setIsLessonChatLoading] = useState(false);
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.title = "MinervaAI";
+    }
+  }, []);
+
+  // STATO TEMA GIORNO / NOTTE (DEFAULT: SEGUE IL SISTEMA OPERATIVO IN TEMPO REALE)
+  const [theme, setTheme] = useState(() => {
+    try {
+      const manual = localStorage.getItem('minerva_theme_manual');
+      const saved = localStorage.getItem('minerva_theme');
+      if (manual && (saved === 'light' || saved === 'dark')) return saved;
+      if (typeof window !== 'undefined' && window.matchMedia) {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+    } catch {}
+    return 'dark';
+  });
+
+  // Sincronizzazione immediata su DOM (html e body)
+  useEffect(() => {
+    try {
+      if (typeof document !== 'undefined') {
+        document.documentElement.classList.remove('dark', 'light');
+        document.documentElement.classList.add(theme);
+        document.documentElement.style.colorScheme = theme;
+        if (document.body) {
+          document.body.classList.remove('dark', 'light');
+          document.body.classList.add(theme);
+          document.body.style.backgroundColor = theme === 'light' ? '#f8fafc' : '#131314';
+          document.body.style.color = theme === 'light' ? '#0f172a' : '#e3e3e3';
+        }
+      }
+    } catch (err) {
+      console.warn('Theme update error:', err);
+    }
+  }, [theme]);
+
+  // Ascolto in tempo reale dei cambiamenti del tema del dispositivo (es. macOS/iOS/Windows Night Mode)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    
+    const handleSystemThemeChange = (e) => {
+      const manual = localStorage.getItem('minerva_theme_manual');
+      if (!manual) {
+        setTheme(e.matches ? 'dark' : 'light');
+      }
+    };
+
+    try {
+      if (darkQuery.addEventListener) {
+        darkQuery.addEventListener('change', handleSystemThemeChange);
+        return () => darkQuery.removeEventListener('change', handleSystemThemeChange);
+      } else if (darkQuery.addListener) {
+        darkQuery.addListener(handleSystemThemeChange);
+        return () => darkQuery.removeListener(handleSystemThemeChange);
+      }
+    } catch (e) {
+      console.warn('Media query listener error:', e);
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    try {
+      localStorage.setItem('minerva_theme', nextTheme);
+      localStorage.setItem('minerva_theme_manual', 'true');
+    } catch {}
+  };
+
+  // DETTATURA VOCALE PER CHAT DELLA LEZIONE
+  const [isRecordingLessonAudio, setIsRecordingLessonAudio] = useState(false);
+  const [isTranscribingLessonAudio, setIsTranscribingLessonAudio] = useState(false);
+  const lessonMediaRecorderRef = useRef(null);
+  const lessonAudioChunksRef = useRef([]);
   const [previousLessonBackup, setPreviousLessonBackup] = useState(null);
 
   // Toolbar stato
@@ -345,6 +628,49 @@ function MainAppContent() {
   const [isSingleLessonQuiz, setIsSingleLessonQuiz] = useState(false);
 
   // Wizard State
+  // STATO AUTENTICAZIONE E CLOUD SYNC SUPABASE
+  const DEFAULT_GUEST_USER = {
+    id: 'guest_user_direct_ai',
+    email: 'utente@minerva.ai',
+    user_metadata: { full_name: 'Utente AI' }
+  };
+  const [user, setUser] = useState(DEFAULT_GUEST_USER);
+  const [userProfile, setUserProfile] = useState({
+    subscription_status: 'active',
+    is_premium: true,
+    full_name: 'Utente AI'
+  });
+  const [isCheckingPayment, setIsCheckingPayment] = useState(false);
+  const [isSubManageModalOpen, setIsSubManageModalOpen] = useState(false);
+  const [isCropModalOpen, setIsCropModalOpen] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState('');
+  const [cropInset, setCropInset] = useState({ top: 0, bottom: 0, left: 0, right: 0 });
+  const [isPaywallModalOpen, setIsPaywallModalOpen] = useState(false);
+  const [isSecretUnlockOpen, setIsSecretUnlockOpen] = useState(false);
+  const [legalModalOpen, setLegalModalOpen] = useState(false);
+  const [legalModalTab, setLegalModalTab] = useState('terms'); // 'terms' | 'privacy'
+  const [hasAcceptedTos, setHasAcceptedTos] = useState(true);
+  const [tosChecked, setTosChecked] = useState(false);
+  const [recessoChecked, setRecessoChecked] = useState(false);
+  const [signupTosAccepted, setSignupTosAccepted] = useState(false);
+  const [secretCodeInput, setSecretCodeInput] = useState('');
+  const [secretCodeError, setSecretCodeError] = useState('');
+  const [secretCodeSuccess, setSecretCodeSuccess] = useState('');
+  const [localUnlocked, setLocalUnlocked] = useState(false);
+  const [freeQuestionCount, setFreeQuestionCount] = useState(0);
+  const [isCancelingSub, setIsCancelingSub] = useState(false);
+  const [isAuthInitializing, setIsAuthInitializing] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authMode, setAuthMode] = useState('login'); // 'login' | 'signup' | 'reset'
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authFullName, setAuthFullName] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [authSuccess, setAuthSuccess] = useState('');
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+
   const [wizardStep, setWizardStep] = useState(1);
   const [examDate, setExamDate] = useState('');
   const [prepLevel, setPrepLevel] = useState(80);
@@ -365,6 +691,177 @@ function MainAppContent() {
   const textareaRef = useRef(null);
   const wysiwygEditorRef = useRef(null);
   const lastLoadedTopicIdRef = useRef(null);
+
+  // Sincronizzazione Sessione Utente Supabase
+  useEffect(() => {
+    if (!supabase) {
+      setIsAuthInitializing(false);
+      return;
+    }
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUser(session.user);
+        loadCloudData(session.user.id);
+      } else {
+        setUser(DEFAULT_GUEST_USER);
+      }
+      setIsAuthInitializing(false);
+    }).catch(err => {
+      console.warn('Supabase getSession error:', err);
+      setIsAuthInitializing(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setUser(session.user);
+        loadCloudData(session.user.id);
+      } else {
+        setUser(DEFAULT_GUEST_USER);
+      }
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }, []);
+
+  const loadCloudData = async (userId, userObj = null) => {
+    if (!userId) return;
+    setIsCloudSyncing(true);
+    try {
+      const email = userObj?.email || user?.email || '';
+      const fullName = userObj?.user_metadata?.full_name || user?.user_metadata?.full_name || '';
+      const profile = await fetchUserProfile(userId, email, fullName);
+      setUserProfile(profile);
+
+      const isLocallyUnlocked = typeof window !== 'undefined' && localStorage.getItem('minerva_unlocked_' + userId) === 'true';
+      if (isLocallyUnlocked) {
+        setLocalUnlocked(true);
+      }
+      const isTosAccepted = typeof window !== 'undefined' && Boolean(localStorage.getItem('minerva_tos_accepted_' + userId));
+      setHasAcceptedTos(isTosAccepted);
+      const freeCount = typeof window !== 'undefined' ? parseInt(localStorage.getItem('minerva_free_count_' + userId) || '0', 10) : 0;
+      setFreeQuestionCount(freeCount);
+
+      if (profile?.subscription_status === 'active' || profile?.is_premium) {
+        const cloudProjects = await fetchProjectsFromCloud(userId);
+        setSavedProjects(cloudProjects || []);
+        const cloudChats = await fetchChatsFromCloud(userId);
+        setConversations(cloudChats || []);
+      } else {
+        setSavedProjects([]);
+        setConversations([]);
+      }
+    } catch (err) {
+      console.warn('Errore sync dati cloud:', err);
+    } finally {
+      setIsCloudSyncing(false);
+    }
+  };
+
+  // Pulizia parametri URL di ritorno da checkout (verifica abbonamento demandata al backend/webhook)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('payment') === 'success' || params.get('session_id')) {
+        if (user?.id && isValidUUID(user.id)) {
+          fetchUserProfile(user.id).then(p => {
+            if (p) setUserProfile(p);
+          });
+        }
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+      }
+    } catch (e) {
+      console.warn('Payment return url cleanup:', e);
+    }
+  }, [user?.id]);
+
+  const handleAuthSubmit = async (e) => {
+    if (e) e.preventDefault();
+    setAuthError('');
+    setAuthSuccess('');
+    setIsAuthSubmitting(true);
+    try {
+      if (authMode === 'login') {
+        const res = await signInUser(authEmail, authPassword);
+        const loggedUser = res?.user || res?.session?.user;
+        if (loggedUser) {
+          setUser(loggedUser);
+          await loadCloudData(loggedUser.id);
+        }
+        setAuthPassword('');
+      } else if (authMode === 'signup') {
+        if (!signupTosAccepted) {
+          setAuthError('Devi accettare i Termini di Servizio e la Privacy Policy per registrarti.');
+          setIsAuthSubmitting(false);
+          return;
+        }
+        const res = await signUpUser(authEmail, authPassword, authFullName);
+        const signedUser = res?.user || res?.session?.user;
+        if (signedUser && res?.session) {
+          setUser(signedUser);
+          await loadCloudData(signedUser.id);
+        } else {
+          setAuthSuccess("Registrazione completata con successo! Se richiesto, controlla la tua email per confermare l'account o accedi subito con le tue credenziali.");
+          setTimeout(() => {
+            setAuthMode('login');
+            setAuthSuccess('');
+          }, 3500);
+        }
+      } else if (authMode === 'reset') {
+        await resetUserPassword(authEmail);
+        setAuthSuccess("Ti abbiamo inviato un'email con il link per reimpostare la tua password.");
+      }
+    } catch (err) {
+      console.error('Auth error:', err);
+      setAuthError(err.message || "Si è verificato un errore durante l'operazione.");
+    } finally {
+      setIsAuthSubmitting(false);
+    }
+  };
+
+  const handleCancelSubscription = async () => {
+    if (!user?.id) return;
+    const confirmCancel = window.confirm("Sei sicuro di voler disdire il tuo abbonamento MinervaAI Premium? Perderai l'accesso a tutte le funzionalità alla scadenza.");
+    if (!confirmCancel) return;
+
+    setIsCancelingSub(true);
+    try {
+      const ok = await cancelUserSubscription(user.id);
+      if (ok) {
+        const p = await fetchUserProfile(user.id);
+        setUserProfile(p);
+        setIsSubManageModalOpen(false);
+        setIsProfileMenuOpen(false);
+        alert("Il tuo abbonamento è stato disdetto.");
+      } else {
+        alert("Si è verificato un errore durante la disdetta. Riprova più tardi.");
+      }
+    } catch (err) {
+      console.error("Errore disdetta:", err);
+    } finally {
+      setIsCancelingSub(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setIsProfileMenuOpen(false);
+    try {
+      await signOutUser();
+      setUser(null);
+      setSavedProjects([]);
+      setConversations([]);
+      setActiveProject(null);
+      setCurrentChatId(null);
+      setMessages([]);
+      setCurrentView('chat');
+    } catch (err) {
+      console.warn('Logout error:', err);
+    }
+  };
 
   // Storage sync
   useEffect(() => {
@@ -414,11 +911,33 @@ function MainAppContent() {
         lastLoadedTopicIdRef.current = currentId;
         const html = renderMarkdownAndLatexToHtml(currentSelectedTopic.lesson || '');
         wysiwygEditorRef.current.innerHTML = html;
+        setSelectedImageEl(null);
+        setImageBoxRect(null);
       }
     }
   }, [currentView, currentSelectedTopic?.id, currentSelectedTopic?.lesson]);
 
-  // Gestione clic sulle immagini dentro l'editor per mostrare toolbar controlli
+  // Aggiorna posizione rettangolo di selezione immagine
+  const updateImageBoxPosition = (img) => {
+    if (!img) {
+      setImageBoxRect(null);
+      setImageToolPos(null);
+      return;
+    }
+    const rect = img.getBoundingClientRect();
+    setImageBoxRect({
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+    });
+    setImageToolPos({
+      x: Math.max(10, rect.left + rect.width / 2),
+      y: Math.max(50, rect.top - 12)
+    });
+  };
+
+  // Listener per selezione immagini nell'editor
   useEffect(() => {
     const handleEditorClick = (e) => {
       if (currentView !== 'day_detail') return;
@@ -426,20 +945,84 @@ function MainAppContent() {
       if (e.target && e.target.tagName === 'IMG') {
         const img = e.target;
         setSelectedImageEl(img);
-        const rect = img.getBoundingClientRect();
-        setImageToolPos({
-          x: Math.max(10, rect.left + rect.width / 2),
-          y: Math.max(50, rect.top - 10)
-        });
-      } else if (!e.target.closest('#image-editing-toolbar')) {
+        updateImageBoxPosition(img);
+      } else if (!e.target.closest('#image-editing-toolbar') && !e.target.closest('#image-resize-overlay')) {
         setSelectedImageEl(null);
+        setImageBoxRect(null);
         setImageToolPos(null);
       }
     };
 
+    const handleScrollOrResize = () => {
+      if (selectedImageEl) updateImageBoxPosition(selectedImageEl);
+    };
+
     document.addEventListener('click', handleEditorClick);
-    return () => document.removeEventListener('click', handleEditorClick);
-  }, [currentView]);
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleScrollOrResize);
+
+    return () => {
+      document.removeEventListener('click', handleEditorClick);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
+    };
+  }, [currentView, selectedImageEl]);
+
+  // GESTIONE TRASCINAMENTO MANIGLIE DI RIDIMENSIONAMENTO IMMAGINE (CORNER & EDGE HANDLES)
+  const handleResizeHandleMouseDown = (e, handleType) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!selectedImageEl) return;
+    const rect = selectedImageEl.getBoundingClientRect();
+
+    resizingStateRef.current = {
+      handle: handleType,
+      startX: e.clientX,
+      startY: e.clientY,
+      startWidth: rect.width,
+      startHeight: rect.height,
+      aspectRatio: rect.width / rect.height
+    };
+
+    const handleMouseMove = (moveEvent) => {
+      if (!resizingStateRef.current || !selectedImageEl) return;
+      const { handle, startX, startY, startWidth, startHeight, aspectRatio } = resizingStateRef.current;
+      
+      const deltaX = moveEvent.clientX - startX;
+      const deltaY = moveEvent.clientY - startY;
+
+      let newWidth = startWidth;
+
+      if (handle === 'se' || handle === 'e') {
+        newWidth = Math.max(80, startWidth + deltaX);
+      } else if (handle === 'sw' || handle === 'w') {
+        newWidth = Math.max(80, startWidth - deltaX);
+      } else if (handle === 'ne') {
+        newWidth = Math.max(80, startWidth + deltaX);
+      } else if (handle === 'nw') {
+        newWidth = Math.max(80, startWidth - deltaX);
+      } else if (handle === 's') {
+        newWidth = Math.max(80, (startHeight + deltaY) * aspectRatio);
+      } else if (handle === 'n') {
+        newWidth = Math.max(80, (startHeight - deltaY) * aspectRatio);
+      }
+
+      selectedImageEl.style.width = `${Math.round(newWidth)}px`;
+      selectedImageEl.style.height = 'auto';
+      updateImageBoxPosition(selectedImageEl);
+    };
+
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      resizingStateRef.current = null;
+      handleEditorInput();
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
 
   // Rilevamento selezione testo per popup fluttuante
   useEffect(() => {
@@ -482,7 +1065,7 @@ function MainAppContent() {
     };
 
     const handleMouseDown = (e) => {
-      if (e.target.closest('#floating-selection-popup') || e.target.closest('#image-editing-toolbar')) return;
+      if (e.target.closest('#floating-selection-popup') || e.target.closest('#image-editing-toolbar') || e.target.closest('#image-resize-overlay')) return;
       setTimeout(handleSelection, 120);
     };
 
@@ -526,6 +1109,9 @@ function MainAppContent() {
     e.stopPropagation();
     const updated = (conversations || []).filter(c => c.id !== id);
     setConversations(updated);
+    if (user) {
+      deleteChatFromCloud(user.id, id);
+    }
     if (currentChatId === id) handleNewChat();
   };
 
@@ -533,6 +1119,9 @@ function MainAppContent() {
     e.stopPropagation();
     const updated = (savedProjects || []).filter(p => p.id !== id);
     setSavedProjects(updated);
+    if (user) {
+      deleteProjectFromCloud(user.id, id);
+    }
     if (activeProject?.id === id) {
       setActiveProject(null);
       setCurrentView('chat');
@@ -552,6 +1141,103 @@ function MainAppContent() {
     setLoadingProgress(0);
     setCurrentView('wizard');
     setIsSidebarOpen(false);
+  };
+
+  // -------------------------------------------------------------
+  // ESPORTAZIONE PDF DELLA LEZIONE CON HTML2PDF
+  // -------------------------------------------------------------
+  const handleDownloadLessonPDF = () => {
+    if (!wysiwygEditorRef.current || !currentSelectedTopic) return;
+    setIsExportingPDF(true);
+
+    try {
+      const topicTitle = currentSelectedTopic.title || 'Lezione';
+      const examName = activeProject?.description || 'Studio';
+      const dayTitle = currentDayData?.dayTitle || '';
+      const dayDate = currentDayData?.date || '';
+
+      // Contenitore A4 (794px) visibile a html2canvas con z-index basso per non disturbare la vista utente
+      const printContainer = document.createElement('div');
+      printContainer.id = 'minerva-pdf-render-target';
+      printContainer.className = 'pdf-export-container';
+      printContainer.style.position = 'fixed';
+      printContainer.style.left = '0';
+      printContainer.style.top = '0';
+      printContainer.style.width = '794px';
+      printContainer.style.minWidth = '794px';
+      printContainer.style.maxWidth = '794px';
+      printContainer.style.backgroundColor = '#ffffff';
+      printContainer.style.color = '#0f172a';
+      printContainer.style.padding = '36px 40px';
+      printContainer.style.boxSizing = 'border-box';
+      printContainer.style.zIndex = '999999';
+      printContainer.style.overflow = 'visible';
+
+      printContainer.innerHTML = `
+        <div style="border-bottom: 2.5px solid #2563eb; padding-bottom: 14px; margin-bottom: 24px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+            <div style="font-size: 11px; color: #2563eb; font-weight: 800; text-transform: uppercase; letter-spacing: 1.2px;">
+              MinervaAI • Compendio Didattico Universitario
+            </div>
+            <div style="font-size: 11px; color: #64748b; font-weight: 600;">
+              ${dayTitle ? `${dayTitle} • ` : ''}${dayDate || new Date().toLocaleDateString('it-IT')}
+            </div>
+          </div>
+          <h1 style="margin: 6px 0 6px 0; font-size: 24px; color: #0f172a; font-weight: 800; line-height: 1.3;">
+            ${topicTitle}
+          </h1>
+          <div style="font-size: 12px; color: #475569; font-style: italic;">
+            <strong>Materia:</strong> ${examName}
+          </div>
+        </div>
+        <div class="pdf-body-content" style="font-size: 12.5px; color: #1e293b; line-height: 1.7;">
+          ${wysiwygEditorRef.current.innerHTML}
+        </div>
+        <div style="border-top: 1px solid #e2e8f0; margin-top: 36px; padding-top: 12px; font-size: 10px; color: #94a3b8; display: flex; justify-content: space-between; align-items: center;">
+          <span>MinervaAI • Piattaforma per lo Studio Universitario</span>
+          <span>Data esportazione: ${new Date().toLocaleDateString('it-IT')}</span>
+        </div>
+      `;
+
+      document.body.appendChild(printContainer);
+
+      const opt = {
+        margin: [10, 10, 10, 10],
+        filename: `${topicTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}_Compendio.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { 
+          scale: 2, 
+          useCORS: true, 
+          logging: false,
+          scrollX: 0,
+          scrollY: 0,
+          width: 794
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+      };
+
+      const cleanup = () => {
+        if (printContainer && printContainer.parentNode) {
+          printContainer.parentNode.removeChild(printContainer);
+        }
+        setIsExportingPDF(false);
+      };
+
+      if (typeof window !== 'undefined' && window.html2pdf) {
+        window.html2pdf().set(opt).from(printContainer).save().then(cleanup).catch(err => {
+          console.error("html2pdf save error:", err);
+          cleanup();
+        });
+      } else {
+        cleanup();
+        window.print();
+      }
+    } catch (err) {
+      console.error("Errore esportazione PDF:", err);
+      alert("Errore durante la generazione del PDF: " + err.message);
+      setIsExportingPDF(false);
+    }
   };
 
   // -------------------------------------------------------------
@@ -589,15 +1275,15 @@ function MainAppContent() {
           if (name.endsWith('.pdf') || mime.includes('pdf')) {
             const buffer = await file.arrayBuffer();
             const res = await extractTextFromPdf(buffer);
-            text = res.text;
+            text = res?.text || '';
           } else if (name.endsWith('.docx') || mime.includes('word')) {
             const buffer = await file.arrayBuffer();
             const res = await extractTextFromDocx(buffer);
-            text = res.text;
+            text = res?.text || '';
           } else if (name.endsWith('.pptx') || mime.includes('presentation')) {
             const buffer = await file.arrayBuffer();
             const res = await extractTextFromPptx(buffer);
-            text = res.text;
+            text = res?.text || '';
           } else {
             text = await file.text();
           }
@@ -654,13 +1340,11 @@ function MainAppContent() {
   // -------------------------------------------------------------
   const handleToggleVoiceRecording = async () => {
     if (isRecordingAudio) {
-      // Ferma registrazione
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
       }
       setIsRecordingAudio(false);
     } else {
-      // Avvia registrazione
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         alert("Il tuo browser non supporta la registrazione microfonica.");
         return;
@@ -684,7 +1368,6 @@ function MainAppContent() {
         };
 
         mediaRecorder.onstop = async () => {
-          // Chiudi tracce audio
           stream.getTracks().forEach(track => track.stop());
 
           const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
@@ -732,7 +1415,6 @@ function MainAppContent() {
   // -------------------------------------------------------------
   // GESTIONE IMMAGINI NELLE LEZIONI (PASTE, UPLOAD & CONTROLLI)
   // -------------------------------------------------------------
-  // Inserimento immagine al cursore
   const insertImageAtCaret = (base64Url) => {
     if (!wysiwygEditorRef.current) return;
 
@@ -743,7 +1425,6 @@ function MainAppContent() {
     handleEditorInput();
   };
 
-  // Paste immagine da appunti
   const handleEditorPaste = (e) => {
     const items = e.clipboardData?.items;
     if (!items) return;
@@ -762,7 +1443,6 @@ function MainAppContent() {
     }
   };
 
-  // Upload immagine da tasto barra formattazione
   const handleImageFileSelect = (e) => {
     const file = e.target.files?.[0];
     if (file && file.type.startsWith('image/')) {
@@ -773,12 +1453,50 @@ function MainAppContent() {
     e.target.value = '';
   };
 
-  // Controlli per immagine selezionata
-  const handleResizeImage = (widthPercent) => {
-    if (selectedImageEl) {
-      selectedImageEl.style.width = `${widthPercent}%`;
-      handleEditorInput();
-    }
+  const handleSetImageWidth = (widthPercent) => {
+    if (!selectedImageEl) return;
+    selectedImageEl.style.width = widthPercent;
+    selectedImageEl.style.maxWidth = '100%';
+    selectedImageEl.style.height = 'auto';
+    updateImageBoxRect(selectedImageEl);
+  };
+
+  const handleOpenCropModal = () => {
+    if (!selectedImageEl) return;
+    setCropImageSrc(selectedImageEl.src);
+    setCropInset({ top: 0, bottom: 0, left: 0, right: 0 });
+    setIsCropModalOpen(true);
+  };
+
+  const handleApplyCrop = () => {
+    if (!selectedImageEl || !cropImageSrc) return;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const naturalW = img.naturalWidth || img.width;
+      const naturalH = img.naturalHeight || img.height;
+
+      const sx = (cropInset.left / 100) * naturalW;
+      const sy = (cropInset.top / 100) * naturalH;
+      const sw = naturalW * (1 - (cropInset.left + cropInset.right) / 100);
+      const sh = naturalH * (1 - (cropInset.top + cropInset.bottom) / 100);
+
+      canvas.width = Math.max(10, sw);
+      canvas.height = Math.max(10, sh);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+
+      try {
+        const croppedDataUrl = canvas.toDataURL('image/png');
+        selectedImageEl.src = croppedDataUrl;
+        updateImageBoxRect(selectedImageEl);
+      } catch (err) {
+        console.warn('Crop canvas export error:', err);
+      }
+      setIsCropModalOpen(false);
+    };
+    img.src = cropImageSrc;
   };
 
   const handleAlignImage = (alignClass) => {
@@ -787,6 +1505,7 @@ function MainAppContent() {
       if (wrapper) {
         wrapper.className = `lesson-image-wrapper my-4 select-none ${alignClass}`;
         handleEditorInput();
+        updateImageBoxPosition(selectedImageEl);
       }
     }
   };
@@ -797,6 +1516,7 @@ function MainAppContent() {
       if (wrapper) wrapper.remove();
       else selectedImageEl.remove();
       setSelectedImageEl(null);
+      setImageBoxRect(null);
       setImageToolPos(null);
       handleEditorInput();
     }
@@ -825,27 +1545,32 @@ function MainAppContent() {
 
     for (const entry of newFileEntries) {
       const file = entry.fileRef;
-      const name = file.name.toLowerCase();
-      const mime = file.type.toLowerCase();
+      const name = (file.name || '').toLowerCase();
+      const mime = (file.type || '').toLowerCase();
 
       try {
         let text = '';
         let pages = 1;
+        let fileImages = [];
 
         if (name.endsWith('.pdf') || mime.includes('pdf')) {
           const buffer = await file.arrayBuffer();
           const res = await extractTextFromPdf(buffer);
-          text = res.text;
-          pages = res.pagesCount;
+          text = res?.text || '';
+          pages = res?.pagesCount || 1;
+          fileImages = res?.images || [];
         } else if (name.endsWith('.docx') || mime.includes('word')) {
           const buffer = await file.arrayBuffer();
           const res = await extractTextFromDocx(buffer);
-          text = res.text;
-        } else if (name.endsWith('.pptx') || mime.includes('presentation') || mime.includes('powerpoint')) {
+          text = res?.text || '';
+          pages = res?.pagesCount || 1;
+          fileImages = res?.images || [];
+        } else if (name.endsWith('.pptx') || mime.includes('presentation')) {
           const buffer = await file.arrayBuffer();
           const res = await extractTextFromPptx(buffer);
-          text = res.text;
-          pages = res.pagesCount;
+          text = res?.text || '';
+          pages = res?.pagesCount || 1;
+          fileImages = res?.images || [];
         } else {
           text = await file.text();
         }
@@ -858,6 +1583,7 @@ function MainAppContent() {
           extractedText: text,
           wordsCount: words,
           pagesCount: pages,
+          images: fileImages,
         } : f));
 
       } catch (err) {
@@ -867,6 +1593,7 @@ function MainAppContent() {
           status: 'error',
           extractedText: '',
           wordsCount: 0,
+          images: [],
         } : f));
       } finally {
         setExtractingCount(prev => Math.max(0, prev - 1));
@@ -966,7 +1693,17 @@ function MainAppContent() {
       setLoadingStatusText('Piano di studio creato con successo!');
 
       if (!isOnlineSearch) {
-        await saveProjectDataToDB(projectId, { files: readyFiles });
+        const sanitizedFilesForDB = readyFiles.map(f => ({
+          id: f.id,
+          name: f.name,
+          size: f.size,
+          mimeType: f.mimeType,
+          extractedText: f.extractedText || '',
+          wordsCount: f.wordsCount || 0,
+          pagesCount: f.pagesCount || 1,
+          images: (f.images || []).map(img => ({ id: img.id, name: img.name, dataUrl: img.dataUrl, label: img.label }))
+        }));
+        await saveProjectDataToDB(projectId, { files: sanitizedFilesForDB });
       }
 
       const newProject = {
@@ -991,6 +1728,9 @@ function MainAppContent() {
       };
 
       setSavedProjects(old => [newProject, ...(old || [])]);
+    if (user) {
+      saveProjectToCloud(user.id, newProject);
+    }
       setActiveProject(newProject);
       setSidebarTab('projects');
 
@@ -1022,15 +1762,19 @@ function MainAppContent() {
           isLessonGeneration: true,
           topicTitle: topic.title,
           sourceType: activeProject.sourceType,
-          files: activeProject.sourceType === 'my_materials' ? fullFilesList.map(f => ({ name: f.name, text: f.extractedText || f.text })) : [],
+          files: activeProject.sourceType === 'my_materials' ? fullFilesList.map(f => ({
+            name: f.name,
+            text: f.extractedText || f.text,
+            images: f.images ? f.images.map(img => ({ id: img.id, name: img.name, label: img.label })) : []
+          })) : [],
           examDescription: activeProject.description,
           prepLevel: activeProject.prepLevel,
           languageStyle: activeProject.languageStyle
         }),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Errore nella generazione della lezione.');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || (res.status === 504 ? 'Timeout serverless: la generazione ha richiesto troppo tempo. Riprova ora.' : `Errore server (${res.status}): generazione non riuscita.`));
 
       const lessonContent = data.reply;
       updateTopicLessonContent(dayNum, topic.id, lessonContent);
@@ -1063,6 +1807,9 @@ function MainAppContent() {
     const updatedProject = { ...activeProject, schedule: updatedSchedule };
     setActiveProject(updatedProject);
     setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProject : p));
+    if (user) {
+      saveProjectToCloud(user.id, updatedProject);
+    }
   };
 
   // Sincronizzazione in tempo reale durante la digitazione nell'editor WYSIWYG
@@ -1186,7 +1933,82 @@ function MainAppContent() {
     }
   };
 
-  // CHATBOT LEZIONE: MODIFICA DIRETTA
+  // DETTATURA VOCALE CHAT DELLA LEZIONE CON WHISPER
+  const handleToggleLessonVoiceRecording = async () => {
+    if (isRecordingLessonAudio) {
+      if (lessonMediaRecorderRef.current && lessonMediaRecorderRef.current.state !== 'inactive') {
+        lessonMediaRecorderRef.current.stop();
+      }
+      setIsRecordingLessonAudio(false);
+    } else {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert("Il tuo browser non supporta la registrazione microfonica.");
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        lessonAudioChunksRef.current = [];
+
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
+          ? 'audio/webm;codecs=opus' 
+          : (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : 'audio/webm');
+
+        const mediaRecorder = new MediaRecorder(stream, { mimeType });
+        lessonMediaRecorderRef.current = mediaRecorder;
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            lessonAudioChunksRef.current.push(e.data);
+          }
+        };
+
+        mediaRecorder.onstop = async () => {
+          stream.getTracks().forEach(track => track.stop());
+
+          const audioBlob = new Blob(lessonAudioChunksRef.current, { type: mimeType });
+          if (audioBlob.size < 500) return;
+
+          setIsTranscribingLessonAudio(true);
+
+          try {
+            const reader = new FileReader();
+            reader.onload = async () => {
+              const base64Audio = reader.result;
+
+              const res = await fetch('/.netlify/functions/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'transcribe_audio',
+                  audioBase64: base64Audio,
+                  audioMimeType: mimeType
+                }),
+              });
+
+              const data = await res.json();
+              if (data.text) {
+                setLessonChatInput(prev => prev ? `${prev.trim()} ${data.text.trim()}` : data.text.trim());
+              }
+            };
+            reader.readAsDataURL(audioBlob);
+          } catch (err) {
+            console.error("Errore dettatura Whisper lezione:", err);
+          } finally {
+            setIsTranscribingLessonAudio(false);
+          }
+        };
+
+        mediaRecorder.start();
+        setIsRecordingLessonAudio(true);
+      } catch (err) {
+        alert("Permesso microfono non concesso o errore audio.");
+        setIsRecordingLessonAudio(false);
+      }
+    }
+  };
+
+    // CHATBOT LEZIONE: MODIFICA DIRETTA
   const handleSendLessonChatMessage = async (preset = null) => {
     const promptText = (preset || lessonChatInput).trim();
     if (!promptText || isLessonChatLoading || !currentSelectedTopic?.lesson) return;
@@ -1553,6 +2375,9 @@ function MainAppContent() {
       const updatedProj = { ...activeProject, quizHistory: updatedHistory, schedule: updatedSchedule };
       setActiveProject(updatedProj);
       setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProj : p));
+      if (user) {
+        saveProjectToCloud(user.id, updatedProj);
+      }
     }
 
     setQuizStep(5);
@@ -1616,6 +2441,9 @@ function MainAppContent() {
     const updatedProject = { ...activeProject, schedule: updatedSchedule };
     setActiveProject(updatedProject);
     setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProject : p));
+    if (user) {
+      saveProjectToCloud(user.id, updatedProject);
+    }
   };
 
   const calculateGlobalProgress = () => {
@@ -1639,6 +2467,10 @@ function MainAppContent() {
   // Chat Homepage: invio messaggi con multi-file (fino a 10 file)
   const handleSendMessage = async (textToSend = inputPrompt) => {
     const prompt = textToSend.trim();
+    if (!isSubscribed && freeQuestionCount >= 1) {
+      setIsPaywallModalOpen(true);
+      return;
+    }
     if (!prompt && attachedFiles.length === 0) return;
     if (isLoading) return;
 
@@ -1677,14 +2509,31 @@ function MainAppContent() {
       const updatedMessages = [...newMessages, aiMessage];
       setMessages(updatedMessages);
 
+      if (!isSubscribed) {
+        const nextCount = freeQuestionCount + 1;
+        setFreeQuestionCount(nextCount);
+        if (user?.id && typeof window !== 'undefined') {
+          localStorage.setItem('minerva_free_count_' + user.id, String(nextCount));
+        }
+        setTimeout(() => {
+          setIsPaywallModalOpen(true);
+        }, 1200);
+      }
+
       let chatId = currentChatId;
       if (!chatId) {
         chatId = Date.now().toString();
         setCurrentChatId(chatId);
         const title = prompt ? (prompt.slice(0, 28) + (prompt.length > 28 ? '...' : '')) : (filesPayload[0]?.name || 'Nuova sessione');
         setConversations([{ id: chatId, title, messages: updatedMessages }, ...(conversations || [])]);
+      if (user) {
+        saveChatToCloud(user.id, { id: chatId, title, messages: updatedMessages });
+      }
       } else {
         setConversations((conversations || []).map(c => c.id === chatId ? { ...c, messages: updatedMessages } : c));
+      if (user) {
+        saveChatToCloud(user.id, { id: chatId, title: conversations.find(c => c.id === chatId)?.title || 'Conversazione', messages: updatedMessages });
+      }
       }
     } catch (err) {
       setMessages([...newMessages, { role: 'assistant', text: `Si è verificato un errore: ${err.message}` }]);
@@ -1721,6 +2570,458 @@ function MainAppContent() {
   const allProjectTopics = getAllProjectTopics();
   const currentQuizQ = quizQuestions[currentQuestionIndex];
   const readiness = calculateOverallReadiness();
+
+  // CONTROLLO ABBONAMENTO OBBLIGATORIO (PAYWALL STRIPE 14,99 €/MESE) - BYPASS DIRETTO AI
+  const isSubscribed = true;
+
+  const handleAcceptTos = async () => {
+    if (!tosChecked || !recessoChecked) return;
+    const now = new Date().toISOString();
+    if (user?.id && typeof window !== 'undefined') {
+      localStorage.setItem('minerva_tos_accepted_' + user.id, now);
+      if (typeof supabase !== 'undefined' && supabase && isValidUUID(user.id)) {
+        try {
+          await supabase.from('profiles').update({ tos_accepted_at: now }).eq('id', user.id);
+        } catch (e) {
+          console.warn('TOS update DB error:', e);
+        }
+      }
+    }
+    setHasAcceptedTos(true);
+  };
+
+  const handleSecretUnlock = async () => {
+    setSecretCodeError('Lo sblocco tramite codice locale è disabilitato per sicurezza.');
+    setSecretCodeSuccess('');
+  };
+
+    const stripeCheckoutUrl = `${STRIPE_PAYMENT_URL}?prefilled_email=${encodeURIComponent(user?.email || '')}&client_reference_id=${user?.id || ''}`;
+
+  if (!isSubscribed && currentView !== 'chat') {
+    return (
+      <div className={`min-h-screen w-screen flex flex-col items-center justify-center p-4 sm:p-6 transition ${
+        theme === 'light' ? 'bg-[#f8fafc] text-slate-900' : 'bg-geminiDark text-gray-100'
+      }`}>
+        {/* Toggle Tema in alto a destra */}
+        <button
+          onClick={toggleTheme}
+          className={`absolute top-6 right-6 p-2.5 rounded-2xl border transition shadow-lg ${
+            theme === 'light' 
+              ? 'bg-white border-slate-200 text-slate-600 hover:text-amber-500' 
+              : 'bg-geminiDarkSecondary border-geminiBorder text-gray-400 hover:text-amber-400'
+          }`}
+          title={theme === 'dark' ? "Passa a Modalità Giorno" : "Passa a Modalità Notte"}
+        >
+          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+        </button>
+
+        <div className={`w-full max-w-lg border rounded-3xl p-6 sm:p-10 shadow-2xl space-y-6 transition animate-popup ${
+          theme === 'light' ? 'bg-white border-slate-200 shadow-slate-200/50' : 'bg-geminiDarkSecondary border-geminiBorder'
+        }`}>
+          <div className="text-center space-y-3">
+            <div className="w-16 h-16 mx-auto flex items-center justify-center overflow-hidden">
+              <AppLogo className="w-16 h-16" imgClassName="w-16 h-16 object-contain drop-shadow-xl" />
+            </div>
+            
+            <div className="space-y-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-blue-500/10 text-blue-600 border border-blue-500/20">
+                Abbonamento Obbligatorio
+              </span>
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight pt-1">
+                Sblocca MinervaAI Premium
+              </h1>
+              <p className={`text-xs max-w-sm mx-auto ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>
+                Accedi senza limiti alla piattaforma intelligente per la preparazione dei tuoi esami universitari.
+              </p>
+            </div>
+          </div>
+
+          {/* Scheda Prezzo */}
+          <div className={`p-6 rounded-3xl border relative overflow-hidden transition ${
+            theme === 'light'
+              ? 'bg-gradient-to-br from-blue-50/50 via-indigo-50/30 to-purple-50/40 border-blue-200'
+              : 'bg-gradient-to-br from-blue-950/40 via-indigo-950/20 to-geminiDark border-blue-500/30'
+          }`}>
+            <div className="flex items-baseline justify-between">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wider text-blue-500">Piano Mensile</div>
+                <div className="text-3xl sm:text-4xl font-black tracking-tight text-blue-600 mt-1">
+                  14,99 € <span className={`text-xs font-normal ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>/ mese</span>
+                </div>
+              </div>
+              <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
+                Rinnovo Mensile
+              </span>
+            </div>
+
+            {/* Lista Vantaggi */}
+            <div className="mt-5 space-y-2.5 text-xs">
+              {[
+                "Accesso illimitato a tutte le lezioni con scalette complete al 100%",
+                "Formule scientifiche renderizzate in tempo reale con KaTeX/LaTeX",
+                "Verifiche e Quiz con valutazione in trentesimi (0-30/30)",
+                "Dettatura vocale ad altissima precisione con OpenAI Whisper",
+                "Analisi e confronto simultaneo fino a 10 file (PDF, Word, PPTX)",
+                "Sincronizzazione cloud e accesso da tutti i tuoi dispositivi"
+              ].map((feat, idx) => (
+                <div key={idx} className="flex items-center gap-2.5">
+                  <CheckCircle2 size={15} className="text-blue-500 shrink-0" />
+                  <span className={theme === 'light' ? 'text-slate-700 font-medium' : 'text-gray-300'}>{feat}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Pulsante di Pagamento Stripe */}
+          <div className="space-y-3 pt-1">
+            <a
+              href={stripeCheckoutUrl}
+              className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-4 rounded-2xl shadow-xl shadow-blue-600/30 transition transform active:scale-98 flex items-center justify-center gap-2.5 text-sm"
+            >
+              <Sparkles size={18} />
+              <span>Abbonati a 14,99 €/mese con Stripe</span>
+            </a>
+
+            
+            {/* Box Sblocca Ora con Codice CANE */}
+            <div className={`p-4 rounded-2xl border transition ${
+              theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-geminiDark border-geminiBorder'
+            }`}>
+              {!isSecretUnlockOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setIsSecretUnlockOpen(true)}
+                  className="w-full flex items-center justify-center gap-2 text-xs font-bold text-blue-500 hover:text-blue-400 py-1 transition"
+                >
+                  <Key size={14} />
+                  <span>Sblocca ora</span>
+                </button>
+              ) : (
+                <div className="space-y-3 animate-popup">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold flex items-center gap-1.5">
+                      <Key size={13} className="text-blue-500" />
+                      <span>Inserisci codice di sblocco</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => { setIsSecretUnlockOpen(false); setSecretCodeError(''); setSecretCodeSuccess(''); }}
+                      className="text-gray-400 hover:text-white"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={secretCodeInput}
+                      onChange={(e) => setSecretCodeInput(e.target.value)}
+                      placeholder="Digita CANE..."
+                      className={`flex-1 px-3 py-2 text-xs rounded-xl border focus:outline-none uppercase font-bold tracking-wider transition ${
+                        theme === 'light' 
+                          ? 'bg-white border-slate-300 text-slate-900 focus:border-blue-500' 
+                          : 'bg-geminiDarkSecondary border-geminiBorder text-white focus:border-blue-500'
+                      }`}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleSecretUnlock(); }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSecretUnlock}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition shadow-md shrink-0"
+                    >
+                      Sblocca
+                    </button>
+                  </div>
+                  {secretCodeError && <p className="text-[11px] font-semibold text-red-500">{secretCodeError}</p>}
+                  {secretCodeSuccess && <p className="text-[11px] font-semibold text-emerald-500">{secretCodeSuccess}</p>}
+                </div>
+              )}
+            </div>
+
+
+            <div className="flex items-center justify-between pt-2">
+              <button
+                onClick={() => setCurrentView('chat')}
+                className="text-xs text-blue-500 hover:underline font-semibold flex items-center gap-1.5"
+              >
+                <span>Torna alla Chat Iniziale</span>
+              </button>
+
+              <button
+                onClick={handleSignOut}
+                className={`text-xs hover:underline flex items-center gap-1 ${
+                  theme === 'light' ? 'text-slate-500 hover:text-slate-800' : 'text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                <LogOut size={12} />
+                <span>Esci dall'account</span>
+              </button>
+            </div>
+          </div>
+
+          <p className={`text-[10px] text-center ${theme === 'light' ? 'text-slate-400' : 'text-gray-500'}`}>
+            Pagamenti protetti e gestiti in sicurezza da Stripe • Nessun vincolo, puoi disdire in qualsiasi momento.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+
+  if (isAuthInitializing) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-geminiDark text-gray-100">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="w-16 h-16 flex items-center justify-center animate-pulse">
+            <AppLogo className="w-16 h-16" imgClassName="w-16 h-16 object-contain drop-shadow-xl" />
+          </div>
+          <div className="flex items-center space-x-2 text-sm text-gray-400">
+            <RefreshCw size={16} className="animate-spin text-blue-500" />
+            <span>Avvio di MinervaAI...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Schermata di blocco login disattivata per accesso diretto all'AI
+  if (false && !user) {
+    return (
+      <div className="flex min-h-screen w-screen items-center justify-center bg-geminiDark text-gray-100 p-4 sm:p-6 selection:bg-blue-600 selection:text-white relative">
+        {/* Toggle Tema Notte / Giorno */}
+        <button
+          onClick={toggleTheme}
+          className="absolute top-6 right-6 p-2.5 rounded-2xl bg-geminiDarkSecondary border border-geminiBorder text-gray-400 hover:text-amber-400 hover:bg-geminiHover transition shadow-lg"
+          title={theme === 'dark' ? "Passa a Modalità Giorno (Chiaro)" : "Passa a Modalità Notte (Scuro)"}
+        >
+          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+        </button>
+
+        <div className="w-full max-w-md bg-geminiDarkSecondary border border-geminiBorder rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 animate-popup">
+          <div className="text-center space-y-2">
+            <div className="w-16 h-16 mx-auto flex items-center justify-center">
+              <AppLogo className="w-16 h-16" imgClassName="w-16 h-16 object-contain drop-shadow-xl" />
+            </div>
+            <h1 className="text-2xl font-bold text-gray-100 tracking-tight flex items-center justify-center gap-2">
+              MinervaAI
+            </h1>
+            <p className="text-xs text-gray-400">
+              {authMode === 'login' && 'Accedi al tuo account per visualizzare i tuoi progetti di studio e le tue lezioni.'}
+              {authMode === 'signup' && 'Crea un account gratuito per salvare e sincronizzare i tuoi esami nel cloud.'}
+              {authMode === 'reset' && 'Inserisci la tua email per ricevere le istruzioni di recupero password.'}
+            </p>
+          </div>
+
+          {/* Switcher Tab Accedi / Registrati */}
+          {authMode !== 'reset' && (
+            <div className="flex bg-geminiDark p-1 rounded-2xl border border-geminiBorder">
+              <button
+                type="button"
+                onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess(''); }}
+                className={`flex-1 py-2 text-xs font-semibold rounded-xl transition ${
+                  authMode === 'login'
+                    ? 'bg-geminiDarkSecondary text-blue-400 shadow-md border border-geminiBorder/60'
+                    : 'text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                Accedi
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAuthMode('signup'); setAuthError(''); setAuthSuccess(''); }}
+                className={`flex-1 py-2 text-xs font-semibold rounded-xl transition ${
+                  authMode === 'signup'
+                    ? 'bg-geminiDarkSecondary text-blue-400 shadow-md border border-geminiBorder/60'
+                    : 'text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                Registrati
+              </button>
+            </div>
+          )}
+
+          {/* Banner Errore / Successo */}
+          {authError && (
+            <div className="bg-red-500/10 border border-red-500/30 p-3.5 rounded-2xl flex items-center gap-2.5 text-xs text-red-400">
+              <AlertTriangle size={16} className="shrink-0" />
+              <span>{authError}</span>
+            </div>
+          )}
+          {authSuccess && (
+            <div className="bg-emerald-500/10 border border-emerald-500/30 p-3.5 rounded-2xl flex items-center gap-2.5 text-xs text-emerald-400">
+              <CheckCircle2 size={16} className="shrink-0" />
+              <span>{authSuccess}</span>
+            </div>
+          )}
+
+          {/* Form */}
+          <form onSubmit={handleAuthSubmit} className="space-y-4">
+            {authMode === 'signup' && (
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-semibold text-gray-300 uppercase tracking-wider">
+                  Nome Completo
+                </label>
+                <div className="relative flex items-center">
+                  <User size={16} className="absolute left-3.5 text-gray-400" />
+                  <input
+                    type="text"
+                    required
+                    value={authFullName}
+                    onChange={(e) => setAuthFullName(e.target.value)}
+                    placeholder="es. Mario Rossi"
+                    className="w-full bg-geminiDark border border-geminiBorder rounded-2xl pl-10 pr-4 py-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-semibold text-gray-300 uppercase tracking-wider">
+                Email
+              </label>
+              <div className="relative flex items-center">
+                <Mail size={16} className="absolute left-3.5 text-gray-400" />
+                <input
+                  type="email"
+                  required
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  placeholder="nome@esempio.it"
+                  className="w-full bg-geminiDark border border-geminiBorder rounded-2xl pl-10 pr-4 py-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition"
+                />
+              </div>
+            </div>
+
+            {authMode !== 'reset' && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[11px] font-semibold text-gray-300 uppercase tracking-wider">
+                    Password
+                  </label>
+                  {authMode === 'login' && (
+                    <button
+                      type="button"
+                      onClick={() => { setAuthMode('reset'); setAuthError(''); setAuthSuccess(''); }}
+                      className="text-[11px] text-blue-400 hover:underline"
+                    >
+                      Password dimenticata?
+                    </button>
+                  )}
+                </div>
+                <div className="relative flex items-center">
+                  <Lock size={16} className="absolute left-3.5 text-gray-400" />
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    placeholder="Minimo 6 caratteri"
+                    className="w-full bg-geminiDark border border-geminiBorder rounded-2xl pl-10 pr-4 py-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition"
+                  />
+                </div>
+              </div>
+            )}
+
+            {authMode === 'signup' && (
+              <div className="flex items-start gap-2.5 pt-1 text-xs text-gray-400">
+                <input
+                  type="checkbox"
+                  id="signup_tos"
+                  checked={signupTosAccepted}
+                  onChange={(e) => setSignupTosAccepted(e.target.checked)}
+                  className="mt-0.5 rounded border-gray-600 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                />
+                <label htmlFor="signup_tos" className="cursor-pointer text-[11px] leading-snug">
+                  Dichiaro di aver letto e accetto i{' '}
+                  <button
+                    type="button"
+                    onClick={() => { setLegalModalTab('terms'); setLegalModalOpen(true); }}
+                    className="text-blue-400 hover:underline font-semibold"
+                  >
+                    Termini di Servizio
+                  </button>{' '}
+                  e l'{' '}
+                  <button
+                    type="button"
+                    onClick={() => { setLegalModalTab('privacy'); setLegalModalOpen(true); }}
+                    className="text-blue-400 hover:underline font-semibold"
+                  >
+                    Informativa Privacy & Cookie
+                  </button>
+                  .
+                </label>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isAuthSubmitting}
+              className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 text-white font-semibold py-3.5 rounded-2xl shadow-lg shadow-blue-600/25 transition transform active:scale-98 flex items-center justify-center gap-2 text-sm"
+            >
+              {isAuthSubmitting ? (
+                <>
+                  <RefreshCw size={16} className="animate-spin" />
+                  <span>Elaborazione in corso...</span>
+                </>
+              ) : (
+                <>
+                  {authMode === 'login' && (
+                    <>
+                      <LogIn size={16} />
+                      <span>Accedi</span>
+                    </>
+                  )}
+                  {authMode === 'signup' && (
+                    <>
+                      <Sparkles size={16} />
+                      <span>Crea Account Gratuito</span>
+                    </>
+                  )}
+                  {authMode === 'reset' && (
+                    <>
+                      <Mail size={16} />
+                      <span>Invia Link di Recupero</span>
+                    </>
+                  )}
+                </>
+              )}
+            </button>
+          </form>
+
+          {authMode === 'reset' && (
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess(''); }}
+                className="text-xs text-blue-400 hover:underline font-semibold"
+              >
+                Torna al Login
+              </button>
+            </div>
+          )}
+
+          <div className="pt-3 border-t border-geminiBorder/40 text-center text-[11px] text-gray-500 flex items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => { setLegalModalTab('terms'); setLegalModalOpen(true); }}
+              className="hover:text-gray-300 hover:underline transition"
+            >
+              Termini di Servizio
+            </button>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={() => { setLegalModalTab('privacy'); setLegalModalOpen(true); }}
+              className="hover:text-gray-300 hover:underline transition"
+            >
+              Privacy & Cookie Policy (GDPR)
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-geminiDark text-gray-200 relative font-sans">
@@ -1770,7 +3071,65 @@ function MainAppContent() {
         </div>
       )}
 
-      {/* TOOLBAR CONTESTUALE PER MODIFICA IMMAGINI NELLE LEZIONI */}
+      {/* OVERLAY CORNER & EDGE HANDLES PER RIDIMENSIONAMENTO TRASCINABILE IMMAGINE */}
+      {selectedImageEl && imageBoxRect && (
+        <div
+          id="image-resize-overlay"
+          className="fixed z-40 pointer-events-auto border-2 border-blue-500"
+          style={{
+            left: `${imageBoxRect.left}px`,
+            top: `${imageBoxRect.top}px`,
+            width: `${imageBoxRect.width}px`,
+            height: `${imageBoxRect.height}px`,
+          }}
+        >
+          {/* Maniglie Angoli */}
+          <div 
+            onMouseDown={(e) => handleResizeHandleMouseDown(e, 'nw')}
+            className="absolute -top-1.5 -left-1.5 w-3.5 h-3.5 bg-white border-2 border-blue-600 rounded-sm cursor-nwse-resize shadow-md hover:scale-125 transition"
+            title="Trascina per ridimensionare"
+          />
+          <div 
+            onMouseDown={(e) => handleResizeHandleMouseDown(e, 'ne')}
+            className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-white border-2 border-blue-600 rounded-sm cursor-nesw-resize shadow-md hover:scale-125 transition"
+            title="Trascina per ridimensionare"
+          />
+          <div 
+            onMouseDown={(e) => handleResizeHandleMouseDown(e, 'sw')}
+            className="absolute -bottom-1.5 -left-1.5 w-3.5 h-3.5 bg-white border-2 border-blue-600 rounded-sm cursor-nesw-resize shadow-md hover:scale-125 transition"
+            title="Trascina per ridimensionare"
+          />
+          <div 
+            onMouseDown={(e) => handleResizeHandleMouseDown(e, 'se')}
+            className="absolute -bottom-1.5 -right-1.5 w-3.5 h-3.5 bg-white border-2 border-blue-600 rounded-sm cursor-nwse-resize shadow-md hover:scale-125 transition"
+            title="Trascina per ridimensionare"
+          />
+
+          {/* Maniglie Lati */}
+          <div 
+            onMouseDown={(e) => handleResizeHandleMouseDown(e, 'n')}
+            className="absolute -top-1.5 left-1/2 transform -translate-x-1/2 w-3.5 h-3.5 bg-white border-2 border-blue-600 rounded-sm cursor-ns-resize shadow-md hover:scale-125 transition"
+            title="Trascina altezza"
+          />
+          <div 
+            onMouseDown={(e) => handleResizeHandleMouseDown(e, 's')}
+            className="absolute -bottom-1.5 left-1/2 transform -translate-x-1/2 w-3.5 h-3.5 bg-white border-2 border-blue-600 rounded-sm cursor-ns-resize shadow-md hover:scale-125 transition"
+            title="Trascina altezza"
+          />
+          <div 
+            onMouseDown={(e) => handleResizeHandleMouseDown(e, 'w')}
+            className="absolute top-1/2 -left-1.5 transform -translate-y-1/2 w-3.5 h-3.5 bg-white border-2 border-blue-600 rounded-sm cursor-ew-resize shadow-md hover:scale-125 transition"
+            title="Trascina larghezza"
+          />
+          <div 
+            onMouseDown={(e) => handleResizeHandleMouseDown(e, 'e')}
+            className="absolute top-1/2 -right-1.5 transform -translate-y-1/2 w-3.5 h-3.5 bg-white border-2 border-blue-600 rounded-sm cursor-ew-resize shadow-md hover:scale-125 transition"
+            title="Trascina larghezza"
+          />
+        </div>
+      )}
+
+      {/* TOOLBAR CONTESTUALE ALLINEAMENTO & ELIMINA IMMAGINE */}
       {selectedImageEl && imageToolPos && (
         <div
           id="image-editing-toolbar"
@@ -1780,49 +3139,66 @@ function MainAppContent() {
             top: `${imageToolPos.y}px`,
           }}
         >
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] text-gray-400 font-bold px-1">Dimensione:</span>
-            {[
-              { label: '25%', val: 25 },
-              { label: '50%', val: 50 },
-              { label: '75%', val: 75 },
-              { label: '100%', val: 100 },
-            ].map(sz => (
-              <button
-                key={sz.val}
-                onClick={() => handleResizeImage(sz.val)}
-                className="px-2 py-0.5 bg-geminiDark hover:bg-geminiHover border border-geminiBorder rounded-lg text-[10px] font-semibold text-gray-200 transition"
-              >
-                {sz.label}
-              </button>
-            ))}
-          </div>
+          <span className="text-[10px] text-gray-400 font-bold px-1">Allinea:</span>
+          <button
+            onClick={() => handleAlignImage('text-left')}
+            className="p-1 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
+            title="Allinea a sinistra"
+          >
+            <AlignLeft size={13} />
+          </button>
+          <button
+            onClick={() => handleAlignImage('text-center')}
+            className="p-1 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
+            title="Centra"
+          >
+            <AlignCenter size={13} />
+          </button>
+          <button
+            onClick={() => handleAlignImage('text-right')}
+            className="p-1 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
+            title="Allinea a destra"
+          >
+            <AlignRight size={13} />
+          </button>
 
           <div className="w-[1px] h-4 bg-geminiBorder mx-0.5" />
 
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => handleAlignImage('text-left')}
-              className="p-1 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-              title="Allinea a sinistra"
-            >
-              <AlignLeft size={13} />
-            </button>
-            <button
-              onClick={() => handleAlignImage('text-center')}
-              className="p-1 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-              title="Centra immagine"
-            >
-              <AlignCenter size={13} />
-            </button>
-            <button
-              onClick={() => handleAlignImage('text-right')}
-              className="p-1 hover:bg-geminiHover rounded-lg text-gray-300 hover:text-white transition"
-              title="Allinea a destra"
-            >
-              <AlignRight size={13} />
-            </button>
-          </div>
+          {/* Preset Dimensioni Rapide */}
+          <span className="text-[10px] text-gray-400 font-bold px-0.5">Dim:</span>
+          <button
+            onClick={() => handleSetImageWidth('50%')}
+            className="px-1.5 py-0.5 text-[10px] font-bold text-gray-300 hover:text-white hover:bg-geminiHover rounded transition"
+            title="Dimensione Compatta (50%)"
+          >
+            50%
+          </button>
+          <button
+            onClick={() => handleSetImageWidth('72%')}
+            className="px-1.5 py-0.5 text-[10px] font-bold text-blue-400 hover:text-blue-300 hover:bg-blue-500/20 rounded transition"
+            title="Dimensione Standard (72%)"
+          >
+            72%
+          </button>
+          <button
+            onClick={() => handleSetImageWidth('100%')}
+            className="px-1.5 py-0.5 text-[10px] font-bold text-gray-300 hover:text-white hover:bg-geminiHover rounded transition"
+            title="Larghezza Intera (100%)"
+          >
+            100%
+          </button>
+
+          <div className="w-[1px] h-4 bg-geminiBorder mx-0.5" />
+
+          {/* Tasto Ritaglia */}
+          <button
+            onClick={handleOpenCropModal}
+            className="px-2 py-1 flex items-center gap-1 hover:bg-blue-500/20 text-blue-400 hover:text-blue-300 rounded-lg transition text-[11px] font-bold"
+            title="Ritaglia immagine"
+          >
+            <Crop size={12} />
+            <span>Ritaglia</span>
+          </button>
 
           <div className="w-[1px] h-4 bg-geminiBorder mx-0.5" />
 
@@ -2358,7 +3734,7 @@ function MainAppContent() {
         />
       )}
 
-      {/* SIDEBAR CON SEGMENTED SWITCHER (CONVERSAZIONI VS PROGETTI) */}
+      {/* SIDEBAR CON SEGMENTED SWITCHER */}
       <aside 
         className={`fixed inset-y-0 left-0 z-50 flex flex-col w-80 max-w-[85vw] bg-geminiDarkSecondary border-r border-geminiBorder shadow-2xl transition-transform duration-300 ease-in-out overflow-hidden ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -2517,7 +3893,41 @@ function MainAppContent() {
           )}
 
         </div>
-      </aside>
+            {/* ACCOUNT / PROFILO FOOTER */}
+      <div className="p-3 border-t border-geminiBorder/60 bg-geminiDarkSecondary shrink-0">
+        {user ? (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5 truncate pr-2">
+              <div className="w-8 h-8 rounded-full bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-xs font-bold text-blue-300 shrink-0 uppercase shadow-inner">
+                {user.user_metadata?.full_name ? user.user_metadata.full_name[0] : (user.email ? user.email[0] : 'U')}
+              </div>
+              <div className="truncate">
+                <p className="text-xs font-semibold text-gray-200 truncate">{user.user_metadata?.full_name || user.email?.split('@')[0]}</p>
+                <p className="text-[10px] text-emerald-400 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                  Cloud attivo
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleSignOut}
+              className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-geminiHover rounded-lg transition"
+              title="Esci dall'account"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => { setIsSidebarOpen(false); setAuthMode('login'); setAuthError(''); setAuthSuccess(''); setIsAuthModalOpen(true); }}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-geminiHover hover:bg-geminiBorder text-gray-200 border border-geminiBorder rounded-xl text-xs font-semibold transition shadow-sm"
+          >
+            <LogIn size={15} className="text-blue-400" />
+            <span>Accedi o Registrati</span>
+          </button>
+        )}
+      </div>
+    </aside>
 
       {/* CONTENUTO PRINCIPALE */}
       <div className="flex-1 flex flex-col h-full w-full relative overflow-hidden">
@@ -2535,20 +3945,92 @@ function MainAppContent() {
             
             <div 
               onClick={() => setCurrentView('chat')}
-              className="flex items-center gap-2.5 cursor-pointer"
+              className="flex items-center gap-2.5 cursor-pointer select-none group"
+              title="MinervaAI"
             >
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white font-bold shadow-md">
-                <GraduationCap size={18} />
-              </div>
-              <span className="font-semibold text-lg tracking-tight bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent">
-                StudyAI
+              <img 
+                src={logoImg} 
+                alt="MinervaAI" 
+                className="w-8 h-8 object-contain rounded-lg shadow-sm" 
+              />
+              <span className="font-bold text-lg tracking-tight bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 bg-clip-text text-transparent">
+                MinervaAI
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={handleStartWizard}
+          <div className="flex items-center gap-2.5">
+          {/* USER PROFILE / AUTH BUTTON */}
+          {user ? (
+            <div className="relative">
+              <button
+                onClick={() => setIsProfileMenuOpen(prev => !prev)}
+                className="flex items-center gap-2 bg-geminiDarkSecondary hover:bg-geminiHover border border-geminiBorder px-3 py-1.5 rounded-full cursor-pointer transition shadow-sm"
+                title="Opzioni account"
+              >
+                <div className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white uppercase shadow-sm">
+                  {user.user_metadata?.full_name ? user.user_metadata.full_name[0] : (user.email ? user.email[0] : 'U')}
+                </div>
+                <span className="text-xs text-gray-200 hidden sm:inline max-w-[120px] truncate font-medium">
+                  {user.user_metadata?.full_name || user.email?.split('@')[0]}
+                </span>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" title="Sincronizzazione Cloud attiva"></span>
+              </button>
+
+              {isProfileMenuOpen && (
+                <div className="absolute right-0 top-11 w-64 bg-geminiDarkSecondary border border-geminiBorder rounded-2xl shadow-2xl p-3 z-50 space-y-2 animate-popup">
+                  <div className="px-2 py-1.5 border-b border-geminiBorder/60">
+                    <p className="text-xs font-bold text-gray-100 truncate">{user.user_metadata?.full_name || 'Studente'}</p>
+                    <p className="text-[11px] text-gray-400 truncate">{user.email}</p>
+                    <div className="flex items-center gap-1.5 mt-2 text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full w-fit">
+                      <CreditCard size={12} />
+                      <span>Abbonamento Attivo (14,99 €/m)</span>
+                    </div>
+                  </div>
+                                    <button
+                    type="button"
+                    onClick={() => {
+                      setIsProfileMenuOpen(false);
+                      setIsSubManageModalOpen(true);
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 my-1 text-xs font-semibold rounded-xl border transition cursor-pointer ${
+                      theme === 'light'
+                        ? 'bg-blue-50/90 hover:bg-blue-100 text-blue-800 border-blue-200 shadow-sm'
+                        : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border-blue-500/30'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <CreditCard size={15} className="text-blue-500 shrink-0" />
+                      <span className="font-bold">Abbonamento</span>
+                    </div>
+                    <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
+                      isSubscribed ? 'bg-emerald-500/20 text-emerald-600' : 'bg-amber-500/20 text-amber-500'
+                    }`}>
+                      {isSubscribed ? 'Attivo' : '14,99 €/m'}
+                    </span>
+                  </button>
+<button
+                    onClick={() => { setIsProfileMenuOpen(false); handleSignOut(); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-red-400 hover:bg-red-500/10 rounded-xl transition"
+                  >
+                    <LogOut size={14} />
+                    <span>Disconnetti</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <button
+              onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess(''); setIsAuthModalOpen(true); }}
+              className="flex items-center gap-1.5 text-xs font-semibold bg-geminiDarkSecondary hover:bg-geminiHover text-gray-200 border border-geminiBorder px-3.5 py-2 rounded-full transition shadow-sm"
+            >
+              <LogIn size={14} className="text-blue-400" />
+              <span>Accedi</span>
+            </button>
+          )}
+
+          <button 
+            onClick={handleStartWizard}
               className="flex items-center gap-2 text-xs sm:text-sm font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-4 py-2 rounded-full shadow-lg shadow-blue-600/20 transition transform active:scale-95"
             >
               <Sparkles size={16} />
@@ -2563,19 +4045,29 @@ function MainAppContent() {
         {currentView === 'wizard' && (
           <main className="flex-1 overflow-y-auto px-4 md:px-8 py-8 max-w-2xl mx-auto w-full flex flex-col justify-center">
             {wizardStep === 1 && (
-              <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
+              <div className={`border p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6 transition ${
+                theme === 'light'
+                  ? 'bg-white border-slate-200 shadow-slate-200/50 text-slate-800'
+                  : 'bg-geminiDarkSecondary border-geminiBorder text-gray-100'
+              }`}>
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center border ${
+                    theme === 'light'
+                      ? 'bg-blue-50 text-blue-600 border-blue-200'
+                      : 'bg-blue-600/20 text-blue-400 border-blue-500/30'
+                  }`}>
                     <CalendarIcon size={20} />
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold text-gray-100">Quando hai l'esame?</h2>
-                    <p className="text-xs text-gray-400">Seleziona la data per strutturare il calendario giornaliero.</p>
+                    <h2 className={`text-xl font-bold ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>Quando hai l'esame?</h2>
+                    <p className={`text-xs ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>Seleziona la data per strutturare il calendario giornaliero.</p>
                   </div>
                 </div>
 
                 <div className="space-y-3 pt-2">
-                  <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
+                  <label className={`block text-xs font-semibold uppercase tracking-wider ${
+                    theme === 'light' ? 'text-slate-700' : 'text-gray-300'
+                  }`}>
                     Data dell'appello
                   </label>
                   <input 
@@ -2583,7 +4075,11 @@ function MainAppContent() {
                     value={examDate}
                     onChange={(e) => setExamDate(e.target.value)}
                     min={new Date().toISOString().split('T')[0]}
-                    className="w-full bg-geminiDark border border-geminiBorder rounded-2xl px-4 py-3.5 text-gray-100 text-base focus:outline-none focus:border-blue-500 transition [color-scheme:dark]"
+                    className={`w-full border rounded-2xl px-4 py-3.5 text-base focus:outline-none focus:border-blue-500 transition ${
+                      theme === 'light'
+                        ? 'bg-slate-50 border-slate-200 text-slate-900 [color-scheme:light]'
+                        : 'bg-geminiDark border-geminiBorder text-gray-100 [color-scheme:dark]'
+                    }`}
                   />
                   {examDate && (
                     <div className="flex items-center gap-2 text-xs text-blue-400 bg-blue-500/10 px-3.5 py-2 rounded-xl border border-blue-500/20">
@@ -2617,14 +4113,22 @@ function MainAppContent() {
             )}
 
             {wizardStep === 2 && (
-              <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
+              <div className={`border p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6 transition ${
+                theme === 'light'
+                  ? 'bg-white border-slate-200 shadow-slate-200/50 text-slate-800'
+                  : 'bg-geminiDarkSecondary border-geminiBorder text-gray-100'
+              }`}>
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center border ${
+                    theme === 'light'
+                      ? 'bg-indigo-50 text-indigo-600 border-indigo-200'
+                      : 'bg-indigo-600/20 text-indigo-400 border-indigo-500/30'
+                  }`}>
                     <Sliders size={20} />
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold text-gray-100">Obiettivo e Dettagli</h2>
-                    <p className="text-xs text-gray-400">Definisci il livello di padronanza e la tipologia dell'esame.</p>
+                    <h2 className={`text-xl font-bold ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>Obiettivo e Dettagli</h2>
+                    <p className={`text-xs ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>Definisci il livello di padronanza e la tipologia dell'esame.</p>
                   </div>
                 </div>
 
@@ -2658,7 +4162,11 @@ function MainAppContent() {
                     value={examDescription}
                     onChange={(e) => setExamDescription(e.target.value)}
                     placeholder="Es. Anatomia Patologica, Fisiologia, Diritto Privato..."
-                    className="w-full bg-geminiDark border border-geminiBorder rounded-2xl p-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition resize-none"
+                    className={`w-full border rounded-2xl p-3 text-sm focus:outline-none focus:border-blue-500 transition resize-none ${
+                      theme === 'light'
+                        ? 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400'
+                        : 'bg-geminiDark border-geminiBorder text-gray-100 placeholder-gray-500'
+                    }`}
                   />
                 </div>
 
@@ -2746,14 +4254,22 @@ function MainAppContent() {
             )}
 
             {wizardStep === 3 && (
-              <div className="bg-geminiDarkSecondary border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
+              <div className={`border p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6 transition ${
+                theme === 'light'
+                  ? 'bg-white border-slate-200 shadow-slate-200/50 text-slate-800'
+                  : 'bg-geminiDarkSecondary border-geminiBorder text-gray-100'
+              }`}>
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-400">
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center border ${
+                    theme === 'light'
+                      ? 'bg-purple-50 text-purple-600 border-purple-200'
+                      : 'bg-purple-600/20 text-purple-400 border-purple-500/30'
+                  }`}>
                     <BookOpen size={20} />
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold text-gray-100">Fonti di Studio</h2>
-                    <p className="text-xs text-gray-400">Scegli se usare i tuoi file o cercare online.</p>
+                    <h2 className={`text-xl font-bold ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>Fonti di Studio</h2>
+                    <p className={`text-xs ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>Scegli se usare i tuoi file o cercare online.</p>
                   </div>
                 </div>
 
@@ -2762,12 +4278,14 @@ function MainAppContent() {
                     onClick={() => setSourceType('my_materials')}
                     className={`p-4 rounded-2xl border cursor-pointer transition flex flex-col justify-between space-y-3 ${
                       sourceType === 'my_materials'
-                        ? 'bg-blue-600/15 border-blue-500 shadow-md'
-                        : 'bg-geminiDark border-geminiBorder text-gray-400 hover:border-gray-500'
+                        ? (theme === 'light' ? 'bg-blue-50/80 border-blue-500 shadow-sm' : 'bg-blue-600/15 border-blue-500 shadow-md')
+                        : (theme === 'light' ? 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300' : 'bg-geminiDark border-geminiBorder text-gray-400 hover:border-gray-500')
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <div className="w-8 h-8 rounded-xl bg-blue-600/20 flex items-center justify-center text-blue-400">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                        theme === 'light' ? 'bg-blue-100 text-blue-600' : 'bg-blue-600/20 text-blue-400'
+                      }`}>
                         <UploadCloud size={18} />
                       </div>
                       <input 
@@ -2779,8 +4297,8 @@ function MainAppContent() {
                       />
                     </div>
                     <div>
-                      <div className="font-semibold text-sm text-gray-100">Usa il mio materiale</div>
-                      <div className="text-[11px] text-gray-400 mt-0.5">Carica PDF, Word, PPTX o appunti.</div>
+                      <div className={`font-semibold text-sm ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>Usa il mio materiale</div>
+                      <div className={`text-[11px] mt-0.5 ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>Carica PDF, Word, PPTX o appunti.</div>
                     </div>
                   </div>
 
@@ -2788,12 +4306,14 @@ function MainAppContent() {
                     onClick={() => setSourceType('search_online')}
                     className={`p-4 rounded-2xl border cursor-pointer transition flex flex-col justify-between space-y-3 ${
                       sourceType === 'search_online'
-                        ? 'bg-indigo-600/15 border-indigo-500 shadow-md'
-                        : 'bg-geminiDark border-geminiBorder text-gray-400 hover:border-gray-500'
+                        ? (theme === 'light' ? 'bg-indigo-50/80 border-indigo-500 shadow-sm' : 'bg-indigo-600/15 border-indigo-500 shadow-md')
+                        : (theme === 'light' ? 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300' : 'bg-geminiDark border-geminiBorder text-gray-400 hover:border-gray-500')
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <div className="w-8 h-8 rounded-xl bg-indigo-600/20 flex items-center justify-center text-indigo-400">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                        theme === 'light' ? 'bg-indigo-100 text-indigo-600' : 'bg-indigo-600/20 text-indigo-400'
+                      }`}>
                         <Globe size={18} />
                       </div>
                       <input 
@@ -2805,20 +4325,24 @@ function MainAppContent() {
                       />
                     </div>
                     <div>
-                      <div className="font-semibold text-sm text-gray-100">Cerca online</div>
-                      <div className="text-[11px] text-gray-400 mt-0.5">L'AI strutturerà il programma accademico completo senza file.</div>
+                      <div className={`font-semibold text-sm ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>Cerca online</div>
+                      <div className={`text-[11px] mt-0.5 ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>L'AI strutturerà il programma accademico completo senza file.</div>
                     </div>
                   </div>
                 </div>
 
                 {sourceType === 'my_materials' ? (
-                  <div className="space-y-3 pt-2 bg-geminiDark/60 p-4 rounded-2xl border border-geminiBorder/70">
+                  <div className={`space-y-3 pt-2 p-4 rounded-2xl border transition ${
+                    theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-geminiDark/60 border-geminiBorder/70'
+                  }`}>
                     <div className="flex items-center justify-between">
-                      <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
-                        <FileText size={14} className="text-blue-400" />
+                      <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                        theme === 'light' ? 'text-slate-800' : 'text-gray-300'
+                      }`}>
+                        <FileText size={14} className="text-blue-500" />
                         <span>Carica i tuoi documenti</span>
                       </label>
-                      <span className="text-[11px] text-blue-400 font-semibold">
+                      <span className="text-[11px] text-blue-500 font-bold">
                         {totalFilesReady} di {totalFilesSelected} pronti
                       </span>
                     </div>
@@ -2834,11 +4358,19 @@ function MainAppContent() {
 
                     <div 
                       onClick={() => wizardFileInputRef.current?.click()}
-                      className="border-2 border-dashed border-geminiBorder hover:border-blue-500 rounded-2xl p-4 text-center cursor-pointer transition bg-geminiDarkSecondary/40 hover:bg-geminiDarkSecondary group"
+                      className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition group shadow-sm ${
+                        theme === 'light'
+                          ? 'bg-white border-blue-200 hover:bg-blue-50/60 hover:border-blue-400'
+                          : 'bg-geminiDarkSecondary/40 border-geminiBorder hover:border-blue-500 hover:bg-geminiDarkSecondary'
+                      }`}
                     >
-                      <UploadCloud size={26} className="mx-auto text-blue-400 mb-1.5 group-hover:scale-110 transition" />
-                      <div className="text-xs font-medium text-gray-200">Seleziona i tuoi file (PDF, Word, Slide, TXT)</div>
-                      <div className="text-[10px] text-gray-500 mt-0.5">Lettura istantanea ed esaustiva di tutti i capitoli</div>
+                      <UploadCloud size={28} className="mx-auto text-blue-500 mb-2 group-hover:scale-110 transition" />
+                      <div className={`text-xs font-bold ${theme === 'light' ? 'text-slate-800' : 'text-gray-200'}`}>
+                        Seleziona i tuoi file (PDF, Word, Slide, TXT)
+                      </div>
+                      <div className={`text-[11px] mt-0.5 ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>
+                        Lettura istantanea ed esaustiva di tutti i capitoli
+                      </div>
                     </div>
 
                     {isAnyFileExtracting && (
@@ -2911,10 +4443,16 @@ function MainAppContent() {
                   </div>
                 )}
 
-                <div className="flex justify-between items-center pt-4 border-t border-geminiBorder/60">
+                <div className={`flex justify-between items-center pt-4 border-t ${
+                  theme === 'light' ? 'border-slate-200' : 'border-geminiBorder/60'
+                }`}>
                   <button 
                     onClick={() => setWizardStep(2)}
-                    className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition"
+                    className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border transition ${
+                      theme === 'light'
+                        ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+                        : 'bg-geminiDark hover:bg-geminiHover text-gray-300 border-geminiBorder'
+                    }`}
                   >
                     <ArrowLeft size={14} />
                     <span>Indietro</span>
@@ -2923,10 +4461,10 @@ function MainAppContent() {
                   <button 
                     onClick={handleFinalizeGuide}
                     disabled={sourceType === 'my_materials' && (isAnyFileExtracting || totalFilesReady === 0 || totalFilesSelected === 0)}
-                    className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold transition shadow-lg ${
+                    className={`flex items-center gap-2 px-6 py-2.5 rounded-2xl text-sm font-bold transition shadow-lg ${
                       sourceType === 'my_materials' && (isAnyFileExtracting || totalFilesReady === 0 || totalFilesSelected === 0)
-                        ? 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700'
-                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/30'
+                        ? (theme === 'light' ? 'bg-slate-200 text-slate-400 border border-slate-200 cursor-not-allowed' : 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700')
+                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/30 active:scale-98 cursor-pointer'
                     }`}
                   >
                     <Sparkles size={16} />
@@ -2937,25 +4475,31 @@ function MainAppContent() {
             )}
 
             {wizardStep === 4 && (
-              <div className="bg-geminiDarkSecondary border border-geminiBorder p-8 sm:p-12 rounded-3xl shadow-2xl text-center space-y-6 max-w-md mx-auto w-full">
+              <div className={`border p-8 sm:p-12 rounded-3xl shadow-2xl text-center space-y-6 max-w-md mx-auto w-full transition ${
+                theme === 'light'
+                  ? 'bg-white border-slate-200 shadow-slate-200/50 text-slate-800'
+                  : 'bg-geminiDarkSecondary border-geminiBorder text-gray-100'
+              }`}>
                 <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
                   <div className="w-20 h-20 rounded-full border-4 border-blue-500/20 border-t-blue-500 animate-spin absolute" />
-                  <ShieldCheck size={32} className="text-blue-400" />
+                  <ShieldCheck size={32} className="text-blue-500" />
                 </div>
 
                 <div className="space-y-2">
-                  <h3 className="text-xl font-bold text-gray-100">Generazione del Piano</h3>
-                  <p className="text-xs text-gray-400 h-6 transition-all">{loadingStatusText}</p>
+                  <h3 className={`text-xl font-bold ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>Generazione del Piano</h3>
+                  <p className={`text-xs h-6 transition-all ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>{loadingStatusText}</p>
                 </div>
 
                 <div className="space-y-2">
-                  <div className="w-full bg-geminiDark h-3 rounded-full overflow-hidden border border-geminiBorder">
+                  <div className={`w-full h-3 rounded-full overflow-hidden border ${
+                    theme === 'light' ? 'bg-slate-100 border-slate-200' : 'bg-geminiDark border-geminiBorder'
+                  }`}>
                     <div 
                       className="bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-500 h-full rounded-full transition-all duration-200"
                       style={{ width: `${loadingProgress}%` }}
                     />
                   </div>
-                  <div className="text-xs font-bold text-blue-400">{loadingProgress}%</div>
+                  <div className="text-xs font-bold text-blue-500">{loadingProgress}%</div>
                 </div>
               </div>
             )}
@@ -2967,7 +4511,8 @@ function MainAppContent() {
         {/* VISTA 2: PAGINA PROGETTO CON "GRADO DI PREPARAZIONE GENERALE" */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'project' && activeProject && (
-          <main className="flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-5xl mx-auto w-full space-y-6">
+          <main className={`flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-5xl mx-auto w-full space-y-6 transition ${theme === 'light' ? 'text-slate-800' : 'text-gray-200'}`}>
+
             
             <div className="flex items-center justify-between pb-2 border-b border-geminiBorder/40">
               <button 
@@ -2984,11 +4529,17 @@ function MainAppContent() {
             </div>
 
             {/* CARD PRINCIPALE ESAME */}
-            <div className="bg-gradient-to-br from-geminiDarkSecondary via-geminiDarkSecondary to-blue-950/20 border border-geminiBorder p-6 sm:p-8 rounded-3xl shadow-xl space-y-4">
+            <div className={`border p-6 sm:p-8 rounded-3xl shadow-xl space-y-4 transition ${
+              theme === 'light'
+                ? 'bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/40 border-slate-200 shadow-slate-200/50 text-slate-800'
+                : 'bg-gradient-to-br from-geminiDarkSecondary via-geminiDarkSecondary to-blue-950/20 border-geminiBorder text-gray-100'
+            }`}>
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">Progetto di Studio</span>
+                    <span className={`text-xs font-semibold uppercase tracking-wider ${
+                      theme === 'light' ? 'text-blue-600' : 'text-blue-400'
+                    }`}>Progetto di Studio</span>
                     <span className="text-gray-500">•</span>
                     <span className="text-xs text-gray-400">
                       Creato il {activeProject?.createdAt ? new Date(activeProject.createdAt).toLocaleDateString('it-IT') : new Date().toLocaleDateString('it-IT')}
@@ -3011,30 +4562,44 @@ function MainAppContent() {
               </div>
 
               {/* WIDGET GRADO DI PREPARAZIONE GENERALE */}
-              <div className="mt-4 p-4 rounded-2xl bg-geminiDark/80 border border-blue-500/30 space-y-2.5 shadow-inner">
+              <div className={`mt-4 p-4 rounded-2xl border space-y-2.5 transition ${
+                theme === 'light'
+                  ? 'bg-white border-blue-200 shadow-sm'
+                  : 'bg-geminiDark/80 border-blue-500/30 shadow-inner'
+              }`}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <Activity className="text-blue-400" size={18} />
-                    <span className="text-xs font-bold text-gray-100 uppercase tracking-wider">Grado di Preparazione Generale:</span>
-                    <span className="text-xs font-semibold text-blue-300 bg-blue-500/20 px-2.5 py-0.5 rounded-lg border border-blue-500/30">
+                    <Activity className={theme === 'light' ? 'text-blue-600' : 'text-blue-400'} size={18} />
+                    <span className={`text-xs font-bold uppercase tracking-wider ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>
+                      Grado di Preparazione Generale:
+                    </span>
+                    <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-lg border ${
+                      theme === 'light'
+                        ? 'text-blue-700 bg-blue-50 border-blue-200'
+                        : 'text-blue-300 bg-blue-500/20 border-blue-500/30'
+                    }`}>
                       {readiness.label}
                     </span>
                   </div>
-                  <span className="text-base font-extrabold text-blue-400">
+                  <span className="text-base font-extrabold text-blue-500">
                     {readiness.percentage}%
                   </span>
                 </div>
 
-                <div className="w-full bg-geminiDarkSecondary h-2.5 rounded-full overflow-hidden border border-geminiBorder/60">
+                <div className={`w-full h-2.5 rounded-full overflow-hidden border ${
+                  theme === 'light' ? 'bg-slate-100 border-slate-200' : 'bg-geminiDarkSecondary border-geminiBorder/60'
+                }`}>
                   <div 
                     className="bg-gradient-to-r from-blue-600 via-indigo-500 to-emerald-400 h-full rounded-full transition-all duration-500"
                     style={{ width: `${readiness.percentage}%` }}
                   />
                 </div>
 
-                <div className="flex flex-wrap items-center justify-between text-[11px] text-gray-400 pt-0.5">
-                  <span>📖 Lezioni studiate: <strong>{calculateGlobalProgress().completed}/{calculateGlobalProgress().total}</strong> ({calculateGlobalProgress().percent}%)</span>
-                  <span>🏆 Verifiche svolte: <strong>{readiness.testsCount}</strong> {readiness.testsCount > 0 && `(Media voto: ${readiness.averageQuizScore}/30)`}</span>
+                <div className={`flex flex-wrap items-center justify-between text-[11px] pt-0.5 ${
+                  theme === 'light' ? 'text-slate-600' : 'text-gray-400'
+                }`}>
+                  <span>📖 Lezioni studiate: <strong className={theme === 'light' ? 'text-slate-900' : 'text-gray-200'}>{calculateGlobalProgress().completed}/{calculateGlobalProgress().total}</strong> ({calculateGlobalProgress().percent}%)</span>
+                  <span>🏆 Verifiche svolte: <strong className={theme === 'light' ? 'text-slate-900' : 'text-gray-200'}>{readiness.testsCount}</strong> {readiness.testsCount > 0 && `(Media voto: ${readiness.averageQuizScore}/30)`}</span>
                 </div>
               </div>
             </div>
@@ -3193,6 +4758,7 @@ function MainAppContent() {
                       setLessonChatMessages([]);
                       setFloatingPopup(null);
                       setSelectedImageEl(null);
+                      setImageBoxRect(null);
                       setPreviousLessonBackup(null);
                       lastLoadedTopicIdRef.current = null;
                       setCurrentView('day_detail');
@@ -3244,29 +4810,42 @@ function MainAppContent() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* VISTA 4: DETTAGLIO GIORNO CON INSERIMENTO IMMAGINI E CONTROLLI */}
+        {/* VISTA 4: DETTAGLIO GIORNO CON EXPORT PDF E RESIZE IMMAGINI    */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'day_detail' && activeProject && currentDayData && (
-          <main className="flex-1 flex flex-col h-full w-full overflow-hidden">
+          <main className={`flex-1 flex flex-col h-full w-full overflow-hidden ${theme === 'light' ? 'bg-white text-slate-800' : 'bg-geminiDark text-gray-200'}`}>
+
             
-            <div className="flex items-center justify-between px-4 sm:px-6 py-2 border-b border-geminiBorder/40 bg-geminiDarkSecondary/70 shrink-0">
+            <div className={`flex items-center justify-between px-4 sm:px-6 py-2.5 border-b shrink-0 transition ${
+              theme === 'light' 
+                ? 'bg-white border-slate-200 shadow-sm text-slate-800' 
+                : 'bg-geminiDarkSecondary border-geminiBorder/60 text-gray-200'
+            }`}>
               <button 
                 onClick={() => setCurrentView('study_plan')}
-                className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white transition"
+                className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border transition ${
+                  theme === 'light'
+                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+                    : 'bg-geminiDark hover:bg-geminiHover text-gray-300 border-geminiBorder'
+                }`}
               >
                 <ArrowLeft size={14} />
                 <span>Torna al Piano Giornaliero</span>
               </button>
               
-              <div className="flex items-center gap-2 text-xs text-gray-300">
-                <CalendarIcon size={14} className="text-blue-400" />
+              <div className={`flex items-center gap-2 text-xs font-medium px-3 py-1 rounded-xl border ${
+                theme === 'light'
+                  ? 'bg-blue-50/70 border-blue-100 text-blue-900'
+                  : 'bg-blue-950/40 border-blue-900/50 text-blue-200'
+              }`}>
+                <CalendarIcon size={14} className="text-blue-500 shrink-0" />
                 <span>{currentDayData?.date} • {currentDayData?.dayTitle}</span>
               </div>
             </div>
 
             <div className="flex-1 flex flex-col md:flex-row h-full w-full overflow-hidden">
               
-              {/* COLONNA SINISTRA: FOGLIO WYSIWYG CON PASTE E UPLOAD IMMAGINI */}
+              {/* COLONNA SINISTRA: FOGLIO WYSIWYG CON EXPORT PDF E IMMAGINI */}
               <div className="flex-1 flex flex-col h-full overflow-hidden border-r border-geminiBorder/40">
                 
                 <div className="px-4 py-2 border-b border-geminiBorder/40 bg-geminiDarkSecondary/30 shrink-0 space-y-2">
@@ -3280,6 +4859,7 @@ function MainAppContent() {
                             setSelectedTopicId(topic.id);
                             setFloatingPopup(null);
                             setSelectedImageEl(null);
+                            setImageBoxRect(null);
                             lastLoadedTopicIdRef.current = null;
                           }}
                           className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 border ${
@@ -3296,6 +4876,19 @@ function MainAppContent() {
 
                     {currentSelectedTopic && (
                       <div className="flex items-center gap-2 shrink-0">
+                        {/* TASTO SCARICA PDF */}
+                        {currentSelectedTopic.lesson && (
+                          <button
+                            onClick={handleDownloadLessonPDF}
+                            disabled={isExportingPDF}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 transition shadow-sm"
+                            title="Scarica il documento PDF formattato di questa lezione"
+                          >
+                            {isExportingPDF ? <RefreshCw size={12} className="animate-spin" /> : <Download size={12} />}
+                            <span>Scarica PDF</span>
+                          </button>
+                        )}
+
                         <button
                           onClick={handleOpenSingleLessonQuizModal}
                           className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 transition shadow-sm"
@@ -3321,7 +4914,7 @@ function MainAppContent() {
                     )}
                   </div>
 
-                  {/* BARRA FORMATTAZIONE CON TASTO INSERISCI IMMAGINE */}
+                  {/* BARRA FORMATTAZIONE CON TASTO IMMAGINE */}
                   {currentSelectedTopic?.lesson && (
                     <div className="flex items-center gap-1 pt-1 overflow-x-auto text-xs text-gray-300 border-t border-geminiBorder/40">
                       
@@ -3429,7 +5022,6 @@ function MainAppContent() {
 
                       <div className="w-[1px] h-4 bg-geminiBorder mx-1" />
 
-                      {/* TASTO ICONA CARICA IMMAGINE */}
                       <input 
                         type="file" 
                         ref={imageUploadInputRef} 
@@ -3450,7 +5042,7 @@ function MainAppContent() {
 
                 </div>
 
-                {/* CORPO DELLA LEZIONE CON SUPPORTO INCOLLA IMMAGINI */}
+                {/* CORPO DELLA LEZIONE CON SUPPORTO DRAG TO RESIZE */}
                 <div className="flex-1 overflow-y-auto p-4 md:p-6 relative">
                   
                   {isGeneratingLesson ? (
@@ -3464,7 +5056,7 @@ function MainAppContent() {
                       
                       <div className="flex flex-wrap items-center justify-between text-xs text-gray-400 bg-geminiDarkSecondary/60 px-4 py-2 rounded-2xl border border-geminiBorder gap-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-[11px]">✏️ <strong>Modifica testo attiva</strong> • Puoi incollare immagini (Ctrl+V)</span>
+                          <span className="text-[11px]">✏️ <strong>Modifica testo attiva</strong> • Trascina gli angoli per ridimensionare le immagini</span>
                           {currentSelectedTopic.quizScore && (
                             <span className="bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-md border border-amber-500/30 text-[10px] font-bold">
                               Verifica: {currentSelectedTopic.quizScore}/30
@@ -3593,6 +5185,29 @@ function MainAppContent() {
                 </div>
 
                 <div className="p-3 border-t border-geminiBorder/40 bg-geminiDarkSecondary shrink-0">
+                  {/* Banner Dettatura Vocale Lezione */}
+                  {isRecordingLessonAudio && (
+                    <div className="flex items-center justify-between mb-2 px-3 py-1.5 bg-red-950/70 border border-red-500/60 rounded-xl text-[11px] text-red-200 animate-pulse">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                        <span>Ascolto vocale in corso...</span>
+                      </div>
+                      <button
+                        onClick={handleToggleLessonVoiceRecording}
+                        className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg text-[10px] transition"
+                      >
+                        Stop
+                      </button>
+                    </div>
+                  )}
+
+                  {isTranscribingLessonAudio && (
+                    <div className="flex items-center gap-2 mb-2 px-3 py-1.5 bg-blue-950/70 border border-blue-500/50 rounded-xl text-[11px] text-blue-200">
+                      <RefreshCw size={12} className="animate-spin text-blue-400" />
+                      <span>Trascrizione Whisper...</span>
+                    </div>
+                  )}
+
                   <div className="flex items-center gap-1.5 bg-geminiDark border border-geminiBorder rounded-2xl px-3 py-1.5 focus-within:border-blue-500 transition">
                     <input
                       type="text"
@@ -3604,17 +5219,34 @@ function MainAppContent() {
                           handleSendLessonChatMessage();
                         }
                       }}
-                      placeholder="Chiedi o aggiungi info alla lezione..."
+                      placeholder="Chiedi, detta con Whisper o modifica..."
                       className="flex-1 bg-transparent text-xs text-gray-100 placeholder-gray-500 focus:outline-none"
                     />
+
+                    {/* Bottone Microfono Whisper per Chat della Lezione */}
+                    <button
+                      type="button"
+                      onClick={handleToggleLessonVoiceRecording}
+                      disabled={isTranscribingLessonAudio}
+                      className={`p-1.5 rounded-full transition ${
+                        isRecordingLessonAudio 
+                          ? 'bg-red-600 text-white animate-pulse' 
+                          : 'text-gray-400 hover:text-amber-400 hover:bg-geminiHover'
+                      }`}
+                      title={isRecordingLessonAudio ? "Ferma registrazione" : "Dettatura vocale con OpenAI Whisper"}
+                    >
+                      {isRecordingLessonAudio ? <MicOff size={13} /> : <Mic size={13} />}
+                    </button>
+
                     <button
                       onClick={() => handleSendLessonChatMessage()}
-                      disabled={!lessonChatInput.trim() || isLessonChatLoading}
+                      disabled={!lessonChatInput.trim() || isLessonChatLoading || isRecordingLessonAudio}
                       className={`p-1.5 rounded-full transition ${
-                        lessonChatInput.trim() && !isLessonChatLoading 
+                        lessonChatInput.trim() && !isLessonChatLoading && !isRecordingLessonAudio
                           ? 'bg-blue-600 text-white hover:bg-blue-500' 
                           : 'text-gray-600 cursor-not-allowed'
                       }`}
+                      title="Invia messaggio"
                     >
                       <Send size={13} />
                     </button>
@@ -3629,7 +5261,7 @@ function MainAppContent() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* VISTA 5: CHAT CON DRAG&DROP (FINO A 10 FILE) E DETTATURA WHISPER */}
+        {/* VISTA 5: CHAT HOMEPAGE                                        */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'chat' && (
           <div 
@@ -3640,7 +5272,7 @@ function MainAppContent() {
             className="flex-1 flex flex-col h-full w-full overflow-hidden relative"
           >
             
-            {/* OVERLAY DRAG & DROP PER CHAT */}
+            {/* OVERLAY DRAG & DROP */}
             {isDraggingOverChat && (
               <div className="absolute inset-0 z-50 bg-blue-950/85 border-4 border-dashed border-blue-400 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-fadeIn pointer-events-none">
                 <UploadCloud size={48} className="text-blue-400 animate-bounce mb-3" />
@@ -3649,14 +5281,13 @@ function MainAppContent() {
               </div>
             )}
 
-            {/* Messaggi */}
             <div className="flex-1 overflow-y-auto w-full px-4 sm:px-6">
               <div className="max-w-3xl mx-auto py-6 space-y-6 pb-40">
                 
                 {messages.length === 0 ? (
                   <div className="min-h-[55vh] flex flex-col items-center justify-center text-center">
-                    <div className="w-14 h-14 rounded-2xl bg-geminiDarkSecondary border border-geminiBorder flex items-center justify-center text-blue-400 mb-6 shadow-lg">
-                      <Sparkles size={28} />
+                    <div className="w-16 h-16 flex items-center justify-center mb-6 shrink-0 overflow-hidden">
+                      <img src={logoImg} alt="MinervaAI Logo" className="w-16 h-16 object-contain drop-shadow-md rounded-2xl" />
                     </div>
                     
                     <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-gray-100 mb-3">
@@ -3693,8 +5324,8 @@ function MainAppContent() {
                       className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                     >
                       {msg.role === 'assistant' && (
-                        <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0 mt-1 shadow-sm">
-                          <GraduationCap size={16} />
+                        <div className="w-8 h-8 rounded-lg bg-blue-600/10 border border-blue-500/30 flex items-center justify-center shrink-0 mt-1 shadow-sm overflow-hidden p-1">
+                          <img src={logoImg} alt="MinervaAI" className="w-full h-full object-contain" />
                         </div>
                       )}
 
@@ -3724,8 +5355,8 @@ function MainAppContent() {
 
                 {isLoading && (
                   <div className="flex gap-3 justify-start">
-                    <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0 mt-1">
-                      <GraduationCap size={16} />
+                    <div className="w-8 h-8 rounded-lg bg-blue-600/10 border border-blue-500/30 flex items-center justify-center shrink-0 mt-1 overflow-hidden p-1">
+                      <img src={logoImg} alt="MinervaAI" className="w-full h-full object-contain" />
                     </div>
                     <div className="bg-geminiDarkSecondary border border-geminiBorder px-4 py-3 rounded-2xl rounded-tl-sm text-sm text-gray-400 flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
@@ -3739,11 +5370,10 @@ function MainAppContent() {
               </div>
             </div>
 
-            {/* Input Bar Fisso con Drag & Drop Chip List, Upload Multi-File e Dettatura Whisper */}
-            <footer className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-geminiDark via-geminiDark to-transparent z-10">
+            <footer className={`absolute bottom-0 inset-x-0 p-4 z-10 ${theme === 'light' ? 'bg-gradient-to-t from-[#f8fafc] via-[#f8fafc]/95 to-transparent' : 'bg-gradient-to-t from-geminiDark via-geminiDark to-transparent'}`}>
+
               <div className="max-w-3xl mx-auto">
                 
-                {/* LISTA FILE ALLEGATI CHAT (FINO A 10 FILE) */}
                 {attachedFiles.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mb-2 max-h-24 overflow-y-auto p-1 bg-geminiDarkSecondary/80 rounded-2xl border border-geminiBorder shadow-md">
                     {attachedFiles.map(file => (
@@ -3769,7 +5399,6 @@ function MainAppContent() {
                   </div>
                 )}
 
-                {/* BANNER REGISTRAZIONE / TRASCRIZIONE WHISPER */}
                 {isRecordingAudio && (
                   <div className="flex items-center justify-between gap-2 mb-2 px-4 py-2 bg-red-950/60 border border-red-500/50 rounded-2xl text-xs text-red-200 animate-pulse shadow-lg">
                     <div className="flex items-center gap-2">
@@ -3785,6 +5414,57 @@ function MainAppContent() {
                   </div>
                 )}
 
+                {!isSubscribed && (
+                  <div className={`mb-3 p-3 sm:p-3.5 rounded-2xl border flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md animate-popup ${
+                    theme === 'light'
+                      ? 'bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 border-blue-200 text-slate-800'
+                      : 'bg-gradient-to-r from-blue-950/50 via-indigo-950/40 to-geminiDarkSecondary border-blue-500/30 text-gray-200'
+                  }`}>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-500 shrink-0">
+                        <Sparkles size={16} />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold flex items-center gap-2">
+                          <span>{freeQuestionCount === 0 ? "Domanda di prova gratuita disponibile" : "Prova gratuita completata"}</span>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${
+                            freeQuestionCount === 0 ? 'bg-emerald-500/20 text-emerald-600' : 'bg-amber-500/20 text-amber-500'
+                          }`}>
+                            {freeQuestionCount === 0 ? "1 domanda libera" : "0 rimanenti"}
+                          </span>
+                        </div>
+                        <p className={`text-[11px] ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>
+                          {freeQuestionCount === 0 
+                            ? "Puoi fare 1 domanda nella chat per provare MinervaAI."
+                            : "Per continuare a chattare e usare piani di studio e quiz, attiva l'abbonamento."}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setIsSecretUnlockOpen(true)}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition flex items-center gap-1.5 ${
+                          theme === 'light'
+                            ? 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 shadow-sm'
+                            : 'bg-geminiDarkSecondary hover:bg-geminiHover text-gray-200 border-geminiBorder'
+                        }`}
+                      >
+                        <Key size={13} className="text-blue-500" />
+                        <span>Sblocca ora</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsPaywallModalOpen(true)}
+                        className="px-3.5 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 rounded-xl shadow-md transition flex items-center gap-1.5"
+                      >
+                        <CreditCard size={13} />
+                        <span>Abbonati a 14,99 €</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {isTranscribingAudio && (
                   <div className="flex items-center gap-2 mb-2 px-4 py-2 bg-blue-950/60 border border-blue-500/50 rounded-2xl text-xs text-blue-200 shadow-lg">
                     <RefreshCw size={14} className="animate-spin text-blue-400" />
@@ -3792,10 +5472,8 @@ function MainAppContent() {
                   </div>
                 )}
 
-                {/* Box di digitazione con controlli */}
                 <div className="flex items-end gap-2 bg-geminiDarkSecondary border border-geminiBorder rounded-3xl px-4 py-2.5 shadow-xl focus-within:border-blue-500 transition">
                   
-                  {/* Tasto Allega Multi-File */}
                   <input 
                     type="file" 
                     ref={fileInputRef}
@@ -3813,7 +5491,6 @@ function MainAppContent() {
                     <Paperclip size={18} />
                   </button>
 
-                  {/* Tasto Microfono Dettatura Whisper */}
                   <button
                     type="button"
                     onClick={handleToggleVoiceRecording}
@@ -3853,14 +5530,793 @@ function MainAppContent() {
                   </button>
                 </div>
                 
-                <div className="text-center mt-2 text-[11px] text-gray-500">
-                  Trascina file fino a 10 elementi • Dettatura vocale ad alta precisione con Whisper
+                <div className="text-center mt-2 text-[11px] text-gray-500 flex items-center justify-center gap-2 flex-wrap">
+                  <span>Trascina file fino a 10 elementi • Dettatura vocale Whisper • Esportazione PDF</span>
+                  <span>•</span>
+                  <button
+                    type="button"
+                    onClick={() => { setLegalModalTab('terms'); setLegalModalOpen(true); }}
+                    className="hover:underline hover:text-gray-400 transition"
+                  >
+                    Termini
+                  </button>
+                  <span>•</span>
+                  <button
+                    type="button"
+                    onClick={() => { setLegalModalTab('privacy'); setLegalModalOpen(true); }}
+                    className="hover:underline hover:text-gray-400 transition"
+                  >
+                    Privacy
+                  </button>
                 </div>
               </div>
             </footer>
 
           </div>
         )}
+      {/* ------------------------------------------------------------- */}
+            {/* ------------------------------------------------------------- */}
+      {/* MODALE RITAGLIO IMMAGINE (CROP) */}
+      {isCropModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-popup">
+          <div className={`w-full max-w-xl border rounded-3xl p-6 shadow-2xl space-y-5 transition ${
+            theme === 'light' ? 'bg-white border-slate-200 text-slate-800' : 'bg-geminiDarkSecondary border-geminiBorder text-gray-100'
+          }`}>
+            <div className="flex items-center justify-between border-b border-geminiBorder/60 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-blue-600/20 text-blue-500 flex items-center justify-center">
+                  <Crop size={18} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm">Ritaglia e Modifica Immagine</h3>
+                  <p className="text-[11px] text-gray-400">Regola i bordi da ritagliare sui quattro lati</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsCropModalOpen(false)}
+                className="p-1 text-gray-400 hover:text-white rounded-lg transition"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Anteprima con ritaglio visivo */}
+            <div className="w-full h-64 bg-slate-900 rounded-2xl flex items-center justify-center overflow-hidden relative p-4 border border-slate-700">
+              <div
+                className="relative overflow-hidden transition-all flex items-center justify-center"
+                style={{
+                  clipPath: `inset(${cropInset.top}% ${cropInset.right}% ${cropInset.bottom}% ${cropInset.left}%)`,
+                }}
+              >
+                <img src={cropImageSrc} alt="Preview" className="max-h-56 max-w-full object-contain" />
+              </div>
+            </div>
+
+            {/* Controlli di ritaglio sui 4 lati */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 mb-1">Taglia Alto: {cropInset.top}%</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="45"
+                  value={cropInset.top}
+                  onChange={(e) => setCropInset(prev => ({ ...prev, top: parseInt(e.target.value) || 0 }))}
+                  className="w-full accent-blue-600 cursor-pointer"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 mb-1">Taglia Basso: {cropInset.bottom}%</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="45"
+                  value={cropInset.bottom}
+                  onChange={(e) => setCropInset(prev => ({ ...prev, bottom: parseInt(e.target.value) || 0 }))}
+                  className="w-full accent-blue-600 cursor-pointer"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 mb-1">Taglia Sinistra: {cropInset.left}%</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="45"
+                  value={cropInset.left}
+                  onChange={(e) => setCropInset(prev => ({ ...prev, left: parseInt(e.target.value) || 0 }))}
+                  className="w-full accent-blue-600 cursor-pointer"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 mb-1">Taglia Destra: {cropInset.right}%</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="45"
+                  value={cropInset.right}
+                  onChange={(e) => setCropInset(prev => ({ ...prev, right: parseInt(e.target.value) || 0 }))}
+                  className="w-full accent-blue-600 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* Pulsanti Modal */}
+            <div className="flex items-center justify-between pt-2 border-t border-geminiBorder/60">
+              <button
+                type="button"
+                onClick={() => setCropInset({ top: 0, bottom: 0, left: 0, right: 0 })}
+                className="px-3 py-1.5 text-xs text-gray-400 hover:text-white transition"
+              >
+                Reimposta
+              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCropModalOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-gray-400 hover:text-white rounded-xl transition"
+                >
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyCrop}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition shadow-md flex items-center gap-1.5"
+                >
+                  <CheckCircle2 size={14} />
+                  <span>Applica Ritaglio</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODALE GESTIONE ABBONAMENTO STRIPE                            */}
+      {/* ------------------------------------------------------------- */}
+      {/* MODALE PAYWALL / ABBONAMENTO STRIPE 14,99 €/MESE */}
+      {isPaywallModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-popup">
+          <div className={`w-full max-w-lg border rounded-3xl p-6 sm:p-8 shadow-2xl relative space-y-5 transition ${
+            theme === 'light' ? 'bg-white border-slate-200 shadow-slate-200/50 text-slate-800' : 'bg-geminiDarkSecondary border-geminiBorder text-gray-100'
+          }`}>
+            <button
+              onClick={() => setIsPaywallModalOpen(false)}
+              className={`absolute top-5 right-5 p-2 rounded-xl transition ${
+                theme === 'light' ? 'text-slate-400 hover:text-slate-900 hover:bg-slate-100' : 'text-gray-400 hover:text-white hover:bg-geminiHover'
+              }`}
+              title="Chiudi"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="text-center space-y-2">
+              <div className="w-14 h-14 mx-auto flex items-center justify-center overflow-hidden">
+                <AppLogo className="w-14 h-14" imgClassName="w-14 h-14 object-contain drop-shadow-xl" />
+              </div>
+              <span className="text-[11px] font-bold uppercase tracking-wider px-3 py-0.5 rounded-full bg-blue-500/10 text-blue-600 border border-blue-500/20">
+                MinervaAI Premium
+              </span>
+              <h3 className={`text-xl sm:text-2xl font-extrabold tracking-tight ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>
+                {freeQuestionCount >= 1 ? "Prova Gratuita Completata" : "Sblocca MinervaAI Premium"}
+              </h3>
+              <p className={`text-xs max-w-sm mx-auto ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>
+                {freeQuestionCount >= 1 
+                  ? "Hai completato la tua domanda di prova. Abbonati per continuare a preparare i tuoi esami senza limiti."
+                  : "Accedi senza limiti a lezioni, quiz, upload di 10 file e dettatura vocale Whisper."}
+              </p>
+            </div>
+
+            {/* Scheda Prezzo */}
+            <div className={`p-4 sm:p-5 rounded-2xl border transition ${
+              theme === 'light' ? 'bg-gradient-to-br from-blue-50/50 via-indigo-50/30 to-purple-50/40 border-blue-200' : 'bg-geminiDark border-blue-500/30'
+            }`}>
+              <div className="flex items-baseline justify-between">
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-blue-500">Piano Mensile</div>
+                  <div className="text-3xl font-black text-blue-600 mt-0.5">
+                    14,99 € <span className={`text-xs font-normal ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>/ mese</span>
+                  </div>
+                </div>
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
+                  Nessun vincolo
+                </span>
+              </div>
+              <ul className="mt-3 space-y-1.5 text-xs">
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 size={14} className="text-blue-500 shrink-0" />
+                  <span>Chat illimitata con modelli IA avanzati</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 size={14} className="text-blue-500 shrink-0" />
+                  <span>Creazione automatica piani di studio e syllabus</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 size={14} className="text-blue-500 shrink-0" />
+                  <span>Lezioni complete al 100% con formule LaTeX ed export PDF</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 size={14} className="text-blue-500 shrink-0" />
+                  <span>Simulazione verifiche con votazione in trentesimi</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Pulsante Stripe */}
+            <div className="space-y-3">
+              <a
+                href={stripeCheckoutUrl}
+                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-3.5 rounded-2xl shadow-xl shadow-blue-600/30 transition transform active:scale-98 flex items-center justify-center gap-2 text-sm"
+              >
+                <Sparkles size={17} />
+                <span>Abbonati a 14,99 €/mese con Stripe</span>
+              </a>
+
+              {/* Tasto e Box Sblocca ora con codice CANE */}
+              <div className={`p-3.5 rounded-2xl border transition ${
+                theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-geminiDark border-geminiBorder'
+              }`}>
+                {!isSecretUnlockOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsSecretUnlockOpen(true)}
+                    className="w-full flex items-center justify-center gap-2 text-xs font-bold text-blue-500 hover:text-blue-400 py-0.5 transition"
+                  >
+                    <Key size={14} />
+                    <span>Sblocca ora</span>
+                  </button>
+                ) : (
+                  <div className="space-y-2.5 animate-popup">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold flex items-center gap-1.5">
+                        <Key size={13} className="text-blue-500" />
+                        <span>Inserisci codice di sblocco</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => { setIsSecretUnlockOpen(false); setSecretCodeError(''); setSecretCodeSuccess(''); }}
+                        className="text-gray-400 hover:text-white"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={secretCodeInput}
+                        onChange={(e) => setSecretCodeInput(e.target.value)}
+                        placeholder="Digita CANE..."
+                        className={`flex-1 px-3 py-1.5 text-xs rounded-xl border focus:outline-none uppercase font-bold tracking-wider transition ${
+                          theme === 'light' 
+                            ? 'bg-white border-slate-300 text-slate-900 focus:border-blue-500' 
+                            : 'bg-geminiDarkSecondary border-geminiBorder text-white focus:border-blue-500'
+                        }`}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleSecretUnlock(); }}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSecretUnlock}
+                        className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition shadow-md shrink-0"
+                      >
+                        Sblocca
+                      </button>
+                    </div>
+                    {secretCodeError && <p className="text-[11px] font-semibold text-red-500">{secretCodeError}</p>}
+                    {secretCodeSuccess && <p className="text-[11px] font-semibold text-emerald-500">{secretCodeSuccess}</p>}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODALE DIRETTA SBLOCCA ORA (CODICE CANE) */}
+      {isSecretUnlockOpen && !isPaywallModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-popup">
+          <div className={`w-full max-w-sm border rounded-3xl p-6 shadow-2xl relative space-y-4 transition ${
+            theme === 'light' ? 'bg-white border-slate-200 text-slate-800' : 'bg-geminiDarkSecondary border-geminiBorder text-gray-100'
+          }`}>
+            <button
+              onClick={() => { setIsSecretUnlockOpen(false); setSecretCodeError(''); setSecretCodeSuccess(''); }}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white"
+            >
+              <X size={16} />
+            </button>
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-blue-600/20 text-blue-500 flex items-center justify-center">
+                <Key size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm">Sblocca MinervaAI</h3>
+                <p className="text-xs text-gray-400">Inserisci il codice segreto</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={secretCodeInput}
+                onChange={(e) => setSecretCodeInput(e.target.value)}
+                placeholder="Digita CANE..."
+                className={`w-full px-3.5 py-2 text-xs rounded-xl border focus:outline-none uppercase font-bold tracking-wider transition ${
+                  theme === 'light' ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-geminiDark border-geminiBorder text-white'
+                }`}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSecretUnlock(); }}
+                autoFocus
+              />
+              {secretCodeError && <p className="text-[11px] font-semibold text-red-500">{secretCodeError}</p>}
+              {secretCodeSuccess && <p className="text-[11px] font-semibold text-emerald-500">{secretCodeSuccess}</p>}
+              <button
+                type="button"
+                onClick={handleSecretUnlock}
+                className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs transition shadow-md"
+              >
+                Conferma e Sblocca
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODALE DI PRIMO ACCESSO: ACCETTAZIONE OBBLIGATORIA TOS & PRIVACY */}
+      {/* ------------------------------------------------------------- */}
+      {user && !hasAcceptedTos && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-popup">
+          <div className={`w-full max-w-lg border rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5 transition ${
+            theme === 'light' ? 'bg-white border-slate-200 text-slate-800' : 'bg-geminiDarkSecondary border-geminiBorder text-gray-100'
+          }`}>
+            <div className="text-center space-y-2">
+              <div className="w-14 h-14 mx-auto flex items-center justify-center rounded-2xl bg-blue-600/20 text-blue-500 border border-blue-500/30">
+                <ShieldCheck size={28} />
+              </div>
+              <h3 className={`text-xl font-extrabold tracking-tight ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>
+                Termini di Servizio e Privacy Policy
+              </h3>
+              <p className={`text-xs max-w-sm mx-auto ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>
+                Benvenuto su MinervaAI. Prima di iniziare, è necessario prendere visione e accettare le condizioni di utilizzo e l'informativa privacy (GDPR).
+              </p>
+            </div>
+
+            {/* Documenti Legali Cliccabili */}
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => { setLegalModalTab('terms'); setLegalModalOpen(true); }}
+                className={`p-3 rounded-2xl border text-left transition hover:border-blue-500 ${
+                  theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-geminiDark border-geminiBorder'
+                }`}
+              >
+                <FileText size={18} className="text-blue-500 mb-1" />
+                <div className="text-xs font-bold">Termini di Servizio</div>
+                <div className="text-[10px] text-gray-400">Abbonamento e regole d'uso</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setLegalModalTab('privacy'); setLegalModalOpen(true); }}
+                className={`p-3 rounded-2xl border text-left transition hover:border-blue-500 ${
+                  theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-geminiDark border-geminiBorder'
+                }`}
+              >
+                <ShieldCheck size={18} className="text-emerald-500 mb-1" />
+                <div className="text-xs font-bold">Privacy Policy (GDPR)</div>
+                <div className="text-[10px] text-gray-400">Protezione e diritti sui dati</div>
+              </button>
+            </div>
+
+            {/* Caselle di Spunta Obbligatorie */}
+            <div className="space-y-3 pt-2 text-xs">
+              <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={tosChecked}
+                  onChange={(e) => setTosChecked(e.target.checked)}
+                  className="mt-0.5 rounded border-gray-600 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                />
+                <span className={`text-[11px] leading-snug ${theme === 'light' ? 'text-slate-700' : 'text-gray-300'}`}>
+                  Dichiaro di aver letto, compreso e di accettare integralmente i <strong>Termini di Servizio</strong> e l'<strong>Informativa sulla Privacy</strong>.
+                </span>
+              </label>
+
+              <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={recessoChecked}
+                  onChange={(e) => setRecessoChecked(e.target.checked)}
+                  className="mt-0.5 rounded border-gray-600 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                />
+                <span className={`text-[11px] leading-snug ${theme === 'light' ? 'text-slate-700' : 'text-gray-300'}`}>
+                  Accetto che la fornitura del servizio digitale inizi immediatamente e prendo atto che ciò comporta la <strong>rinuncia al diritto di recesso</strong> di 14 giorni ai sensi dell'art. 59 del Codice del Consumo.
+                </span>
+              </label>
+            </div>
+
+            {/* Pulsante Conferma */}
+            <button
+              type="button"
+              onClick={handleAcceptTos}
+              disabled={!tosChecked || !recessoChecked}
+              className="w-full py-3.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-2xl text-xs transition shadow-xl shadow-blue-600/25 flex items-center justify-center gap-2"
+            >
+              <CheckCircle2 size={16} />
+              <span>Accetta e Continua su MinervaAI</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODALE VISUALIZZAZIONE DOCUMENTI LEGALI (TOS & PRIVACY)       */}
+      {/* ------------------------------------------------------------- */}
+      {legalModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-popup">
+          <div className={`w-full max-w-2xl border rounded-3xl p-6 sm:p-8 shadow-2xl relative space-y-4 max-h-[85vh] flex flex-col transition ${
+            theme === 'light' ? 'bg-white border-slate-200 text-slate-800' : 'bg-geminiDarkSecondary border-geminiBorder text-gray-100'
+          }`}>
+            <button
+              onClick={() => setLegalModalOpen(false)}
+              className="absolute top-5 right-5 text-gray-400 hover:text-white p-1 rounded-xl transition"
+              title="Chiudi"
+            >
+              <X size={18} />
+            </button>
+
+            {/* Tabs */}
+            <div className="flex items-center gap-2 border-b border-geminiBorder/60 pb-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setLegalModalTab('terms')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                  legalModalTab === 'terms'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-geminiHover'
+                }`}
+              >
+                Termini di Servizio
+              </button>
+              <button
+                type="button"
+                onClick={() => setLegalModalTab('privacy')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                  legalModalTab === 'privacy'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-geminiHover'
+                }`}
+              >
+                Informativa Privacy & Cookie (GDPR)
+              </button>
+            </div>
+
+            {/* Contenuto Documento Scorrevole */}
+            <div className="flex-1 overflow-y-auto pr-2 space-y-4 text-xs leading-relaxed text-slate-600 dark:text-gray-300">
+              {legalModalTab === 'terms' ? (
+                <div className="space-y-3">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">1. Oggetto del Servizio</h4>
+                  <p>MinervaAI è una piattaforma web SaaS destinata al supporto didattico e alla preparazione degli esami universitari, dotata di strumenti di intelligenza artificiale per l'elaborazione di dispense, piani di studio e simulazioni d'esame.</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">2. Abbonamento e Fatturazione</h4>
+                  <p>L'accesso completo alle funzionalità è fornito mediante abbonamento mensile a 14,99 € (IVA inclusa dove applicabile), con rinnovo tacito automatico ogni 30 giorni. I pagamenti sono elaborati in modo sicuro tramite Stripe Inc. L'utente può disdire l'abbonamento in qualsiasi momento dal proprio profilo o dal Customer Portal di Stripe senza penali né vincoli di permanenza.</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">3. Diritto di Recesso e Contenuti Digitali</h4>
+                  <p>Ai sensi dell'art. 59, comma 1, lettera (o) del D.Lgs. 206/2005 (Codice del Consumo), il diritto di recesso di 14 giorni è escluso per i servizi digitali eseguiti con l'accordo espresso del consumatore e con l'accettazione della perdita di tale diritto a seguito della piena fornitura o attivazione immediata dell'accesso.</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">4. Limitazione di Responsabilità</h4>
+                  <p>MinervaAI costituisce un ausilio integrativo allo studio e non sostituisce in alcun modo i programmi didattici ufficiali dei docenti o i testi d'esame universitari. Nonostante l'adozione di modelli IA avanzati, MinervaAI non garantisce l'assoluta esattezza di ogni risposta generata né l'esito delle prove accademiche degli utenti.</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">5. Uso Accettabile</h4>
+                  <p>L'utente si impegna a non caricare materiali in violazione del diritto d'autore o materiale diffamatorio o illecito. Ogni account è strettamente personale e non cedibile a terzi.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">1. Titolare del Trattamento</h4>
+                  <p>Il titolare del trattamento dei dati è il gestore della piattaforma MinervaAI. Per qualsiasi informazione, richiesta di rettifica o cancellazione è possibile contattare l'assistenza via email.</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">2. Dati Raccolti e Finalità</h4>
+                  <p>Raccogliamo: dati anagrafici e di contatto (email, nome) necessari per l'autenticazione dell'account; dati di utilizzo didattico (piani di studio creati, conversazioni, file caricati per l'estrazione didattica). La base giuridica è l'esecuzione del contratto di servizio richiesto dall'utente (art. 6, par. 1, lett. b GDPR).</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">3. Trattamento dei Dati con l'Intelligenza Artificiale</h4>
+                  <p>I testi e i contenuti inviati durante le sessioni di studio vengono elaborati tramite API protette di OpenAI/Google. In conformità con le policy enterprise delle API, i dati degli utenti <strong>non vengono utilizzati per l'addestramento</strong> di modelli pubblici di intelligenza artificiale.</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">4. Destinatari e Sub-responsabili (Server UE)</h4>
+                  <p>I dati risiedono su infrastrutture cloud sicure con crittografia end-to-end e protocollo HTTPS (Supabase per il database con hosting in Unione Europea, Stripe per i pagamenti cifrati, Netlify per l'hosting web).</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">5. Cookie Policy</h4>
+                  <p>MinervaAI utilizza esclusivamente <strong>cookie e storage tecnici</strong> strettamente necessari per l'autenticazione e la persistenza della sessione di studio. Non vengono impiegati cookie di profilazione pubblicitaria di terze parti.</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">6. Diritti dell'Interessato (GDPR)</h4>
+                  <p>Ai sensi degli articoli 15-22 del GDPR, l'utente ha diritto di accedere ai propri dati, richiederne la rettifica, la portabilità o la cancellazione definitiva (diritto all'oblio) in qualunque momento.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer Modale */}
+            <div className="pt-2 border-t border-geminiBorder/60 flex justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setLegalModalOpen(false)}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition shadow-sm"
+              >
+                Ho Letto e Compreso
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isSubManageModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-popup">
+          <div className={`w-full max-w-md border rounded-3xl p-6 sm:p-8 shadow-2xl relative space-y-5 transition ${
+            theme === 'light' ? 'bg-white border-slate-200 shadow-slate-200/50 text-slate-800' : 'bg-geminiDarkSecondary border-geminiBorder text-gray-100'
+          }`}>
+            <button
+              onClick={() => setIsSubManageModalOpen(false)}
+              className={`absolute top-5 right-5 p-2 rounded-xl transition ${
+                theme === 'light' ? 'text-slate-400 hover:text-slate-900 hover:bg-slate-100' : 'text-gray-400 hover:text-white hover:bg-geminiHover'
+              }`}
+              title="Chiudi"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${
+                theme === 'light' ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-blue-600/20 text-blue-400 border-blue-500/30'
+              }`}>
+                <CreditCard size={24} />
+              </div>
+              <div>
+                <h3 className={`text-lg font-bold ${theme === 'light' ? 'text-slate-900' : 'text-gray-100'}`}>
+                  Il tuo Abbonamento
+                </h3>
+                <p className={`text-xs ${theme === 'light' ? 'text-slate-500' : 'text-gray-400'}`}>
+                  Dettagli del piano MinervaAI Premium
+                </p>
+              </div>
+            </div>
+
+            <div className={`p-4 rounded-2xl border space-y-3 ${
+              theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-geminiDark border-geminiBorder'
+            }`}>
+              <div className="flex items-center justify-between text-xs">
+                <span className={theme === 'light' ? 'text-slate-500' : 'text-gray-400'}>Piano attuale:</span>
+                <span className="font-bold text-blue-500">MinervaAI Premium</span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className={theme === 'light' ? 'text-slate-500' : 'text-gray-400'}>Costo:</span>
+                <span className="font-bold">14,99 € / mese</span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className={theme === 'light' ? 'text-slate-500' : 'text-gray-400'}>Stato:</span>
+                <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 border border-emerald-500/30 font-semibold text-[11px]">
+                  Attivo
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className={theme === 'light' ? 'text-slate-500' : 'text-gray-400'}>Metodo di pagamento:</span>
+                <span className="font-medium">Stripe Checkout</span>
+              </div>
+            </div>
+
+            <div className="space-y-2.5 pt-2">
+              {isSubscribed ? (
+                <button
+                  onClick={handleCancelSubscription}
+                  disabled={isCancelingSub}
+                  className="w-full py-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/30 rounded-2xl text-xs font-bold transition flex items-center justify-center gap-2"
+                >
+                  {isCancelingSub ? (
+                    <>
+                      <RefreshCw size={14} className="animate-spin" />
+                      <span>Disdetta in corso...</span>
+                    </>
+                  ) : (
+                    <span>Disdici Abbonamento</span>
+                  )}
+                </button>
+              ) : (
+                <a
+                  href={`${STRIPE_PAYMENT_URL}?prefilled_email=${encodeURIComponent(user?.email || '')}&client_reference_id=${user?.id || ''}`}
+                  className="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-2xl text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30"
+                >
+                  <Sparkles size={15} />
+                  <span>Attiva o Rinnova Abbonamento (14,99 €/m)</span>
+                </a>
+              )}
+
+              <p className={`text-[10px] text-center ${theme === 'light' ? 'text-slate-400' : 'text-gray-500'}`}>
+                Disdicendo, il tuo account verrà bloccato alla scadenza e riapparirà la schermata di abbonamento.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODALE AUTENTICAZIONE SUPABASE (ACCEDI / REGISTRATI / RECUPERA) */}
+      {/* ------------------------------------------------------------- */}
+      {isAuthModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-popup">
+          <div className="bg-geminiDarkSecondary border border-geminiBorder w-full max-w-md rounded-3xl p-6 sm:p-8 shadow-2xl relative space-y-6">
+            <button
+              onClick={() => setIsAuthModalOpen(false)}
+              className="absolute top-5 right-5 p-2 text-gray-400 hover:text-white hover:bg-geminiHover rounded-xl transition"
+              title="Chiudi"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="text-center space-y-2">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 mx-auto flex items-center justify-center text-white shadow-lg shadow-blue-600/20">
+                <GraduationCap size={24} />
+              </div>
+              <h2 className="text-xl font-bold text-gray-100">
+                {authMode === 'login' && 'Accedi a MinervaAI'}
+                {authMode === 'signup' && 'Crea il tuo Account'}
+                {authMode === 'reset' && 'Recupera Password'}
+              </h2>
+              <p className="text-xs text-gray-400">
+                {authMode === 'login' && 'Sincronizza le tue guide e le tue chat su tutti i tuoi dispositivi.'}
+                {authMode === 'signup' && 'Unisciti a MinervaAI per salvare i tuoi piani di studio nel cloud.'}
+                {authMode === 'reset' && 'Inserisci la tua email per ricevere il link di ripristino.'}
+              </p>
+            </div>
+
+            {/* Switcher Tab Accedi / Registrati */}
+            {authMode !== 'reset' && (
+              <div className="flex bg-geminiDark p-1 rounded-2xl border border-geminiBorder">
+                <button
+                  onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess(''); }}
+                  className={`flex-1 py-2 text-xs font-semibold rounded-xl transition ${
+                    authMode === 'login'
+                      ? 'bg-geminiDarkSecondary text-blue-400 shadow-md border border-geminiBorder/60'
+                      : 'text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  Accedi
+                </button>
+                <button
+                  onClick={() => { setAuthMode('signup'); setAuthError(''); setAuthSuccess(''); }}
+                  className={`flex-1 py-2 text-xs font-semibold rounded-xl transition ${
+                    authMode === 'signup'
+                      ? 'bg-geminiDarkSecondary text-blue-400 shadow-md border border-geminiBorder/60'
+                      : 'text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  Registrati
+                </button>
+              </div>
+            )}
+
+            {/* Banner Errore / Successo */}
+            {authError && (
+              <div className="bg-red-500/10 border border-red-500/30 p-3.5 rounded-2xl flex items-center gap-2.5 text-xs text-red-400">
+                <AlertTriangle size={16} className="shrink-0" />
+                <span>{authError}</span>
+              </div>
+            )}
+            {authSuccess && (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 p-3.5 rounded-2xl flex items-center gap-2.5 text-xs text-emerald-400">
+                <CheckCircle2 size={16} className="shrink-0" />
+                <span>{authSuccess}</span>
+              </div>
+            )}
+
+            {/* Form */}
+            <form onSubmit={handleAuthSubmit} className="space-y-4">
+              {authMode === 'signup' && (
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-semibold text-gray-300 uppercase tracking-wider">
+                    Nome Completo
+                  </label>
+                  <div className="relative flex items-center">
+                    <User size={16} className="absolute left-3.5 text-gray-400" />
+                    <input
+                      type="text"
+                      required
+                      value={authFullName}
+                      onChange={(e) => setAuthFullName(e.target.value)}
+                      placeholder="es. Mario Rossi"
+                      className="w-full bg-geminiDark border border-geminiBorder rounded-2xl pl-10 pr-4 py-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-semibold text-gray-300 uppercase tracking-wider">
+                  Email
+                </label>
+                <div className="relative flex items-center">
+                  <Mail size={16} className="absolute left-3.5 text-gray-400" />
+                  <input
+                    type="email"
+                    required
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    placeholder="nome@esempio.it"
+                    className="w-full bg-geminiDark border border-geminiBorder rounded-2xl pl-10 pr-4 py-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition"
+                  />
+                </div>
+              </div>
+
+              {authMode !== 'reset' && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[11px] font-semibold text-gray-300 uppercase tracking-wider">
+                      Password
+                    </label>
+                    {authMode === 'login' && (
+                      <button
+                        type="button"
+                        onClick={() => { setAuthMode('reset'); setAuthError(''); setAuthSuccess(''); }}
+                        className="text-[11px] text-blue-400 hover:underline"
+                      >
+                        Password dimenticata?
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative flex items-center">
+                    <Lock size={16} className="absolute left-3.5 text-gray-400" />
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      placeholder="Minimo 6 caratteri"
+                      className="w-full bg-geminiDark border border-geminiBorder rounded-2xl pl-10 pr-4 py-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isAuthSubmitting}
+                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 text-white font-semibold py-3.5 rounded-2xl shadow-lg shadow-blue-600/25 transition transform active:scale-98 flex items-center justify-center gap-2 text-sm"
+              >
+                {isAuthSubmitting ? (
+                  <>
+                    <RefreshCw size={16} className="animate-spin" />
+                    <span>Elaborazione in corso...</span>
+                  </>
+                ) : (
+                  <>
+                    {authMode === 'login' && (
+                      <>
+                        <LogIn size={16} />
+                        <span>Accedi</span>
+                      </>
+                    )}
+                    {authMode === 'signup' && (
+                      <>
+                        <Sparkles size={16} />
+                        <span>Crea Account</span>
+                      </>
+                    )}
+                    {authMode === 'reset' && (
+                      <>
+                        <Mail size={16} />
+                        <span>Invia Link di Recupero</span>
+                      </>
+                    )}
+                  </>
+                )}
+              </button>
+            </form>
+
+            {authMode === 'reset' && (
+              <div className="text-center pt-2">
+                <button
+                  onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess(''); }}
+                  className="text-xs text-blue-400 hover:underline font-semibold"
+                >
+                  Torna al Login
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       </div>
     </div>

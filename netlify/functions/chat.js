@@ -44,8 +44,18 @@ export const handler = async (event) => {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
+  let payload;
   try {
-    const payload = JSON.parse(event.body);
+    payload = JSON.parse(event.body || '{}');
+  } catch (parseErr) {
+    return {
+      statusCode: 400,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: 'Payload JSON non valido.' }),
+    };
+  }
+
+  try {
     const { 
       action,
       prompt, 
@@ -110,18 +120,28 @@ export const handler = async (event) => {
           ? audioBase64.split('base64,')[1] 
           : audioBase64;
         const buffer = Buffer.from(rawBase64, 'base64');
-        const mime = audioMimeType || 'audio/webm';
+        const mime = (audioMimeType || 'audio/webm').toLowerCase();
+        const ext = mime.includes('mp4') || mime.includes('m4a')
+          ? 'mp4'
+          : mime.includes('mpeg') || mime.includes('mp3')
+            ? 'mp3'
+            : mime.includes('ogg')
+              ? 'ogg'
+              : mime.includes('wav')
+                ? 'wav'
+                : 'webm';
+        const audioFilename = `audio.${ext}`;
         
         let audioFileObj;
         if (typeof toFile === 'function') {
-          audioFileObj = await toFile(buffer, 'audio.webm', { type: mime });
+          audioFileObj = await toFile(buffer, audioFilename, { type: mime });
         } else if (OpenAI.toFile) {
-          audioFileObj = await OpenAI.toFile(buffer, 'audio.webm', { type: mime });
+          audioFileObj = await OpenAI.toFile(buffer, audioFilename, { type: mime });
         } else {
           // Fallback con buffer nominato
           audioFileObj = {
             buffer,
-            name: 'audio.webm',
+            name: audioFilename,
             type: mime
           };
         }
@@ -574,44 +594,34 @@ Genera il piano di studio JSON.`;
         }
       });
 
-      const lessonSystemPrompt = `Sei un professore universitario ordinario e autore di compendi clinici e manuali di studio per corsi di laurea magistrale (es. Medicina e Chirurgia, Ingegneria, Scienze).
-Il tuo obiettivo è redigere un "COMPENDIO RAGIONATO E APPROFONDITO" sul tema richiesto, con il massimo grado di densità concettuale, rigore accademico e chiarezza didattica.
-Il testo deve essere esaustivo, monumentale e autosufficiente per consentire a uno studente di superare l'esame universitario con 30 e Lode.
+      const lessonSystemPrompt = `Sei un professore universitario ordinario e autore di manuali e compendi accademici di riferimento (es. Medicina, Ingegneria, Scienze, Economia, Giurisprudenza, Discipline Umanistiche).
+Il tuo obiettivo è redigere un "COMPENDIO RAGIONATO E APPROFONDITO" sul tema richiesto, adattando linguaggio, metodologia e struttura alla specifica disciplina della materia ("${examDescription || 'Trattazione Universitaria'}").
+Il testo deve essere esaustivo, rigoroso e autosufficiente per consentire a uno studente di superare l'esame universitario con 30 e Lode.
 
 LINEA GUIDA GENERALE DI REDAZIONE:
-1. DIVIETO ASSOLUTO DI BANALITÀ E RIEMPITIVI: Non usare mai frasi introduttive vuote (come "In questa lezione vedremo...", "Per comprendere questo tema è essenziale...", "È importante notare che..."). Inizia OGNI capitolo direttamente con la definizione formale, l'eziopatogenesi o la base fisiopatologica molecolare.
-2. DENSITÀ CONCETTUALE CONTINUA: Ogni singola frase deve trasmettere dati scientifici, meccanismi biologici/fisici, correlazioni cliniche o parametri quantitativi. Zero riassunti telegrafici.
-3. DATI QUANTITATIVI E CUT-OFF SISTEMATICI: Includi SEMPRE tutti i valori numerici, soglie diagnostiche, percentuali, dimensioni (es. calibro in $\\mu m$ o mm), pressioni ($mmHg$), intervalli temporali (minuti, ore, giorni) e dosaggi farmacologici precisi.
-4. TABELLE COMPARATIVE OBBLIGATORIE: Inserisci SEMPRE all'interno della lezione almeno 1 o 2 TABELLE MARKDOWN dettagliate (es. stadi/classi, classificazione eziologica, diagnosi differenziale con segni e mortalità associata, protocolli terapeutici).
-5. FORMULE E NOTAZIONE SCIENTIFICA ($LaTeX$): Scrivi SEMPRE qualsiasi formula matematica, emodinamica, biochimica o ione chimico in notazione LaTeX rigorosa ($...$ inline o $$...$$ a blocchi). Esempi: $Flusso = \\Delta P / R$, $MVO_2$, $Ca^{2+}$, $K^+$, $H^+$, $CO_2$, $SaO_2 < 90\\%$.
-6. LINEE GUIDA UFFICIALI E TEMPISTICHE: Cita sempre le società scientifiche e linee guida di riferimento (es. ESC, AHA/ACC, GOLD, KDIGO), specificando le tempistiche rigide (es. finestre temporali entro $\\le 10$ minuti, $\\le 120$ minuti, cut-off di rischio come GRACE score, scale di Killip I-IV con percentuali di mortalità).
-7. FARMACOLOGIA CLINICA PUNTUALE: Non limitarti a citare classi generiche (es. "beta-bloccanti"). Cita sempre i principi attivi specifici, le dosi di carico e di mantenimento (in mg o UI/kg), la via di somministrazione, il meccanismo d'azione recettoriale, le controindicazioni assolute e le interazioni.
-8. CINETICA DEI BIOMARCATORI: Per ogni parametro di laboratorio, dettaglia la cinetica temporale completa: inizio del rialzo ematico, picco massimo, tempo di normalizzazione e protocolli diagnostici rapidi (es. algoritmi 0h/1h o 0h/2h).
-9. GESTIONE FIGURE ED IMMAGINI:
+1. DIVIETO ASSOLUTO DI BANALITÀ E RIEMPITIVI: Non usare mai frasi introduttive vuote (come "In questa lezione vedremo...", "Per comprendere questo tema è essenziale...", "È importante notare che..."). Inizia OGNI capitolo direttamente con la definizione formale, i fondamenti teorici o i meccanismi chiave.
+2. DENSITÀ CONCETTUALE CONTINUA: Ogni frase deve trasmettere dati, meccanismi, norme, dimostrazioni, correlazioni o parametri quantitativi pertinenti alla materia. Zero riassunti telegrafici.
+3. DATI QUANTITATIVI, PARAMETRI E RIFERIMENTI PRECISI: Includi sempre valori numerici, soglie, intervalli, date, articoli di legge, teoremi, dosaggi o standard di riferimento pertinenti alla disciplina.
+4. TABELLE COMPARATIVE OBBLIGATORIE: Inserisci SEMPRE almeno 1 o 2 TABELLE MARKDOWN dettagliate (es. classificazioni, confronti tra teorie/metodi, diagnosi differenziale, pro/contro, protocolli).
+5. FORMULE E NOTAZIONE SCIENTIFICA ($LaTeX$): Quando la materia prevede formule matematiche, fisiche, chimiche, statistiche o economiche, scrivile sempre in notazione LaTeX rigorosa ($...$ inline o $$...$$ a blocchi).
+6. FONTI, LINEE GUIDA E STANDARD DI SETTORE: Cita le società scientifiche, linee guida ufficiali, norme o autori di riferimento pertinenti alla materia (es. ESC/AHA/KDIGO in ambito medico, ISO/IEEE in ingegneria, codici e giurisprudenza in diritto, ecc.).
+7. GESTIONE FIGURE ED IMMAGINI:
 ${availableImagesList.length > 0 ? `Sono disponibili le seguenti figure estratte direttamente dai documenti dello studente:
 ${availableImagesList.map(img => `- ID: "${img.id}" -> Descrizione: "${img.name}" (da ${img.fileName})`).join('\n')}
 DEVI INSERIRE queste figure nei capitoli di pertinenza usando la sintassi:
-![Descrizione didattica dettagliata della figura](ID_FIGURA)` : `Se nei documenti non ci sono immagini ma un concetto richiede un diagramma o tracciato (es. circolo coronarico, tracciato ECG, cascata ischemica), inserisci un'illustrazione didattica con sintassi:
-![Descrizione dettagliata dello schema](https://images.unsplash.com/photo-1579684385127-1ef15d508118?auto=format&fit=crop&w=1200&q=80)`}
-10. CALLOUT DI EVIDENZIAZIONE: Usa citazioni markdown con titolo in grassetto per le nozioni cruciali, ad esempio:
-> **Regola Terapeutica Cardine:** [Spiegazione dettagliata]
-> **Criteri ESC di Stratificazione del Rischio:** [Elenco criteri e tempistiche]
-> **Attenzione Clinica / Controindicazione:** [Avvertenza]
+![Descrizione didattica dettagliata della figura](ID_FIGURA)` : `Non inventare URL di immagini esterne; se un concetto beneficia di uno schema visivo, rappresentalo con una tabella Markdown o un diagramma testuale chiaro.`}
+8. CALLOUT DI EVIDENZIAZIONE: Usa citazioni markdown con titolo in grassetto per le nozioni cruciali, ad esempio:
+> **Regola Cardine / Principio Chiave:** [Spiegazione dettagliata]
+> **Criteri e Standard di Riferimento:** [Elenco criteri]
+> **Attenzione / Eccezione Critica:** [Avvertenza]
 
 ${isStrict ? `FONTI DELLO STUDENTE (REGOLA DI FERRO):
-Basa la spiegazione sul materiale fornito dallo studente. Copri il 100% degli argomenti, dettagli e formule presenti nelle fonti, sviluppando e spiegando approfonditamente ogni concetto con massimo rigore enciclopedico senza omettere alcun capitolo o dettaglio.` : `Sviluppa l'argomento attingendo alle nozioni più avanzate della letteratura scientifica universitaria internazionale.`}
+Basa la spiegazione sul materiale fornito dallo studente. Copri il 100% degli argomenti, dettagli e formule presenti nelle fonti, sviluppando e spiegando approfonditamente ogni concetto con massimo rigore enciclopedico senza omettere alcun capitolo o dettaglio.` : `Sviluppa l'argomento attingendo alle nozioni più avanzate della letteratura scientifica e accademica internazionale.`}
 
 STRUTTURA DIDATTICA DELLA LEZIONE:
 - TITOLO DELLA LEZIONE IN MAIUSCOLO CON SOTTOTITOLO SINTETICO DEI TEMI
 - 📋 INDICE E SCALETTA ANALITICA DEI CAPITOLI (capitoli numerati 1, 2, 3... e sottoargomenti)
-- 1. FISIOLOGIA / ANATOMIA APPLICATA E BASI MOLECOLARI
-- 2. EZIOPATOGENESI E CASCATA FISIOPATOLOGICA SEQUENZIALE (fasi temporali numerate)
-- 3. CLASSIFICAZIONI CLINICHE E TABELLE COMPARATIVE (con tabella markdown completa)
-- 4. MANIFESTAZIONI CLINICHE, SEGNI E SINTOMI
-- 5. CRITERI DIAGNOSTICI STRUMENTALI, CUT-OFF E LINEE GUIDA (con criteri diagnostici precisi)
-- 6. BIOMARCATORI E DIAGNOSTICA DI LABORATORIO (con cinetica temporale rialzo/picco/durata)
-- 7. TERAPIA MEDICA E PROTOCOLLI FARMACOLOGICI (con molecole e dosaggi)
-- 8. STRATIFICAZIONE PROGNOSTICA, COMPLICANZE E OUTCOME CLINICO`;
+- Capitoli numerati coerenti con la disciplina (es. per materie mediche: anatomia/fisiologia, eziopatogenesi, classificazioni, clinica, criteri diagnostici, biomarcatori, terapia e prognosi; per altre discipline: fondamenti teorici, struttura/meccanismi, classificazioni comparate, applicazioni pratiche/casi studio, criticità ed errori comuni d'esame).`;
 
       const lessonUserPrompt = `MATERIA: "${examDescription || 'Trattazione Universitaria'}"
 ARGOMENTO SPECIFICO: "${topicTitle}"
@@ -677,8 +687,9 @@ Rispondi in modo chiaro, approfondito, logico e pedagogico in formato Markdown c
       { role: 'system', content: standardSystemInstruction }
     ];
 
-    if (history && history.length > 0) {
+    if (Array.isArray(history) && history.length > 0) {
       for (const msg of history) {
+        if (!msg || typeof msg.text !== 'string') continue;
         messages.push({
           role: msg.role === 'user' ? 'user' : 'assistant',
           content: msg.text,

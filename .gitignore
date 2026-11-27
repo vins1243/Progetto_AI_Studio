@@ -3,3 +3,7 @@ dist
 .env
 .env.local
 .netlify
+.DS_Store
+_vecchi_backup/
+src/_vecchi_backup_src/
+*_backup*
