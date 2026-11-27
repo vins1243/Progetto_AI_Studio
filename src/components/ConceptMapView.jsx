@@ -21,72 +21,125 @@ import {
 import { callAiApi, QuotaExceededError } from '../utils/apiClient.js';
 import { getProjectDataIDB } from '../utils/indexedDb.js';
 
+const BRANCH_PALETTE_ORDER = ['crimson', 'orange', 'emerald', 'violet', 'teal', 'blue'];
+
 const COLOR_STYLES = {
-  blue: {
-    bg: '#ffffff',
-    darkBg: '#2a0f1c',
-    border: '#be123c',
-    accent: '#be123c',
-    text: '#4c0519',
-    darkText: '#ffe4e6',
-    dot: '#be123c',
-  },
-  emerald: {
-    bg: '#ffffff',
-    darkBg: '#2c0d28',
-    border: '#a21caf',
-    accent: '#a21caf',
-    text: '#4a044e',
-    darkText: '#fae8ff',
-    dot: '#a21caf',
-  },
-  violet: {
-    bg: '#ffffff',
-    darkBg: '#2d0c19',
+  crimson: {
+    solid: '#e11d48',
+    pastel: '#ffe4e6',
+    darkPastel: '#3d1022',
     border: '#e11d48',
-    accent: '#e11d48',
-    text: '#881337',
-    darkText: '#fecdd3',
+    pastelText: '#881337',
+    darkPastelText: '#fecdd3',
     dot: '#e11d48',
   },
-  amber: {
-    bg: '#ffffff',
-    darkBg: '#2b1312',
-    border: '#dc2626',
-    accent: '#dc2626',
-    text: '#7f1d1d',
-    darkText: '#fee2e2',
-    dot: '#dc2626',
+  orange: {
+    solid: '#ea580c',
+    pastel: '#ffedd5',
+    darkPastel: '#3b1c0c',
+    border: '#ea580c',
+    pastelText: '#9a3412',
+    darkPastelText: '#fed7aa',
+    dot: '#ea580c',
   },
-  rose: {
-    bg: '#ffffff',
-    darkBg: '#310f24',
-    border: '#db2777',
-    accent: '#db2777',
-    text: '#831843',
-    darkText: '#fce7f3',
-    dot: '#db2777',
+  emerald: {
+    solid: '#16a34a',
+    pastel: '#dcfce7',
+    darkPastel: '#0e2e1b',
+    border: '#16a34a',
+    pastelText: '#14532d',
+    darkPastelText: '#bbf7d0',
+    dot: '#16a34a',
   },
-  cyan: {
-    bg: '#ffffff',
-    darkBg: '#241029',
-    border: '#9333ea',
-    accent: '#9333ea',
-    text: '#581c87',
-    darkText: '#f3e8ff',
-    dot: '#9333ea',
+  violet: {
+    solid: '#7c3aed',
+    pastel: '#f3e8ff',
+    darkPastel: '#28133e',
+    border: '#7c3aed',
+    pastelText: '#581c87',
+    darkPastelText: '#e9d5ff',
+    dot: '#7c3aed',
+  },
+  teal: {
+    solid: '#0d9488',
+    pastel: '#ccfbf1',
+    darkPastel: '#0d2c2a',
+    border: '#0d9488',
+    pastelText: '#115e59',
+    darkPastelText: '#99f6e4',
+    dot: '#0d9488',
+  },
+  blue: {
+    solid: '#2563eb',
+    pastel: '#dbeafe',
+    darkPastel: '#102142',
+    border: '#2563eb',
+    pastelText: '#1e3a8a',
+    darkPastelText: '#bfdbfe',
+    dot: '#2563eb',
   },
 };
 
-const NODE_W = 224;
-const NODE_H = 88;
-const H_GAP = 42;
-const V_GAP = 86;
+function resolvePaletteKey(rawColor, fallbackIdx = 0) {
+  const c = String(rawColor || '').toLowerCase();
+  if (COLOR_STYLES[c]) return c;
+  if (c === 'rose' || c === 'red') return 'crimson';
+  if (c === 'amber' || c === 'yellow') return 'orange';
+  if (c === 'green') return 'emerald';
+  if (c === 'purple' || c === 'indigo') return 'violet';
+  if (c === 'cyan') return 'teal';
+  return BRANCH_PALETTE_ORDER[fallbackIdx % BRANCH_PALETTE_ORDER.length];
+}
 
-// Calcola layout Albero Verticale oppure Mappa Mentale Orizzontale (stile Algor Education)
-function computeMapLayout(nodes, orientation = 'tree', collapsedIds = new Set()) {
+function getDisplayText(node, depth) {
+  const label = (node.label || '').trim();
+  const summary = (node.summary || '').trim();
+  if (depth >= 3) {
+    if (label.length < 40 && summary && summary.length > label.length) {
+      return `${label}: ${summary}`;
+    }
+    return label || summary;
+  }
+  return label || summary;
+}
+
+function measureNodeSize(node, depth) {
+  const text = getDisplayText(node, depth);
+  if (depth === 0) {
+    const w = 230;
+    const lines = Math.max(2, Math.ceil(text.length / 22));
+    const h = Math.max(66, lines * 18 + 26);
+    return { w, h };
+  }
+  if (depth === 1) {
+    const w = 196;
+    const lines = Math.max(2, Math.ceil(text.length / 20));
+    const h = Math.max(48, lines * 16 + 22);
+    return { w, h };
+  }
+  if (depth === 2) {
+    const w = 176;
+    const lines = Math.max(1, Math.ceil(text.length / 19));
+    const h = Math.max(42, lines * 15 + 20);
+    return { w, h };
+  }
+  // Depth 3+ (Schede foglia dettagliate, leggibili al 100% senza troncamento)
+  const w = 276;
+  const lines = Math.max(2, Math.ceil(text.length / 32));
+  const h = Math.max(60, lines * 15 + 24);
+  return { w, h };
+}
+
+const MINDMAP_H_GAP = 56;
+const MINDMAP_V_GAP = 14;
+const MINDMAP_BRANCH_GAP = 32;
+const TREE_H_GAP = 28;
+const TREE_V_GAP = 72;
+
+// Calcola layout Mappa Mentale Bilaterale (sx/dx dal centro) oppure Albero Verticale
+function computeMapLayout(nodes, orientation = 'mindmap', collapsedIds = new Set()) {
   if (!Array.isArray(nodes) || nodes.length === 0) {
-    return { positioned: [], edges: [], width: 920, height: 520, childCounts: new Map() };
+    return { positioned: [], edges: [], width: 1200, height: 640, childCounts: new Map() };
   }
 
   const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -102,92 +155,203 @@ function computeMapLayout(nodes, orientation = 'tree', collapsedIds = new Set())
 
   const childCounts = new Map();
   allChildrenMap.forEach((kids, pid) => childCounts.set(pid, kids.length));
-
   const getVisibleKids = (id) => (collapsedIds.has(id) ? [] : allChildrenMap.get(id) || []);
+
+  // Assegna un colore coerente per ramo (ereditato da ogni nodo di livello 1)
+  const branchColorById = new Map();
+  const l1KidsAll = allChildrenMap.get(root.id) || [];
+  l1KidsAll.forEach((k, idx) => {
+    const col = resolvePaletteKey(k.color, idx);
+    const assignRec = (id, depth = 1) => {
+      if (branchColorById.has(id) || depth > 8) return;
+      branchColorById.set(id, col);
+      (allChildrenMap.get(id) || []).forEach((c) => assignRec(c.id, depth + 1));
+    };
+    assignRec(k.id, 1);
+  });
 
   const positioned = [];
   const posById = new Map();
 
-  if (orientation === 'horizontal') {
+  if (orientation === 'mindmap') {
+    const rootSize = measureNodeSize(root, 0);
+    const l1Visible = getVisibleKids(root.id);
+    const leftCount = Math.ceil(l1Visible.length / 2);
+    const leftBranches = l1Visible.slice(0, leftCount);
+    const rightBranches = l1Visible.slice(leftCount);
+
     const subtreeH = new Map();
-    const visited = new Set();
-    const measureH = (id) => {
-      if (visited.has(id)) return NODE_H;
-      visited.add(id);
+    const subtreeMaxDepthW = new Map();
+    const sizeById = new Map();
+    sizeById.set(root.id, rootSize);
+
+    const measureSubtree = (id, depth) => {
+      const node = byId.get(id);
+      const sz = measureNodeSize(node, depth);
+      sizeById.set(id, sz);
       const kids = getVisibleKids(id);
       if (kids.length === 0) {
-        subtreeH.set(id, NODE_H);
-        return NODE_H;
+        subtreeH.set(id, sz.h);
+        subtreeMaxDepthW.set(id, sz.w);
+        return sz.h;
       }
-      const total = kids.reduce((acc, k) => acc + measureH(k.id), 0) + 28 * (kids.length - 1);
-      const h = Math.max(NODE_H, total);
+      let totalKidsH = 0;
+      let maxChildSpan = 0;
+      kids.forEach((k, i) => {
+        totalKidsH += measureSubtree(k.id, depth + 1);
+        if (i > 0) totalKidsH += depth === 1 ? 20 : MINDMAP_V_GAP;
+        maxChildSpan = Math.max(maxChildSpan, subtreeMaxDepthW.get(k.id) || 200);
+      });
+      const h = Math.max(sz.h, totalKidsH);
       subtreeH.set(id, h);
+      subtreeMaxDepthW.set(id, sz.w + MINDMAP_H_GAP + maxChildSpan);
       return h;
     };
-    measureH(root.id);
 
-    const placed = new Set();
-    const placeH = (id, topY, depth) => {
-      if (placed.has(id)) return;
-      placed.add(id);
+    const measureSide = (branches) => {
+      let totalH = 0;
+      let maxW = 0;
+      branches.forEach((b, i) => {
+        totalH += measureSubtree(b.id, 1);
+        if (i > 0) totalH += MINDMAP_BRANCH_GAP;
+        maxW = Math.max(maxW, subtreeMaxDepthW.get(b.id) || 200);
+      });
+      return { totalH, maxW };
+    };
+
+    const leftMetrics = measureSide(leftBranches);
+    const rightMetrics = measureSide(rightBranches);
+
+    const padX = 64;
+    const padY = 56;
+    const contentH = Math.max(rootSize.h, leftMetrics.totalH, rightMetrics.totalH);
+    const centerX = padX + (leftBranches.length > 0 ? leftMetrics.maxW + MINDMAP_H_GAP : 0);
+    const rootY = padY + contentH / 2 - rootSize.h / 2;
+
+    const rootItem = {
+      ...root,
+      x: centerX,
+      y: rootY,
+      w: rootSize.w,
+      h: rootSize.h,
+      depth: 0,
+      side: 0,
+      branchColor: 'crimson',
+    };
+    positioned.push(rootItem);
+    posById.set(root.id, rootItem);
+
+    const placeBranch = (id, topY, depth, side, anchorX) => {
       const node = byId.get(id);
-      const myH = subtreeH.get(id) || NODE_H;
-      const x = 48 + depth * (NODE_W + 96);
-      const y = topY + myH / 2 - NODE_H / 2;
-      const item = { ...node, x, y, depth };
+      const sz = sizeById.get(id) || measureNodeSize(node, depth);
+      const myH = subtreeH.get(id) || sz.h;
+      const x = side === -1 ? anchorX - sz.w : anchorX;
+      const y = topY + myH / 2 - sz.h / 2;
+      const item = {
+        ...node,
+        x,
+        y,
+        w: sz.w,
+        h: sz.h,
+        depth,
+        side,
+        branchColor: branchColorById.get(id) || 'crimson',
+      };
       positioned.push(item);
       posById.set(id, item);
 
       const kids = getVisibleKids(id);
       if (kids.length > 0) {
-        const kidsTotal = kids.reduce((acc, k) => acc + (subtreeH.get(k.id) || NODE_H), 0) + 28 * (kids.length - 1);
-        let cursor = topY + (myH - kidsTotal) / 2;
+        const gap = depth === 1 ? 20 : MINDMAP_V_GAP;
+        const kidsTotal = kids.reduce((acc, k) => acc + (subtreeH.get(k.id) || 60), 0) + gap * (kids.length - 1);
+        let cursorY = topY + (myH - kidsTotal) / 2;
+        const nextAnchorX = side === -1 ? x - MINDMAP_H_GAP : x + sz.w + MINDMAP_H_GAP;
         for (const k of kids) {
-          const kh = subtreeH.get(k.id) || NODE_H;
-          placeH(k.id, cursor, depth + 1);
-          cursor += kh + 28;
+          const kh = subtreeH.get(k.id) || 60;
+          placeBranch(k.id, cursorY, depth + 1, side, nextAnchorX);
+          cursorY += kh + gap;
         }
       }
     };
-    placeH(root.id, 48, 0);
+
+    // Posiziona rami SINISTRI (si espandono verso sinistra)
+    let leftCursorY = padY + (contentH - leftMetrics.totalH) / 2;
+    for (const b of leftBranches) {
+      const bh = subtreeH.get(b.id) || 80;
+      placeBranch(b.id, leftCursorY, 1, -1, centerX - MINDMAP_H_GAP);
+      leftCursorY += bh + MINDMAP_BRANCH_GAP;
+    }
+
+    // Posiziona rami DESTRI (si espandono verso destra)
+    let rightCursorY = padY + (contentH - rightMetrics.totalH) / 2;
+    for (const b of rightBranches) {
+      const bh = subtreeH.get(b.id) || 80;
+      placeBranch(b.id, rightCursorY, 1, 1, centerX + rootSize.w + MINDMAP_H_GAP);
+      rightCursorY += bh + MINDMAP_BRANCH_GAP;
+    }
   } else {
+    // Modalita Albero Verticale (top-down)
+    const sizeById = new Map();
     const subtreeW = new Map();
+    const maxHByDepth = new Map();
     const visited = new Set();
-    const measureW = (id) => {
-      if (visited.has(id)) return NODE_W;
+
+    const measureW = (id, depth) => {
+      if (visited.has(id)) return 220;
       visited.add(id);
+      const node = byId.get(id);
+      const sz = measureNodeSize(node, depth);
+      sizeById.set(id, sz);
+      maxHByDepth.set(depth, Math.max(maxHByDepth.get(depth) || 0, sz.h));
       const kids = getVisibleKids(id);
       if (kids.length === 0) {
-        subtreeW.set(id, NODE_W);
-        return NODE_W;
+        subtreeW.set(id, sz.w);
+        return sz.w;
       }
-      const total = kids.reduce((acc, k) => acc + measureW(k.id), 0) + H_GAP * (kids.length - 1);
-      const w = Math.max(NODE_W, total);
+      const total = kids.reduce((acc, k) => acc + measureW(k.id, depth + 1), 0) + TREE_H_GAP * (kids.length - 1);
+      const w = Math.max(sz.w, total);
       subtreeW.set(id, w);
       return w;
     };
-    measureW(root.id);
+    measureW(root.id, 0);
+
+    const depthY = new Map();
+    let accY = 48;
+    for (let d = 0; d <= 6; d++) {
+      depthY.set(d, accY);
+      accY += (maxHByDepth.get(d) || 80) + TREE_V_GAP;
+    }
 
     const placed = new Set();
     const placeW = (id, leftX, depth) => {
       if (placed.has(id)) return;
       placed.add(id);
       const node = byId.get(id);
-      const myW = subtreeW.get(id) || NODE_W;
-      const x = leftX + myW / 2 - NODE_W / 2;
-      const y = 48 + depth * (NODE_H + V_GAP);
-      const item = { ...node, x, y, depth };
+      const sz = sizeById.get(id) || measureNodeSize(node, depth);
+      const myW = subtreeW.get(id) || sz.w;
+      const x = leftX + myW / 2 - sz.w / 2;
+      const y = depthY.get(depth) || 48 + depth * 150;
+      const item = {
+        ...node,
+        x,
+        y,
+        w: sz.w,
+        h: sz.h,
+        depth,
+        side: 0,
+        branchColor: branchColorById.get(id) || 'crimson',
+      };
       positioned.push(item);
       posById.set(id, item);
 
       const kids = getVisibleKids(id);
       if (kids.length > 0) {
-        const kidsTotal = kids.reduce((acc, k) => acc + (subtreeW.get(k.id) || NODE_W), 0) + H_GAP * (kids.length - 1);
+        const kidsTotal = kids.reduce((acc, k) => acc + (subtreeW.get(k.id) || 200), 0) + TREE_H_GAP * (kids.length - 1);
         let cursor = leftX + (myW - kidsTotal) / 2;
         for (const k of kids) {
-          const kw = subtreeW.get(k.id) || NODE_W;
+          const kw = subtreeW.get(k.id) || 200;
           placeW(k.id, cursor, depth + 1);
-          cursor += kw + H_GAP;
+          cursor += kw + TREE_H_GAP;
         }
       }
     };
@@ -208,8 +372,8 @@ function computeMapLayout(nodes, orientation = 'tree', collapsedIds = new Set())
     }
   }
 
-  const maxX = Math.max(...positioned.map((p) => p.x + NODE_W), 900) + 80;
-  const maxY = Math.max(...positioned.map((p) => p.y + NODE_H), 500) + 80;
+  const maxX = Math.max(...positioned.map((p) => p.x + p.w), 1100) + 72;
+  const maxY = Math.max(...positioned.map((p) => p.y + p.h), 600) + 72;
 
   return { positioned, edges, width: maxX, height: maxY, childCounts };
 }
@@ -226,12 +390,12 @@ export default function ConceptMapView({
 }) {
   const [selectedMapId, setSelectedMapId] = useState(maps[0]?.id || null);
   const [customPrompt, setCustomPrompt] = useState(defaultTopicTitle || '');
-  const [orientation, setOrientation] = useState('tree'); // 'tree' | 'horizontal'
+  const [orientation, setOrientation] = useState('mindmap'); // 'mindmap' (bilaterale) | 'tree'
   const [collapsedIds, setCollapsedIds] = useState(() => new Set());
   const [isGenerating, setIsGenerating] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const [zoom, setZoom] = useState(0.9);
+  const [zoom, setZoom] = useState(0.72);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
@@ -239,6 +403,7 @@ export default function ConceptMapView({
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [undoStack, setUndoStack] = useState([]);
   const svgRef = useRef(null);
+  const canvasBoxRef = useRef(null);
 
   useEffect(() => {
     if (defaultTopicTitle) {
@@ -261,6 +426,31 @@ export default function ConceptMapView({
     () => computeMapLayout(activeMap?.nodes || [], orientation, collapsedIds),
     [activeMap, orientation, collapsedIds]
   );
+
+  const fitMapToViewport = () => {
+    const box = canvasBoxRef.current;
+    if (!box || !layout.width || !layout.height) {
+      setZoom(0.65);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+    const bw = box.clientWidth || 860;
+    const bh = box.clientHeight || 560;
+    const pad = 28;
+    const scaleX = (bw - pad * 2) / layout.width;
+    const scaleY = (bh - pad * 2) / layout.height;
+    const nextZoom = Math.max(0.28, Math.min(1.05, Number(Math.min(scaleX, scaleY).toFixed(2))));
+    const nextX = Math.round((bw - layout.width * nextZoom) / 2);
+    const nextY = Math.round((bh - layout.height * nextZoom) / 2);
+    setZoom(nextZoom);
+    setPan({ x: nextX, y: nextY });
+  };
+
+  useEffect(() => {
+    if (!activeMap?.id) return;
+    const t = setTimeout(() => fitMapToViewport(), 40);
+    return () => clearTimeout(t);
+  }, [activeMap?.id, orientation, layout.width, layout.height]);
 
   const selectedNode = useMemo(
     () => activeMap?.nodes?.find((n) => n.id === selectedNodeId) || null,
@@ -508,12 +698,12 @@ export default function ConceptMapView({
 
               <div className="flex items-center gap-1.5">
                 <button
-                  onClick={() => setOrientation((o) => (o === 'tree' ? 'horizontal' : 'tree'))}
+                  onClick={() => setOrientation((o) => (o === 'mindmap' ? 'tree' : 'mindmap'))}
                   className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-[#2b1824] hover:bg-indigo-500/15 text-xs font-semibold flex items-center gap-1.5 transition"
-                  title="Cambia layout Albero / Mappa Mentale"
+                  title="Cambia layout Mappa Mentale Bilaterale / Albero Verticale"
                 >
-                  {orientation === 'tree' ? <GitBranch size={13} className="text-indigo-500" /> : <Rows3 size={13} className="text-teal-500" />}
-                  <span>{orientation === 'tree' ? 'Albero' : 'Orizzontale'}</span>
+                  {orientation === 'mindmap' ? <Rows3 size={13} className="text-indigo-500" /> : <GitBranch size={13} className="text-indigo-500" />}
+                  <span>{orientation === 'mindmap' ? 'Bilaterale' : 'Albero'}</span>
                 </button>
                 <button
                   onClick={() => {
@@ -535,12 +725,13 @@ export default function ConceptMapView({
 
             {/* LAVAGNA A PUNTINI */}
             <div
+              ref={canvasBoxRef}
               onMouseDown={onMouseDownCanvas}
               onMouseMove={onMouseMoveCanvas}
               onMouseUp={onMouseUpCanvas}
               onMouseLeave={onMouseUpCanvas}
               onWheel={onWheelCanvas}
-              className={`algor-dot-grid relative ${compact ? 'h-[470px]' : 'h-[560px]'} overflow-hidden select-none ${
+              className={`algor-dot-grid relative ${compact ? 'h-[520px]' : 'h-[620px]'} overflow-hidden select-none ${
                 isPanning ? 'cursor-grabbing' : 'cursor-grab'
               }`}
             >
@@ -559,69 +750,100 @@ export default function ConceptMapView({
                 >
                   <defs>
                     <filter id="algorCardShadow" x="-10%" y="-10%" width="125%" height="130%">
-                      <feDropShadow dx="0" dy="6" stdDeviation="6" floodColor="#1e1b4b" floodOpacity={theme === 'dark' ? '0.45' : '0.10'} />
+                      <feDropShadow dx="0" dy="3" stdDeviation="4" floodColor="#0f172a" floodOpacity={theme === 'dark' ? '0.45' : '0.07'} />
                     </filter>
                   </defs>
 
-                  {/* CONNETTORI CURVI FLUIDI */}
+                  {/* CONNETTORI CURVI ORGANICI BILATERALI */}
                   {layout.edges.map((e) => {
-                    const isHoriz = orientation === 'horizontal';
-                    const x1 = isHoriz ? e.from.x + NODE_W : e.from.x + NODE_W / 2;
-                    const y1 = isHoriz ? e.from.y + NODE_H / 2 : e.from.y + NODE_H;
-                    const x2 = isHoriz ? e.to.x : e.to.x + NODE_W / 2;
-                    const y2 = isHoriz ? e.to.y + NODE_H / 2 : e.to.y;
-                    const midX = (x1 + x2) / 2;
-                    const midY = (y1 + y2) / 2;
-                    const d = isHoriz
-                      ? `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`
-                      : `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
-                    const style = COLOR_STYLES[e.to.color] || COLOR_STYLES.blue;
+                    const isMindmap = orientation === 'mindmap';
+                    let x1, y1, x2, y2, d;
+                    if (isMindmap) {
+                      const goesLeft = e.to.side === -1;
+                      x1 = goesLeft ? e.from.x : e.from.x + e.from.w;
+                      y1 = e.from.y + e.from.h / 2;
+                      x2 = goesLeft ? e.to.x + e.to.w : e.to.x;
+                      y2 = e.to.y + e.to.h / 2;
+                      const cx = (x1 + x2) / 2;
+                      d = `M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`;
+                    } else {
+                      x1 = e.from.x + e.from.w / 2;
+                      y1 = e.from.y + e.from.h;
+                      x2 = e.to.x + e.to.w / 2;
+                      y2 = e.to.y;
+                      const cy = (y1 + y2) / 2;
+                      d = `M ${x1} ${y1} C ${x1} ${cy}, ${x2} ${cy}, ${x2} ${y2}`;
+                    }
+
+                    const st = COLOR_STYLES[e.to.branchColor] || COLOR_STYLES.crimson;
+                    const strokeColor = theme === 'dark' ? st.border : '#94a3b8';
 
                     return (
                       <g key={e.id}>
                         <path
                           d={d}
                           fill="none"
-                          stroke={style.border}
-                          strokeWidth="2.5"
-                          strokeOpacity="0.65"
+                          stroke={strokeColor}
+                          strokeWidth="1.6"
+                          strokeOpacity={theme === 'dark' ? '0.55' : '0.7'}
                         />
-                        {e.label && (
-                          <g transform={`translate(${midX}, ${midY})`}>
-                            <rect
-                              x="-52"
-                              y="-11"
-                              width="104"
-                              height="22"
-                              rx="11"
-                              fill={theme === 'dark' ? '#1c1018' : '#ffffff'}
-                              stroke={style.border}
-                              strokeWidth="1.2"
-                              strokeOpacity="0.55"
-                            />
-                            <text
-                              textAnchor="middle"
-                              dominantBaseline="middle"
-                              fontSize="10"
-                              fontWeight="700"
-                              fill={theme === 'dark' ? '#e2e8f0' : '#334155'}
-                            >
-                              {e.label.slice(0, 17)}
-                            </text>
-                          </g>
-                        )}
                       </g>
                     );
                   })}
 
-                  {/* NODI CARD STILE ALGOR */}
+                  {/* NODI A 4 LIVELLI (RADICE SCURA -> RAMO PIENO -> SOTTONODO PASTELLO -> SCHEDA BIANCA BORDATA) */}
                   {layout.positioned.map((node) => {
-                    const st = COLOR_STYLES[node.color] || COLOR_STYLES.blue;
+                    const st = COLOR_STYLES[node.branchColor] || COLOR_STYLES.crimson;
                     const isSelected = selectedNodeId === node.id;
-                    const fill = theme === 'dark' ? st.darkBg : st.bg;
-                    const textColor = theme === 'dark' ? st.darkText : st.text;
                     const kidsCount = layout.childCounts.get(node.id) || 0;
                     const isCollapsed = collapsedIds.has(node.id);
+                    const displayText = getDisplayText(node, node.depth);
+
+                    let rectFill, rectStroke, rectStrokeW, textColor, fontSize, fontWeight, textTransform;
+                    if (node.depth === 0) {
+                      rectFill = theme === 'dark' ? '#271422' : '#1e293b';
+                      rectStroke = isSelected ? '#fb7185' : theme === 'dark' ? '#f43f5e' : '#0f172a';
+                      rectStrokeW = isSelected ? '3' : '2';
+                      textColor = '#ffffff';
+                      fontSize = '12.5px';
+                      fontWeight = 800;
+                      textTransform = 'uppercase';
+                    } else if (node.depth === 1) {
+                      rectFill = st.solid;
+                      rectStroke = isSelected ? '#ffffff' : st.solid;
+                      rectStrokeW = isSelected ? '3' : '1.5';
+                      textColor = '#ffffff';
+                      fontSize = '11.5px';
+                      fontWeight = 800;
+                      textTransform = 'uppercase';
+                    } else if (node.depth === 2) {
+                      rectFill = theme === 'dark' ? st.darkPastel : st.pastel;
+                      rectStroke = isSelected ? '#ffffff' : st.border;
+                      rectStrokeW = isSelected ? '2.8' : '1.6';
+                      textColor = theme === 'dark' ? st.darkPastelText : st.pastelText;
+                      fontSize = '11px';
+                      fontWeight = 700;
+                      textTransform = 'uppercase';
+                    } else {
+                      rectFill = theme === 'dark' ? '#1a0f17' : '#ffffff';
+                      rectStroke = isSelected ? '#ffffff' : st.border;
+                      rectStrokeW = isSelected ? '2.6' : '1.3';
+                      textColor = theme === 'dark' ? '#f3e8ee' : '#1e293b';
+                      fontSize = '10.5px';
+                      fontWeight = 600;
+                      textTransform = 'uppercase';
+                    }
+
+                    const badgeX =
+                      orientation === 'mindmap'
+                        ? node.side === -1
+                          ? 0
+                          : node.side === 1
+                            ? node.w
+                            : node.w / 2
+                        : node.w / 2;
+                    const badgeY =
+                      orientation === 'mindmap' && node.side !== 0 ? node.h / 2 : node.h;
 
                     return (
                       <g
@@ -633,23 +855,14 @@ export default function ConceptMapView({
                         filter="url(#algorCardShadow)"
                       >
                         <rect
-                          width={NODE_W}
-                          height={NODE_H}
-                          rx="18"
-                          fill={fill}
-                          stroke={isSelected ? '#ffffff' : st.border}
-                          strokeWidth={isSelected ? '3.2' : node.depth === 0 ? '2.8' : '1.8'}
+                          width={node.w}
+                          height={node.h}
+                          rx="11"
+                          fill={rectFill}
+                          stroke={rectStroke}
+                          strokeWidth={rectStrokeW}
                         />
-                        {/* Barra accento colorata in alto */}
-                        <rect
-                          x="14"
-                          y="0"
-                          width={NODE_W - 28}
-                          height="5"
-                          rx="2.5"
-                          fill={st.accent}
-                        />
-                        <foreignObject x="12" y="10" width={NODE_W - 24} height={NODE_H - 18}>
+                        <foreignObject x="10" y="6" width={node.w - 20} height={node.h - 12}>
                           <div
                             xmlns="http://www.w3.org/1999/xhtml"
                             style={{
@@ -658,49 +871,33 @@ export default function ConceptMapView({
                               display: 'flex',
                               flexDirection: 'column',
                               justifyContent: 'center',
+                              alignItems: 'center',
                               height: '100%',
                               textAlign: 'center',
-                              overflow: 'hidden',
+                              fontSize,
+                              fontWeight,
+                              lineHeight: 1.32,
+                              letterSpacing: node.depth <= 2 ? '0.02em' : '0.01em',
+                              textTransform,
+                              wordBreak: 'break-word',
                             }}
                           >
-                            <div style={{ fontSize: node.depth === 0 ? '13.5px' : '12px', fontWeight: 800, lineHeight: 1.25 }}>
-                              {node.label}
-                            </div>
-                            {node.summary && (
-                              <div
-                                style={{
-                                  fontSize: '10px',
-                                  opacity: 0.78,
-                                  marginTop: '4px',
-                                  lineHeight: 1.25,
-                                  display: '-webkit-box',
-                                  WebkitLineClamp: 2,
-                                  WebkitBoxOrient: 'vertical',
-                                  overflow: 'hidden',
-                                }}
-                              >
-                                {node.summary}
-                              </div>
-                            )}
+                            {displayText}
                           </div>
                         </foreignObject>
 
                         {/* Badge espandi / comprimi ramo */}
-                        {kidsCount > 0 && (
+                        {kidsCount > 0 && node.depth > 0 && (
                           <g
-                            transform={
-                              orientation === 'horizontal'
-                                ? `translate(${NODE_W}, ${NODE_H / 2})`
-                                : `translate(${NODE_W / 2}, ${NODE_H})`
-                            }
+                            transform={`translate(${badgeX}, ${badgeY})`}
                             onClick={(e) => toggleCollapseNode(e, node.id)}
                             style={{ cursor: 'pointer' }}
                           >
-                            <circle r="11" fill={st.accent} stroke={fill} strokeWidth="2" />
+                            <circle r="9.5" fill={st.solid} stroke={rectFill} strokeWidth="1.8" />
                             <text
                               textAnchor="middle"
                               dominantBaseline="central"
-                              fontSize="11"
+                              fontSize="10"
                               fontWeight="800"
                               fill="#ffffff"
                             >
@@ -717,7 +914,7 @@ export default function ConceptMapView({
               {/* DOCK FLUTTUANTE IN BASSO (STILE ALGOR / FIGJAM) */}
               <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 px-2.5 py-1.5 rounded-2xl bg-white/95 dark:bg-[#1c1018]/95 backdrop-blur-md border border-slate-200 dark:border-[#3e2133] shadow-xl">
                 <button
-                  onClick={() => setZoom((z) => Math.max(0.35, Number((z - 0.1).toFixed(2))))}
+                  onClick={() => setZoom((z) => Math.max(0.25, Number((z - 0.1).toFixed(2))))}
                   className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-[#2b1824] transition"
                   title="Zoom indietro"
                 >
@@ -733,12 +930,9 @@ export default function ConceptMapView({
                 </button>
                 <div className="w-px h-4 bg-slate-200 dark:bg-[#3e2133] mx-0.5" />
                 <button
-                  onClick={() => {
-                    setZoom(0.88);
-                    setPan({ x: 0, y: 0 });
-                  }}
+                  onClick={fitMapToViewport}
                   className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-[#2b1824] transition"
-                  title="Centra lavagna"
+                  title="Adatta e centra lavagna"
                 >
                   <Maximize2 size={15} />
                 </button>
