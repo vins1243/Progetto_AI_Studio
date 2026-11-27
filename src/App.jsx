@@ -82,7 +82,8 @@ import {
   Pencil,
   Headphones,
   Share2,
-  FileAudio
+  FileAudio,
+  Settings
 } from 'lucide-react';
 
 import LandingPage from './components/LandingPage.jsx';
@@ -814,6 +815,7 @@ function MainAppContent() {
   const [isGlossaryOpen, setIsGlossaryOpen] = useState(false);
   const [shareToast, setShareToast] = useState('');
   const [publicSharedItem, setPublicSharedItem] = useState(null);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isDeleteAccountModalOpen, setIsDeleteAccountModalOpen] = useState(false);
   const [deleteAccountConfirm, setDeleteAccountConfirm] = useState('');
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
@@ -4588,24 +4590,26 @@ function MainAppContent() {
                     </span>
                   </button>
                   <button
+                    type="button"
+                    onClick={() => {
+                      setIsProfileMenuOpen(false);
+                      setIsSettingsModalOpen(true);
+                    }}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-xl transition ${
+                      theme === 'light'
+                        ? 'text-slate-700 hover:bg-rose-50'
+                        : 'text-gray-200 hover:bg-geminiHover'
+                    }`}
+                  >
+                    <Settings size={14} className="text-indigo-500" />
+                    <span>Impostazioni</span>
+                  </button>
+                  <button
                     onClick={() => { setIsProfileMenuOpen(false); handleSignOut(); }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-red-400 hover:bg-red-500/10 rounded-xl transition"
                   >
                     <LogOut size={14} />
                     <span>Disconnetti</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsProfileMenuOpen(false);
-                      setDeleteAccountConfirm('');
-                      setDeleteAccountError('');
-                      setIsDeleteAccountModalOpen(true);
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition border-t border-geminiBorder/40 pt-2.5"
-                  >
-                    <Trash2 size={13} />
-                    <span>Elimina account e dati (GDPR)</span>
                   </button>
                 </div>
               )}
@@ -7490,6 +7494,129 @@ function MainAppContent() {
         onSaveEntries={handleSaveGlossary}
         onQuotaExceeded={(msg) => openBillingWithReason(msg)}
       />
+
+      {isSettingsModalOpen && user && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
+          <div
+            className={`w-full max-w-lg max-h-[88vh] overflow-y-auto rounded-3xl border p-6 shadow-2xl space-y-5 ${
+              theme === 'light'
+                ? 'bg-white border-rose-200 text-slate-900'
+                : 'bg-[#1c1018] border-[#3e2133] text-gray-100'
+            }`}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200/80 dark:border-[#3e2133] pb-3.5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-2xl bg-indigo-500/15 text-indigo-500 flex items-center justify-center">
+                  <Settings size={18} />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm sm:text-base">Impostazioni Account</h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Dati del profilo, piano e gestione privacy</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSettingsModalOpen(false)}
+                className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-[#2b1824] transition"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* DATI PERSONALI */}
+            <div className={`p-4 rounded-2xl border space-y-2.5 text-xs ${
+              theme === 'light' ? 'bg-rose-50/40 border-rose-200/80' : 'bg-[#120a10] border-[#3e2133]'
+            }`}>
+              <div className="text-[11px] font-extrabold uppercase tracking-wider text-indigo-500">Dati Utente</div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="opacity-70">Nome</span>
+                <span className="font-bold truncate">{user.user_metadata?.full_name || 'Studente'}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="opacity-70">Email</span>
+                <span className="font-bold truncate">{user.email}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="opacity-70">ID Account</span>
+                <span className="font-mono text-[11px] opacity-80 truncate max-w-[200px]">{user.id}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="opacity-70">Piano Attivo</span>
+                <span className="font-extrabold text-indigo-500">
+                  Piano {currentTierLabel}{isPro ? ' (Attivo)' : ' (Prova)'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="opacity-70">Dati salvati nel cloud</span>
+                <span className="font-semibold">
+                  {(savedProjects || []).length} progetti · {(conversations || []).length} chat
+                </span>
+              </div>
+              {user.created_at && (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="opacity-70">Iscritto dal</span>
+                  <span className="font-semibold">{new Date(user.created_at).toLocaleDateString('it-IT')}</span>
+                </div>
+              )}
+            </div>
+
+            {/* AZIONI RAPIDE PIANO E DOCUMENTI LEGALI */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSettingsModalOpen(false);
+                  openBillingWithReason('');
+                }}
+                className="py-2.5 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition"
+              >
+                <CreditCard size={14} />
+                <span>{isPro ? 'Gestisci Abbonamento' : 'Vedi Piani e Upgrade'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSettingsModalOpen(false);
+                  setLegalModalTab('privacy');
+                  setLegalModalOpen(true);
+                }}
+                className={`py-2.5 px-3.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+                  theme === 'light'
+                    ? 'bg-white hover:bg-rose-50 border-rose-200 text-slate-700'
+                    : 'bg-[#120a10] hover:bg-[#2b1824] border-[#3e2133] text-gray-200'
+                }`}
+              >
+                <ShieldCheck size={14} className="text-indigo-500" />
+                <span>Termini &amp; Privacy (GDPR)</span>
+              </button>
+            </div>
+
+            {/* ZONA PERICOLOSA: ELIMINA ACCOUNT E DATI */}
+            <div className="p-4 rounded-2xl border border-rose-500/35 bg-rose-500/10 space-y-2.5">
+              <div className="text-xs font-extrabold text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
+                <AlertTriangle size={14} />
+                <span>Zona Pericolosa · Diritto all&apos;Oblio (Art. 17 GDPR)</span>
+              </div>
+              <p className="text-[11px] opacity-85 leading-relaxed">
+                Puoi eliminare definitivamente il tuo account e tutti i tuoi dati personali (progetti, lezioni, mappe, flashcard, chat) e disdire subito qualsiasi abbonamento attivo.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSettingsModalOpen(false);
+                  setDeleteAccountConfirm('');
+                  setDeleteAccountError('');
+                  setIsDeleteAccountModalOpen(true);
+                }}
+                className="w-full py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition"
+              >
+                <Trash2 size={13} />
+                <span>Elimina account e tutti i dati</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isDeleteAccountModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
