@@ -239,7 +239,15 @@ export function isUserPro(profile) {
 }
 
 export function getQuotaBucketForAction(action, isLessonGeneration) {
-  if (isLessonGeneration || action === 'generate_lesson') return 'lessons';
+  if (
+    isLessonGeneration ||
+    action === 'generate_lesson' ||
+    action === 'lesson_plan' ||
+    action === 'lesson_draft' ||
+    action === 'lesson_synthesize'
+  ) {
+    return 'lessons';
+  }
   if (action === 'generate_concept_map') return 'maps';
   if (action === 'generate_quiz' || action === 'evaluate_open_answer') return 'quizzes';
   if (action === 'transcribe_audio' || action === 'get_usage') return null;

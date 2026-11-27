@@ -2025,11 +2025,12 @@ function MainAppContent() {
     }
   };
 
-  // Generazione Lezione Multi-Agente (Admin -> Teamwork 3 Sotto-Agenti -> Macro-Agente)
+  // Generazione Lezione Multi-Agente a 3 Fasi Indipendenti (anti-timeout Netlify):
+  // Fase 1: Admin Planner -> Fase 2: 3 Sotto-Agenti in parallelo -> Fase 3: Macro-Agente Synth in streaming
   const handleGenerateLesson = async (dayNum, topic) => {
     if (isGeneratingLesson || !activeProject) return;
     setIsGeneratingLesson(true);
-    setLessonGenStatus({ stage: 1, text: 'Admin AI: analisi del syllabus e pianificazione sezioni...' });
+    setLessonGenStatus({ stage: 1, text: 'Admin AI: analisi del syllabus e pianificazione sezioni senza sovrapposizioni...' });
 
     try {
       const dbData = await getProjectDataFromDB(activeProject.id);
@@ -2046,42 +2047,118 @@ function MainAppContent() {
         });
       });
 
-      let lastRenderTs = 0;
-      const { reply: lessonContent } = await streamAiApi(
-        {
-          isLessonGeneration: true,
-          topicTitle: topic.title,
-          otherLessonTopics,
-          sourceType: activeProject.sourceType,
-          files: activeProject.sourceType === 'my_materials' ? fullFilesList.map(f => ({
-            name: f.name,
-            text: f.extractedText || f.text,
-            images: f.images ? f.images.map(img => ({ id: img.id, name: img.name, label: img.label })) : []
-          })) : [],
-          examDescription: activeProject.description,
-          prepLevel: activeProject.prepLevel,
-          languageStyle: activeProject.languageStyle
-        },
-        {
-          onStatus: (evt) => {
-            setLessonGenStatus({
-              stage: evt.stage || 1,
-              text: evt.text || 'Elaborazione multi-agente in corso...',
-            });
-          },
-          onChunk: (_delta, fullText) => {
-            const now = Date.now();
-            if (wysiwygEditorRef.current && now - lastRenderTs > 140) {
-              lastRenderTs = now;
-              wysiwygEditorRef.current.innerHTML = renderMarkdownAndLatexToHtml(fullText, lessonImagesMap);
-            }
-          }
-        }
+      const preparedFiles =
+        activeProject.sourceType === 'my_materials'
+          ? fullFilesList.map((f) => ({
+              name: f.name,
+              text: f.extractedText || f.text || '',
+              images: f.images ? f.images.map((img) => ({ id: img.id, name: img.name, label: img.label })) : [],
+            }))
+          : [];
+
+      const commonPayload = {
+        topicTitle: topic.title,
+        otherLessonTopics,
+        sourceType: activeProject.sourceType,
+        files: preparedFiles,
+        examDescription: activeProject.description,
+        prepLevel: activeProject.prepLevel,
+        languageStyle: activeProject.languageStyle,
+      };
+
+      // FASE 1: ADMIN PLANNER (~2-3s)
+      let blueprintText = '';
+      try {
+        const planRes = await callAiApi({
+          ...commonPayload,
+          action: 'lesson_plan',
+        });
+        blueprintText = planRes?.blueprintText || '';
+      } catch (planErr) {
+        if (planErr instanceof QuotaExceededError) throw planErr;
+        console.warn('Admin Planner fallback:', planErr.message);
+      }
+
+      // FASE 2: TEAMWORK — 3 SOTTO-AGENTI IN PARALLELO (3 invocazioni Netlify separate, zero timeout!)
+      setLessonGenStatus({
+        stage: 2,
+        text: 'Teamwork AI: 3 sotto-agenti stanno sviluppando 3 versioni complete in parallelo (0/3)...',
+      });
+
+      let completedDrafts = 0;
+      const draftResults = await Promise.allSettled(
+        [1, 2, 3].map(async (agentIndex) => {
+          const res = await callAiApi({
+            ...commonPayload,
+            action: 'lesson_draft',
+            agentIndex,
+            blueprintText,
+          });
+          completedDrafts += 1;
+          setLessonGenStatus({
+            stage: 2,
+            text: `Teamwork AI: completate ${completedDrafts}/3 lezioni candidate dai sotto-agenti...`,
+          });
+          return {
+            agent: res?.agent || `Agente ${agentIndex}`,
+            draft: res?.draft || '',
+          };
+        })
       );
+
+      const validDrafts = draftResults
+        .filter((r) => r.status === 'fulfilled' && r.value?.draft && r.value.draft.trim().length > 200)
+        .map((r) => r.value);
+
+      // FASE 3: MACRO-AGENTE SYNTHESIZER (confronta le 3 lezioni e streamma la versione definitiva!)
+      setLessonGenStatus({
+        stage: 3,
+        text:
+          validDrafts.length > 0
+            ? `Macro-Agente AI: confronto delle ${validDrafts.length} lezioni e sintesi della versione definitiva...`
+            : 'Macro-Agente AI: redazione della lezione definitiva...',
+      });
+
+      let lessonContent = '';
+      try {
+        let lastRenderTs = 0;
+        const synthRes = await streamAiApi(
+          {
+            ...commonPayload,
+            action: 'lesson_synthesize',
+            isLessonGeneration: true,
+            blueprintText,
+            drafts: validDrafts,
+          },
+          {
+            onChunk: (_delta, fullText) => {
+              const now = Date.now();
+              if (wysiwygEditorRef.current && now - lastRenderTs > 140) {
+                lastRenderTs = now;
+                wysiwygEditorRef.current.innerHTML = renderMarkdownAndLatexToHtml(fullText, lessonImagesMap);
+              }
+            },
+          }
+        );
+        lessonContent = (synthRes?.reply || '').trim();
+      } catch (synthErr) {
+        if (synthErr instanceof QuotaExceededError) throw synthErr;
+        console.warn('Macro-Agente fallback su bozza migliore:', synthErr.message);
+      }
+
+      // Fallback di sicurezza: se lo streaming del Macro-Agente fosse interrotto, usa la bozza piu ricca tra le 3
+      if (!lessonContent || lessonContent.length < 100) {
+        if (validDrafts.length > 0) {
+          const bestDraft = [...validDrafts].sort((a, b) => b.draft.length - a.draft.length)[0];
+          lessonContent = bestDraft.draft.trim();
+        } else {
+          throw new Error('Nessun contenuto generato dal server AI. Riprova tra qualche secondo.');
+        }
+      }
 
       updateTopicLessonContent(dayNum, topic.id, lessonContent);
       if (wysiwygEditorRef.current) {
-        const { cleanLesson } = splitLessonAndTrueFalse(lessonContent || '');
+        const { cleanLesson } = splitLessonAndTrueFalse(lessonContent);
         wysiwygEditorRef.current.innerHTML = renderMarkdownAndLatexToHtml(cleanLesson, lessonImagesMap);
       }
       refreshUsageQuota();

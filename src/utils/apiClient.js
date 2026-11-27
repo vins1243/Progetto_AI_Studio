@@ -102,23 +102,24 @@ export async function streamAiApi(payload, { onChunk, onMeta, onStatus } = {}) {
       const jsonStr = line.slice(5).trim();
       if (!jsonStr) continue;
 
+      let evt = null;
       try {
-        const evt = JSON.parse(jsonStr);
-        if (evt.type === 'meta') {
-          modelUsed = evt.modelUsed || modelUsed;
-          if (onMeta) onMeta(evt);
-        } else if (evt.type === 'status') {
-          if (onStatus) onStatus(evt);
-        } else if (evt.type === 'chunk' && evt.text) {
-          fullText += evt.text;
-          if (onChunk) onChunk(evt.text, fullText);
-        } else if (evt.type === 'done') {
-          modelUsed = evt.modelUsed || modelUsed;
-        } else if (evt.type === 'error') {
-          throw new Error(evt.error || 'Errore durante lo streaming AI.');
-        }
-      } catch (e) {
-        if (e.message && e.message.includes('streaming')) throw e;
+        evt = JSON.parse(jsonStr);
+      } catch {
+        continue;
+      }
+      if (evt.type === 'meta') {
+        modelUsed = evt.modelUsed || modelUsed;
+        if (onMeta) onMeta(evt);
+      } else if (evt.type === 'status') {
+        if (onStatus) onStatus(evt);
+      } else if (evt.type === 'chunk' && evt.text) {
+        fullText += evt.text;
+        if (onChunk) onChunk(evt.text, fullText);
+      } else if (evt.type === 'done') {
+        modelUsed = evt.modelUsed || modelUsed;
+      } else if (evt.type === 'error') {
+        throw new Error(evt.error || 'Errore durante lo streaming AI.');
       }
     }
   }

@@ -78,6 +78,9 @@ export default async (req) => {
     isLessonGeneration,
     topicTitle,
     otherLessonTopics,
+    agentIndex,
+    blueprintText: incomingBlueprintText,
+    drafts: incomingDrafts,
     examDescription,
     daysTotal,
     prepLevel,
@@ -586,9 +589,18 @@ ${isOnlineSearch ? 'Genera il programma completo.' : `DOCUMENTI:\n${perFileSumma
     }
 
     // -------------------------------------------------------------
-    // AZIONE 8: GENERAZIONE LEZIONE MULTI-AGENTE (ADMIN + TEAMWORK 3 LEZIONI + MACRO-AGENTE)
+    // AZIONE 8: GENERAZIONE LEZIONE MULTI-AGENTE (3 FASI INDIPENDENTI ANTI-TIMEOUT NETLIFY)
+    //   1) action === 'lesson_plan'       -> Admin AI (scaletta + confini syllabus)
+    //   2) action === 'lesson_draft'      -> Sotto-Agente #1 / #2 / #3 (3 chiamate parallele)
+    //   3) action === 'lesson_synthesize' -> Macro-Agente AI (confronto 3 bozze + streaming Pro)
     // -------------------------------------------------------------
-    if (isLessonGeneration || action === 'generate_lesson') {
+    if (
+      action === 'lesson_plan' ||
+      action === 'lesson_draft' ||
+      action === 'lesson_synthesize' ||
+      isLessonGeneration ||
+      action === 'generate_lesson'
+    ) {
       const availableImagesList = [];
       allFiles.forEach((f, idx) => {
         if (Array.isArray(f.images) && f.images.length > 0) {
@@ -602,10 +614,11 @@ ${isOnlineSearch ? 'Genera il programma completo.' : `DOCUMENTI:\n${perFileSumma
         }
       });
 
+      const sourceCharBudget = action === 'lesson_plan' ? 45000 : action === 'lesson_draft' ? 65000 : 80000;
       const relevantSources = extractRelevantChunks(
         allFiles,
         `${topicTitle || ''} ${examDescription || ''}`,
-        120000
+        sourceCharBudget
       );
 
       const prepTarget = Number(prepLevel) || 85;
@@ -616,7 +629,6 @@ ${isOnlineSearch ? 'Genera il programma completo.' : `DOCUMENTI:\n${perFileSumma
             ? 'LIVELLO ALTO (75-89%): trattazione completa e approfondita con tutti i concetti chiave, meccanismi, tabelle comparative, formule ed esempi.'
             : 'LIVELLO SOLIDO (fino a 74%): trattazione chiara, completa e lineare focalizzata sui pilastri fondamentali ben spiegati senza banalizzazioni.';
 
-      // Confini rigorosi del syllabus: elenco di tutte le ALTRE lezioni del corso per evitare ripetizioni
       const otherTopicsClean = Array.isArray(otherLessonTopics)
         ? otherLessonTopics.filter(Boolean).slice(0, 60)
         : [];
@@ -657,12 +669,9 @@ REGOLE INDEROGABILI DI QUALITA E COMPLETEZZA:
 ${imagesRuleBlock}
 6. CHIUSURA CON VERIFICA RAPIDA: chiudi con "## Verifica Rapida (Vero o Falso)" contenente 3 affermazioni trabocchetto d'esame (ciascuna numerata con risposta **Vero** o **Falso**: spiegazione concisa).`;
 
-      // Helper per eseguire la pipeline Admin -> 3 Sotto-Agenti in parallelo -> Macro-Agente
-      const runMultiAgentPipeline = async (emitStatus) => {
-        // FASE 1: ADMIN PLANNER (analizza syllabus, divide il testo in parti esatte e definisce i confini)
-        emitStatus(1, 'Admin AI: analisi del syllabus, esclusione argomenti di altre lezioni e divisione in sezioni...');
-
-        const adminSystemPrompt = `Sei l'ADMIN DIDATTICO di MinervaAI. Il tuo compito e pianificare la scaletta esatta della lezione "${topicTitle}" (materia: "${examDescription || 'Studio'}") affinche i sotto-agenti la sviluppino in modo chirurgico, completo e SENZA ripetere argomenti delle altre lezioni del corso.
+      // FASE 1: ADMIN AI PLANNER (~2-3 secondi)
+      if (action === 'lesson_plan') {
+        const adminSystemPrompt = `Sei l'ADMIN DIDATTICO di MinervaAI. Pianifica la scaletta esatta della lezione "${topicTitle}" (materia: "${examDescription || 'Studio'}") affinche i 3 sotto-agenti la sviluppino in modo chirurgico, completo e SENZA ripetere argomenti delle altre lezioni del corso.
 
 Restituisci ESCLUSIVAMENTE un JSON valido:
 {
@@ -682,9 +691,10 @@ Scegli il numero ideale di sezioni (da 4 a 7 parti) in base alla densita reale d
         const adminUserPrompt = `ARGOMENTO TARGET: "${topicTitle}"
 MATERIA: "${examDescription || 'Studio'}"
 ${syllabusBoundaryBlock}
-${relevantSources ? `\nFONTI DEL DOCENTE (estratto per pianificazione):\n${relevantSources.slice(0, 45000)}` : '\nNessun file allegato: pianifica in base allo standard universitario avanzato.'}`;
+${relevantSources ? `\nFONTI DEL DOCENTE:\n${relevantSources}` : '\nNessun file allegato: pianifica in base allo standard universitario avanzato.'}`;
 
         let blueprintText = '';
+        let sectionsCount = 0;
         try {
           const adminRes = await generateAI({
             tier: 'light',
@@ -696,6 +706,7 @@ ${relevantSources ? `\nFONTI DEL DOCENTE (estratto per pianificazione):\n${relev
           });
           const bp = safeParseJson(adminRes.text, null);
           if (bp && Array.isArray(bp.sections) && bp.sections.length > 0) {
+            sectionsCount = bp.sections.length;
             blueprintText = `PIANO SEZIONI DEFINITO DALL'ADMIN (${bp.sections.length} PARTI OBBLIGATORIE):
 ${bp.sections
   .map(
@@ -722,45 +733,44 @@ ${
           console.warn('Admin Planner fallback:', err.message);
         }
 
-        // FASE 2: TEAMWORK — 3 SOTTO-AGENTI IN PARALLELO GENERANO 3 LEZIONI COMPLETE INDIPENDENTI
-        emitStatus(2, 'Teamwork AI: 3 sotto-agenti stanno sviluppando 3 versioni complete della lezione in parallelo...');
+        return jsonResponse({ blueprintText, sectionsCount });
+      }
 
-        const subAgentProfiles = [
-          {
-            id: 1,
+      // FASE 2: SOTTO-AGENTE INDIVIDUALE (chiamato 3 volte in parallelo dal client -> ciascuno ha 26s propri!)
+      if (action === 'lesson_draft') {
+        const idx = Number(agentIndex) || 1;
+        const profiles = {
+          1: {
             name: 'Agente Forense & Classificazioni',
             focus:
               'Massima fedelta forense alle fonti: non perdere NEMMENO UN numero, cut-off, percentuale, studio clinico/autore, gene/locus, sottoclasse o tabella comparativa.',
             temp: 0.25,
           },
-          {
-            id: 2,
+          2: {
             name: 'Agente Fisiopatologo & Operativo',
             focus:
               'Massima profondita esplicativa e discorsiva: spiega ogni meccanismo causa-effetto passo dopo passo, il razionale teorico/clinico, come si esegue e si interpreta ogni prova/manovra/procedura, con box callout d esame potentissimi.',
             temp: 0.35,
           },
-          {
-            id: 3,
+          3: {
             name: 'Agente Esaminatore & Schemi',
             focus:
               'Massima chiarezza strutturale e resa d esame: definizioni cristalline, distinzioni critiche tra concetti confondibili, posizionamento perfetto delle immagini ![didascalia](ID), formule LaTeX e 3 domande Vero/Falso davvero selettive.',
             temp: 0.3,
           },
-        ];
+        };
+        const agent = profiles[idx] || profiles[1];
 
-        let completedDrafts = 0;
-        const draftPromises = subAgentProfiles.map(async (agent) => {
-          const subSys = `Sei il Sotto-Agente #${agent.id} (${agent.name}) del team MinervaAI.
+        const subSys = `Sei il Sotto-Agente #${idx} (${agent.name}) del team MinervaAI.
 LA TUA SPECIALIZZAZIONE: ${agent.focus}
 
 ${coreDidacticRules}`;
 
-          const subUser = `MATERIA: "${examDescription || 'Studio'}"
+        const subUser = `MATERIA: "${examDescription || 'Studio'}"
 ARGOMENTO ESCLUSIVO: "${topicTitle}"
 LIVELLO TARGET: ${prepTarget}%
 
-${blueprintText || 'Struttura la lezione in 4-6 sezioni numerate (## 1., ## 2., ...) focalizzate esclusivamente su questo argomento.'}
+${incomingBlueprintText || 'Struttura la lezione in 4-6 sezioni numerate (## 1., ## 2., ...) focalizzate esclusivamente su questo argomento.'}
 
 ${
   relevantSources
@@ -768,35 +778,31 @@ ${
     : '(Nessun file allegato: usa conoscenze universitarie approfondite e rigorose.)'
 }
 
-Redigi la TUA versione completa della lezione (minimo 1.800 parole, zero riassunti brevi, rispetta rigorosamente i confini del syllabus).`;
+Redigi la TUA versione completa della lezione (ricca di dettagli, zero riassunti brevi, rispetta rigorosamente i confini del syllabus).`;
 
-          const res = await generateAI({
-            tier: 'light',
-            systemPrompt: subSys,
-            messages: [{ role: 'user', content: subUser }],
-            temperature: agent.temp,
-            maxTokens: 10000,
-          });
-          completedDrafts += 1;
-          emitStatus(
-            2,
-            `Teamwork AI: completate ${completedDrafts}/3 lezioni candidate dai sotto-agenti...`
-          );
-          return { agent: agent.name, text: res.text || '' };
+        const res = await generateAI({
+          tier: 'light',
+          systemPrompt: subSys,
+          messages: [{ role: 'user', content: subUser }],
+          temperature: agent.temp,
+          maxTokens: 8192,
         });
 
-        const settled = await Promise.allSettled(draftPromises);
-        const validDrafts = settled
-          .filter((r) => r.status === 'fulfilled' && r.value?.text && r.value.text.length > 300)
-          .map((r) => r.value);
+        return jsonResponse({
+          agent: agent.name,
+          draft: res.text || '',
+          modelUsed: res.modelUsed,
+        });
+      }
 
-        // FASE 3: MACRO-AGENTE SYNTHESIZER (confronta le 3 lezioni e fonde il meglio nella lezione definitiva)
-        emitStatus(
-          3,
-          `Macro-Agente AI: confronto delle ${validDrafts.length} lezioni generate e sintesi della versione definitiva...`
-        );
+      // FASE 3: MACRO-AGENTE SYNTHESIZER (confronta le 3 bozze e streamma la lezione finale su Gemini Pro!)
+      const validDrafts = Array.isArray(incomingDrafts)
+        ? incomingDrafts.filter((d) => d && typeof d.draft === 'string' && d.draft.trim().length > 200)
+        : [];
 
-        const macroSystemPrompt = `Sei il MACRO-AGENTE REDATTORE CAPO di MinervaAI (professore universitario ordinario).
+      const macroSystemPrompt =
+        validDrafts.length > 0
+          ? `Sei il MACRO-AGENTE REDATTORE CAPO di MinervaAI (professore universitario ordinario).
 Hai ricevuto ${validDrafts.length} versioni complete e indipendenti della lezione "${topicTitle}" prodotte in parallelo da 3 sotto-agenti specializzati.
 
 IL TUO COMPITO SUPREMO:
@@ -809,73 +815,42 @@ IL TUO COMPITO SUPREMO:
 3. CONTROLLO CONFINI SYLLABUS: verifica che la lezione finale tratti ESCLUSIVAMENTE "${topicTitle}" e NON ripeta argomenti che spettano alle altre lezioni del piano di studio.
 4. STILE FINALE: restituisci SOLO la lezione finale pulita in Markdown partendo subito da "## 1. ..." (NON scrivere mai commenti del tipo "Ho confrontato le 3 bozze..." o meta-spiegazioni).
 
+${coreDidacticRules}`
+          : `Sei un professore universitario ordinario e autore di trattati universitari d'eccellenza.
+Redigi una LEZIONE COMPLETA, MONUMENTALE E OPERATIVA su "${topicTitle}" per la materia "${examDescription || 'Studio'}".
+
 ${coreDidacticRules}`;
 
-        const macroUserPrompt =
-          validDrafts.length > 0
-            ? `MATERIA: "${examDescription || 'Studio'}"
+      const macroUserPrompt =
+        validDrafts.length > 0
+          ? `MATERIA: "${examDescription || 'Studio'}"
 ARGOMENTO ESCLUSIVO: "${topicTitle}"
-${blueprintText ? `\n${blueprintText}\n` : ''}
+${incomingBlueprintText ? `\n${incomingBlueprintText}\n` : ''}
 ${validDrafts
   .map(
     (d, i) =>
-      `\n==================== LEZIONE CANDIDATA ${i + 1} (${d.agent}) ====================\n${d.text.slice(0, 26000)}`
+      `\n==================== LEZIONE CANDIDATA ${i + 1} (${d.agent || `Agente ${i + 1}`}) ====================\n${d.draft.slice(0, 22000)}`
   )
   .join('\n')}
 
 Ora confronta le ${validDrafts.length} lezioni candidate e scrivi la LEZIONE DEFINITIVA SUPERIORE che integra ogni singolo punto di forza di tutte le versioni, senza ripetere argomenti di altre lezioni del syllabus.`
-            : `MATERIA: "${examDescription || 'Studio'}"
+          : `MATERIA: "${examDescription || 'Studio'}"
 ARGOMENTO ESCLUSIVO: "${topicTitle}"
-${blueprintText ? `\n${blueprintText}\n` : ''}
+${incomingBlueprintText ? `\n${incomingBlueprintText}\n` : ''}
 ${relevantSources ? `\nFONTI DEL DOCENTE:\n${relevantSources}` : ''}
 Scrivi la lezione definitiva completa al massimo livello universitario.`;
 
-        return { macroSystemPrompt, macroUserPrompt };
-      };
-
       if (stream) {
-        const encoder = new TextEncoder();
-        const sseStream = new ReadableStream({
-          async start(controller) {
-            const sendEvent = (evt) => {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify(evt)}\n\n`));
-            };
-
-            try {
-              const { macroSystemPrompt, macroUserPrompt } = await runMultiAgentPipeline((stage, text) => {
-                sendEvent({ type: 'status', stage, text });
-              });
-
-              const { modelUsed, provider } = await streamAIToWriter({
-                tier: 'heavy',
-                systemPrompt: macroSystemPrompt,
-                messages: [{ role: 'user', content: macroUserPrompt }],
-                temperature: 0.3,
-                maxTokens: 16384,
-                sendEvent,
-              });
-
-              await recordUsage();
-              sendEvent({ type: 'done', modelUsed, provider });
-            } catch (err) {
-              sendEvent({ type: 'error', error: err.message || 'Errore nella generazione multi-agente.' });
-            } finally {
-              controller.close();
-            }
-          },
-        });
-
-        return new Response(sseStream, {
-          status: 200,
-          headers: {
-            'Content-Type': 'text/event-stream; charset=utf-8',
-            'Cache-Control': 'no-cache, no-transform',
-            Connection: 'keep-alive',
-          },
+        return await streamAIResponse({
+          tier: 'heavy',
+          systemPrompt: macroSystemPrompt,
+          messages: [{ role: 'user', content: macroUserPrompt }],
+          temperature: 0.3,
+          maxTokens: 16384,
+          onComplete: () => recordUsage(),
         });
       }
 
-      const { macroSystemPrompt, macroUserPrompt } = await runMultiAgentPipeline(() => {});
       const { text, modelUsed } = await generateAI({
         tier: 'heavy',
         systemPrompt: macroSystemPrompt,
