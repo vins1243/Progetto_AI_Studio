@@ -589,46 +589,52 @@ ${isOnlineSearch ? 'Genera il programma completo.' : `DOCUMENTI:\n${perFileSumma
             ? 'LIVELLO ALTO (75-89%): trattazione completa e approfondita con tutti i concetti chiave, meccanismi, tabelle comparative, formule ed esempi.'
             : 'LIVELLO SOLIDO (fino a 74%): trattazione chiara, completa e lineare focalizzata sui pilastri fondamentali ben spiegati senza banalizzazioni.';
 
-      const lessonSystemPrompt = `Sei un professore universitario ordinario e autore di manuali e trattati didattici definitivi per scuole superiori e università.
-Il tuo compito è redigere una **LEZIONE DEFINITIVA, COMPLETA, DISCORSIVA ED ESAUSTIVA** sull'argomento richiesto, calibrata sulla materia ("${examDescription || 'Studio'}").
+      const lessonSystemPrompt = `Sei un professore universitario ordinario e autore di manuali didattici d'eccellenza.
+Il tuo obiettivo è scrivere una **LEZIONE DEFINITIVA DI ALTISSIMA DENSITÀ DIDATTICA** sull'argomento richiesto per la materia "${examDescription || 'Studio'}", superiore per rigore, profondità e chiarezza ai migliori manuali universitari.
 
 ${depthInstruction}
 
-REGOLA D'ORO SULLA COMPLETEZZA:
-- **LEZIONE DEFINITIVA DA CUI STUDIARE SENZA ALTRI LIBRI**: divieto assoluto di riassunti telegrafici o elenchi scarni. Ogni concetto deve essere spiegato per esteso con ragionamento causa-effetto, definizioni precise, contestualizzazione e collegamenti.
-- **LUNGHEZZA E RICCHEZZA**: redigi un testo esteso e profondo (almeno 2.500–4.000 parole per i livelli alti). Sviluppa ogni capitolo con paragrafi discorsivi completi, dati quantitativi, classificazioni, formule LaTeX ($...$ / $$...$$), almeno 2 tabelle Markdown dettagliate e 3–5 callout (> **Regola Cardine:** ..., > **Attenzione / Errore Frequente:** ...).
-- **ZERO FRASI RIEMPITIVE**: inizia ogni capitolo direttamente dal contenuto tecnico/scientifico/accademico.
-- **INSERIMENTO OBBLIGATORIO DELLE IMMAGINI DAI DOCUMENTI**:
+REGOLE FERREE DI QUALITÀ (STILE EDITORIALE D'ELITE):
+1. **ZERO FUFFA E ZERO INDICI RIDONDANTI**:
+   - **NON inserire l'Indice Analitico** (spreca spazio e ripete i titoli). Parti SUBITO con il Capitolo 1 (## 1. ...).
+   - **VIETATI capitoli riempitivi generici** (come "Implicazioni nella ricerca", "Conclusioni generali", "Importanza clinica generica"). Ogni singolo paragrafo deve contenere nozioni ad alta resa d'esame.
+2. **ESTRAZIONE FORENSE DALLE DISPENSE DEL DOCENTE (PRIORITÀ ASSOLUTA)**:
+   - Se sono presenti documenti caricati dallo studente, DEVI estrarre, citare esplicitamente e spiegare a fondo **OGNI singolo dettaglio specifico delle dispense**: nomi di autori/professori, studi citati (con rivista, anno, campione, percentuali), geni/loci cromosomici, biomarcatori, segni clinici eponimi, sottoclassi complete (es. C0s, C2r, C4a, C4b, C4c, C6r), calibri/cut-off numerici, meccanismi molecolari e classificazioni aggiornate.
+   - Non sostituire mai i dettagli specifici delle dispense con generalizzazioni scolastiche!
+3. **SPIEGAZIONE DISCORSIVA RAGIONATA (CAUSA -> MECCANISMO -> EFFETTO)**:
+   - Spiega ogni processo passo dopo passo (cascate fisiopatologiche, dimostrazioni, nessi storici/giuridici/tecnici) con elenchi numerati e paragrafi ricchi, chiari e scorrevoli.
+4. **FORMATTING RICCO E SCANSIONABILE**:
+   - Usa grassetti selettivi solo sui termini tecnici chiave (**termine**).
+   - Inserisci **almeno 1–2 TABELLE MARKDOWN** dettagliate per classificazioni, sottoclassi o confronti.
+   - Usa **LaTeX** ($...$ / $$...$$) per qualsiasi formula, unità o parametro matematico/scientifico.
+   - Inserisci **2–3 box callout** di valore reale (es. un caso/studio citato nelle dispense e una regola d'esame):
+     > **Esempio / Studio di Riferimento:** [Dettagli concreti dalle dispense o dalla letteratura]
+     > **Attenzione / Distinzione Chiave d'Esame:** [Errore tipico da evitare]
+5. **IMMAGINI REALI DAI DOCUMENTI**:
 ${
   availableImagesList.length > 0
-    ? `Dai documenti caricati dallo studente sono state estratte queste ${availableImagesList.length} immagini/slide REALI:
+    ? `Sono disponibili queste ${availableImagesList.length} immagini/slide REALI estratte dai documenti dello studente:
 ${availableImagesList
   .map((img) => `- ID ESATTO: "${img.id}" -> ${img.name} (${img.fileName})`)
   .join('\n')}
-DEVI OBBLIGATORIAMENTE integrare nei capitoli pertinenti almeno 2–6 di queste figure reali usando ESATTAMENTE questa sintassi su una riga dedicata (senza backtick e con l'ID identico):
-![Descrizione didattica della figura e cosa osservare](ID_ESATTO)
-Commenta sempre la figura nel testo subito prima o dopo averla inserita.`
-    : 'Se un concetto richiede uno schema visivo, inserisci una tabella Markdown dettagliata o uno schema strutturato (non inventare URL esterni).'
+Inserisci nei capitoli pertinenti almeno 2–5 di queste figure reali usando ESATTAMENTE questa sintassi su una riga dedicata (senza backtick):
+![Descrizione didattica della figura](ID_ESATTO)`
+    : 'Non inventare URL di immagini esterne; usa tabelle Markdown ricche per schematizzare.'
 }
-${
-  isStrict
-    ? '\nANALISI APPROFONDITA DELLE FONTI CARICATE (PRIORITÀ ASSOLUTA): estrai e spiega il 100% delle nozioni, terminologie, classificazioni, formule, dati numerici ed esempi presenti nei documenti dello studente relativi a questo argomento. Non omettere alcun dettaglio rilevante contenuto nei file.'
-    : '\nSviluppa l’intera trattazione con rigore accademico completo, coprendo ogni aspetto teorico e applicativo dell’argomento.'
-}
-
-STRUTTURA OBBLIGATORIA DEL COMPENDIO:
-1. **# TITOLO COMPLETO DELLA LEZIONE** (in maiuscolo) con sottotitolo esplicativo
-2. **## 📋 Indice Analitico dei Capitoli** (almeno 6–8 capitoli numerati)
-3. **6–8 Capitoli Numerati (## 1. ..., ## 2. ...)** con sotto-paragrafi (### 1.1 ...), spiegazioni discorsive approfondite, tabelle Markdown, formule LaTeX, callout e figure reali estratte dai documenti
-4. **## Domande Frequenti d'Esame e Collegamenti Trasversali** (3–5 snodi tipici richiesti dai docenti con risposta argomentata completa).`;
+6. **CHIUSURA INTERATTIVA (AUTO-VERIFICA RAPIDA)**:
+   - Chiudi la lezione con una breve sezione "## Verifica Rapida (Vero o Falso)" con **3 affermazioni trabocchetto d'esame** basate sui dettagli più fini delle dispense (con risposta corretta e spiegazione in 1 riga).`;
 
       const lessonUserPrompt = `MATERIA: "${examDescription || 'Trattazione di Studio'}"
 ARGOMENTO SPECIFICO: "${topicTitle}"
-LIVELLO TARGET: ${prepLevel || 80}%
-STILE ESPOSITIVO: ${languageStyle || 'automatico'} (trattato accademico esteso, discorsivo e completo)
-${relevantSources ? `\nDOCUMENTI DI RIFERIMENTO DELLO STUDENTE:\n${relevantSources}` : ''}
+LIVELLO TARGET: ${prepTarget}%
+STILE: ${languageStyle || 'automatico'}
+${
+  relevantSources
+    ? `\nFONTI INTEGRALI / ESTRATTI DEL DOCENTE (USA OGNI DETTAGLIO SPECIFICO PRESENTE QUI):\n${relevantSources}`
+    : '\n(Nessun file allegato: sviluppa la trattazione al massimo livello universitario citando classificazioni aggiornate, cut-off numerici, meccanismi molecolari/teorici e criteri ufficiali).'
+}
 
-Redigi ora il COMPENDIO COMPLETO ED ESAUSTIVO. NON sintetizzare, NON abbreviare e NON saltare sotto-argomenti: sviluppa ogni capitolo in profondità come un vero capitolo di manuale universitario.`;
+Redigi ora la lezione definitiva partendo direttamente dal Capitolo 1 (senza indice).`;
 
       if (stream) {
         return await streamAIResponse({

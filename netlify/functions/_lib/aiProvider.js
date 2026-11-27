@@ -38,54 +38,61 @@ function tokenizeQuery(text) {
     .filter((w) => w.length >= 3 && !ITALIAN_STOPWORDS.has(w));
 }
 
-export function extractRelevantChunks(files, queryText, maxTotalChars = 42000) {
+export function extractRelevantChunks(files, queryText, maxTotalChars = 120000) {
   if (!Array.isArray(files) || files.length === 0) return '';
 
+  // Se la somma di tutti i documenti rientra nel budget (fino a 120k caratteri), invia TUTTO integralmente senza tagliare nulla!
+  const cleanedDocs = files
+    .map((f, idx) => ({
+      fileName: f.name || `Documento ${idx + 1}`,
+      raw: (f.text || f.extractedText || '').replace(/\r\n/g, '\n').trim(),
+    }))
+    .filter((d) => d.raw.length > 0);
+
+  if (cleanedDocs.length === 0) return '';
+
+  const totalRawChars = cleanedDocs.reduce((sum, d) => sum + d.raw.length + 80, 0);
+  if (totalRawChars <= maxTotalChars) {
+    return cleanedDocs
+      .map((d) => `\n\n=== DOCUMENTO INTEGRALE: "${d.fileName}" ===\n${d.raw}\n=== FINE DOCUMENTO ===\n`)
+      .join('');
+  }
+
   const keywords = tokenizeQuery(queryText);
+  // Estrai anche acronimi maiuscoli/sigle (es. CEAP, MVC, IVC, TVP, AOCP) per boost preciso
+  const acronyms = (queryText || '').match(/\b[A-Z0-9]{2,8}\b/g) || [];
   const allChunks = [];
 
-  files.forEach((f, fileIdx) => {
-    const fileName = f.name || `Documento ${fileIdx + 1}`;
-    const raw = (f.text || f.extractedText || '').replace(/\r\n/g, '\n').trim();
-    if (!raw) return;
-
-    // Se il documento è breve, includilo intero
-    if (raw.length <= 6000) {
-      allChunks.push({
-        fileName,
-        index: 0,
-        text: raw,
-        score: 100,
-      });
+  cleanedDocs.forEach((doc) => {
+    const { fileName, raw } = doc;
+    if (raw.length <= 8000) {
+      allChunks.push({ fileName, index: 0, text: raw, score: 120 });
       return;
     }
 
-    const CHUNK_SIZE = 2200;
-    const OVERLAP = 250;
+    const CHUNK_SIZE = 2800;
+    const OVERLAP = 350;
     let pos = 0;
     let chunkIdx = 0;
 
     while (pos < raw.length) {
       const slice = raw.slice(pos, pos + CHUNK_SIZE).trim();
       if (slice.length > 40) {
-        let score = chunkIdx === 0 ? 3 : 1; // Piccolo bonus per l'introduzione/indice
+        let score = chunkIdx === 0 ? 3 : 1;
         if (keywords.length > 0) {
           const lower = slice.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
           for (const kw of keywords) {
             if (lower.includes(kw)) {
-              score += 5;
-              // Bonus se compare più volte
+              score += 6;
               const matches = lower.split(kw).length - 1;
-              score += Math.min(matches, 4);
+              score += Math.min(matches, 5);
             }
           }
         }
-        allChunks.push({
-          fileName,
-          index: chunkIdx,
-          text: slice,
-          score,
-        });
+        for (const acr of acronyms) {
+          if (slice.includes(acr)) score += 10;
+        }
+        allChunks.push({ fileName, index: chunkIdx, text: slice, score });
       }
       pos += CHUNK_SIZE - OVERLAP;
       chunkIdx++;

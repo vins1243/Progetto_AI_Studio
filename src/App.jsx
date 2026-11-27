@@ -1213,6 +1213,7 @@ function MainAppContent() {
   // -------------------------------------------------------------
   // ESPORTAZIONE PDF DELLA LEZIONE CON HTML2PDF
   // -------------------------------------------------------------
+  // ESPORTAZIONE PDF VETTORIALE NATIVA (TESTO SELEZIONABILE NITIDISSIMO STILE ALGOR, CON FALLBACK HTML2PDF)
   const handleDownloadLessonPDF = async () => {
     if (!wysiwygEditorRef.current || !currentSelectedTopic) return;
     setIsExportingPDF(true);
@@ -1221,170 +1222,121 @@ function MainAppContent() {
       const topicTitle = currentSelectedTopic.title || 'Lezione';
       const examName = activeProject?.description || 'Studio';
       const dayTitle = currentDayData?.dayTitle || '';
-      const dayDate = currentDayData?.date || '';
-
-      // Contenitore esatto per area stampabile A4 (190mm = ~700px a 96dpi) senza offset orizzontali
-      const printContainer = document.createElement('div');
-      printContainer.id = 'minerva-pdf-render-target';
-      printContainer.style.width = '700px';
-      printContainer.style.maxWidth = '700px';
-      printContainer.style.margin = '0';
-      printContainer.style.padding = '16px 20px';
-      printContainer.style.backgroundColor = '#ffffff';
-      printContainer.style.color = '#1e293b';
-      printContainer.style.boxSizing = 'border-box';
-      printContainer.style.fontFamily = '"Plus Jakarta Sans", Inter, -apple-system, BlinkMacSystemFont, sans-serif';
-
-      // Forza colori scuri su sfondo bianco e impaginazione pulita senza righe tagliate a metà
+      const dayDate = currentDayData?.date || new Date().toLocaleDateString('it-IT');
       const bodyHtml = wysiwygEditorRef.current.innerHTML;
-      printContainer.innerHTML = `
-        <style>
-          #minerva-pdf-render-target, #minerva-pdf-render-target * {
-            color: #1e293b !important;
-            background-color: transparent !important;
-            border-color: #e2e8f0 !important;
-            box-sizing: border-box !important;
-            max-width: 100% !important;
-          }
-          #minerva-pdf-render-target {
-            background-color: #ffffff !important;
-            margin: 0 !important;
-            text-align: left !important;
-          }
-          #minerva-pdf-render-target h1 {
-            color: #881337 !important;
-            font-size: 20px !important;
-            font-weight: 800 !important;
-            margin: 14px 0 8px 0 !important;
-            page-break-after: avoid !important;
-            break-after: avoid !important;
-          }
-          #minerva-pdf-render-target h2 {
-            color: #9f1239 !important;
-            font-size: 16px !important;
-            font-weight: 700 !important;
-            margin: 16px 0 6px 0 !important;
-            page-break-after: avoid !important;
-            break-after: avoid !important;
-          }
-          #minerva-pdf-render-target h3 {
-            color: #a21caf !important;
-            font-size: 14px !important;
-            font-weight: 700 !important;
-            margin: 12px 0 5px 0 !important;
-            page-break-after: avoid !important;
-            break-after: avoid !important;
-          }
-          #minerva-pdf-render-target p, #minerva-pdf-render-target li {
-            color: #1e293b !important;
-            font-size: 12px !important;
-            line-height: 1.65 !important;
-            margin-bottom: 7px !important;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-          }
-          #minerva-pdf-render-target ul, #minerva-pdf-render-target ol {
-            margin-left: 18px !important;
-            margin-bottom: 10px !important;
-          }
-          #minerva-pdf-render-target strong, #minerva-pdf-render-target b {
-            color: #0f172a !important;
-            font-weight: 700 !important;
-          }
-          #minerva-pdf-render-target table {
-            width: 100% !important;
-            border-collapse: collapse !important;
-            margin: 12px 0 !important;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-          }
-          #minerva-pdf-render-target tr {
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-          }
-          #minerva-pdf-render-target th {
-            background-color: #fdf2f8 !important;
-            color: #881337 !important;
-            border: 1px solid #f3d5e0 !important;
-            padding: 6px 8px !important;
-            font-size: 11px !important;
-            font-weight: 700 !important;
-          }
-          #minerva-pdf-render-target td {
-            border: 1px solid #e2e8f0 !important;
-            padding: 6px 8px !important;
-            font-size: 11px !important;
-          }
-          #minerva-pdf-render-target .callout-box {
-            background-color: #fff1f2 !important;
-            border-left: 4px solid #be123c !important;
-            padding: 10px 12px !important;
-            border-radius: 6px !important;
-            margin: 10px 0 !important;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-          }
-          #minerva-pdf-render-target .lesson-image-wrapper {
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            text-align: center !important;
-            margin: 12px 0 !important;
-          }
-          #minerva-pdf-render-target img {
-            max-width: 92% !important;
-            height: auto !important;
-            border-radius: 8px !important;
-          }
-        </style>
-        <div style="border-bottom: 2.5px solid #be123c; padding-bottom: 12px; margin-bottom: 18px;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-            <div style="font-size: 10.5px; color: #be123c !important; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;">
-              MinervaAI • Compendio Didattico
-            </div>
-            <div style="font-size: 10.5px; color: #64748b !important; font-weight: 600;">
-              ${dayTitle ? `${dayTitle} • ` : ''}${dayDate || new Date().toLocaleDateString('it-IT')}
-            </div>
-          </div>
-          <h1 style="margin: 4px 0 4px 0; font-size: 21px; color: #0f172a !important; font-weight: 800; line-height: 1.3;">
-            ${topicTitle}
-          </h1>
-          <div style="font-size: 11.5px; color: #475569 !important; font-style: italic;">
-            <strong>Materia:</strong> ${examName}
-          </div>
-        </div>
-        <div class="pdf-body-content">
-          ${bodyHtml}
-        </div>
-        <div style="border-top: 1px solid #e2e8f0; margin-top: 24px; padding-top: 8px; font-size: 10px; color: #64748b !important; display: flex; justify-content: space-between; align-items: center;">
-          <span>MinervaAI • Piattaforma di Studio AI</span>
-          <span>Esportato il ${new Date().toLocaleDateString('it-IT')}</span>
-        </div>
-      `;
 
-      const opt = {
-        margin: [10, 10, 10, 10],
-        filename: `${topicTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}_Compendio.pdf`,
-        image: { type: 'jpeg', quality: 0.96 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-          x: 0,
-          y: 0,
-          scrollX: 0,
-          scrollY: 0,
-          width: 700,
-          windowWidth: 700,
-        },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'] },
-      };
+      const vectorHtml = `<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <title>${topicTitle} — MinervaAI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
+  <style>
+    @page { size: A4 portrait; margin: 16mm 17mm 18mm 17mm; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    html, body {
+      margin: 0; padding: 0;
+      background: #ffffff; color: #1e293b;
+      font-family: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 10.5pt; line-height: 1.68;
+    }
+    .doc-header {
+      border-bottom: 2px solid #be123c;
+      padding-bottom: 10px;
+      margin-bottom: 18px;
+    }
+    .doc-meta {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 8.5pt; color: #64748b; margin-bottom: 5px;
+    }
+    .doc-brand {
+      color: #be123c; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .doc-title {
+      margin: 2px 0 4px 0; font-size: 19pt; font-weight: 800; color: #0f172a; line-height: 1.25;
+    }
+    .doc-subject { font-size: 9.5pt; color: #475569; }
+    h1 { font-size: 16pt; font-weight: 800; color: #881337; margin: 18px 0 8px; page-break-after: avoid; break-after: avoid; }
+    h2 { font-size: 13pt; font-weight: 800; color: #9f1239; margin: 18px 0 7px; page-break-after: avoid; break-after: avoid; }
+    h3 { font-size: 11pt; font-weight: 700; color: #a21caf; margin: 13px 0 5px; page-break-after: avoid; break-after: avoid; }
+    p { margin: 0 0 8px 0; orphans: 3; widows: 3; }
+    ul, ol { margin: 4px 0 10px 20px; padding: 0; }
+    li { margin-bottom: 4px; page-break-inside: avoid; break-inside: avoid; }
+    li::marker { color: #be123c; font-weight: 700; }
+    strong, b { color: #0f172a; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 9.5pt; page-break-inside: auto; }
+    thead { display: table-header-group; }
+    tr { page-break-inside: avoid; break-inside: avoid; }
+    th {
+      background: #fdf2f8; color: #881337; font-weight: 700; text-align: left;
+      padding: 6px 9px; border: 1px solid #f3d5e0;
+    }
+    td { padding: 6px 9px; border: 1px solid #e2e8f0; vertical-align: top; }
+    tr:nth-child(even) td { background: #fafafa; }
+    .callout-box, blockquote {
+      background: #fff1f2; border-left: 3.5px solid #be123c;
+      padding: 9px 13px; border-radius: 6px; margin: 12px 0;
+      page-break-inside: avoid; break-inside: avoid;
+      color: #4c0519; font-size: 9.8pt;
+    }
+    .lesson-image-wrapper {
+      page-break-inside: avoid; break-inside: avoid;
+      text-align: center; margin: 14px 0;
+    }
+    img { max-width: 90%; height: auto; border-radius: 8px; border: 1px solid #e2e8f0; }
+    .doc-footer {
+      margin-top: 22px; padding-top: 8px; border-top: 1px solid #e2e8f0;
+      display: flex; justify-content: space-between; font-size: 8.5pt; color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <div class="doc-header">
+    <div class="doc-meta">
+      <span class="doc-brand">MinervaAI • Compendio Didattico</span>
+      <span>${dayTitle ? `${dayTitle} • ` : ''}${dayDate}</span>
+    </div>
+    <div class="doc-title">${topicTitle}</div>
+    <div class="doc-subject"><strong>Materia:</strong> ${examName}</div>
+  </div>
+  <main>${bodyHtml}</main>
+  <div class="doc-footer">
+    <span>MinervaAI • Piattaforma di Studio AI</span>
+    <span>Esportato il ${new Date().toLocaleDateString('it-IT')}</span>
+  </div>
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        window.focus();
+        window.print();
+      }, 350);
+    };
+  </script>
+</body>
+</html>`;
 
-      if (typeof window !== 'undefined' && window.html2pdf) {
-        await window.html2pdf().set(opt).from(printContainer).save();
-      } else {
-        alert('Libreria PDF non ancora caricata. Ricarica la pagina e riprova.');
+      const printWin = window.open('', '_blank', 'width=900,height=1000');
+      if (printWin) {
+        printWin.document.open();
+        printWin.document.write(vectorHtml);
+        printWin.document.close();
+      } else if (typeof window !== 'undefined' && window.html2pdf) {
+        // Fallback se i popup sono bloccati
+        const fallbackDiv = document.createElement('div');
+        fallbackDiv.style.width = '700px';
+        fallbackDiv.style.padding = '16px 20px';
+        fallbackDiv.style.backgroundColor = '#ffffff';
+        fallbackDiv.style.color = '#1e293b';
+        fallbackDiv.innerHTML = `<h1 style="color:#881337">${topicTitle}</h1>${bodyHtml}`;
+        await window.html2pdf().set({
+          margin: [10, 10, 10, 10],
+          filename: `${topicTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}_Compendio.pdf`,
+          html2canvas: { scale: 2, backgroundColor: '#ffffff', x: 0, y: 0, scrollX: 0, scrollY: 0, width: 700, windowWidth: 700 },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        }).from(fallbackDiv).save();
       }
     } catch (err) {
       console.error('Errore esportazione PDF:', err);
