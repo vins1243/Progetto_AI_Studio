@@ -7,6 +7,8 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Minimize2,
+  Scan,
   Download,
   Undo2,
   Edit3,
@@ -425,9 +427,19 @@ export default function ConceptMapView({
   const [editingText, setEditingText] = useState('');
   const [dragPreview, setDragPreview] = useState(null); // { id, dx, dy }
   const dragNodeRef = useRef(null); // { id, startX, startY, origDx, origDy, moved }
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [undoStack, setUndoStack] = useState([]);
   const svgRef = useRef(null);
   const canvasBoxRef = useRef(null);
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape' && !editingNodeId) setIsFullscreen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isFullscreen, editingNodeId]);
 
   // Se siamo dentro una lezione specifica (compact + topicId), filtra solo le mappe di QUESTA lezione
   const visibleMaps = useMemo(() => {
@@ -500,7 +512,7 @@ export default function ConceptMapView({
     if (!activeMap?.id) return;
     const t = setTimeout(() => fitMapToViewport(), 60);
     return () => clearTimeout(t);
-  }, [activeMap?.id, orientation]);
+  }, [activeMap?.id, orientation, isFullscreen]);
 
   const selectedNode = useMemo(
     () => activeMap?.nodes?.find((n) => n.id === selectedNodeId) || null,
@@ -950,7 +962,13 @@ export default function ConceptMapView({
       {/* CANVAS INTERATTIVO + SIDEBAR NODO */}
       {activeMap ? (
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-          <div className="lg:col-span-3 rounded-3xl border border-slate-200 dark:border-[#3e2133] bg-[#fdf7f9] dark:bg-[#120a10] overflow-hidden relative shadow-xl">
+          <div
+            className={
+              isFullscreen
+                ? 'fixed inset-0 z-50 flex flex-col bg-[#fdf7f9] dark:bg-[#120a10] overflow-hidden'
+                : 'lg:col-span-3 rounded-3xl border border-slate-200 dark:border-[#3e2133] bg-[#fdf7f9] dark:bg-[#120a10] overflow-hidden relative shadow-xl'
+            }
+          >
             {/* TOP BAR LEGGERA */}
             <div className="px-4 py-2.5 border-b border-slate-200/80 dark:border-[#3e2133] bg-white/90 dark:bg-[#1c1018]/90 backdrop-blur-md flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
@@ -995,6 +1013,18 @@ export default function ConceptMapView({
                   {collapsedIds.size > 0 ? <Eye size={13} className="text-teal-500" /> : <EyeOff size={13} className="text-amber-500" />}
                   <span className="hidden sm:inline">{collapsedIds.size > 0 ? 'Mostra tutto' : 'Ripasso attivo'}</span>
                 </button>
+                <button
+                  onClick={() => setIsFullscreen((v) => !v)}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
+                    isFullscreen
+                      ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm'
+                      : 'bg-slate-100 dark:bg-[#2b1824] hover:bg-indigo-500/15'
+                  }`}
+                  title={isFullscreen ? 'Esci da schermo intero (Esc)' : 'Apri a schermo intero'}
+                >
+                  {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} className="text-indigo-500" />}
+                  <span className="hidden sm:inline">{isFullscreen ? 'Esci' : 'Schermo intero'}</span>
+                </button>
               </div>
             </div>
 
@@ -1006,7 +1036,7 @@ export default function ConceptMapView({
               onMouseUp={onMouseUpCanvas}
               onMouseLeave={onMouseUpCanvas}
               onWheel={onWheelCanvas}
-              className={`algor-dot-grid relative ${compact ? 'h-[520px]' : 'h-[620px]'} overflow-hidden select-none ${
+              className={`algor-dot-grid relative ${isFullscreen ? 'flex-1' : compact ? 'h-[520px]' : 'h-[620px]'} overflow-hidden select-none ${
                 isPanning ? 'cursor-grabbing' : 'cursor-grab'
               }`}
             >
@@ -1318,7 +1348,18 @@ export default function ConceptMapView({
                   className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-[#2b1824] transition"
                   title="Adatta e centra lavagna"
                 >
-                  <Maximize2 size={15} />
+                  <Scan size={15} />
+                </button>
+                <button
+                  onClick={() => setIsFullscreen((v) => !v)}
+                  className={`p-1.5 rounded-xl transition ${
+                    isFullscreen
+                      ? 'bg-indigo-600 text-white hover:bg-indigo-500'
+                      : 'hover:bg-slate-100 dark:hover:bg-[#2b1824]'
+                  }`}
+                  title={isFullscreen ? 'Esci da schermo intero (Esc)' : 'Apri a schermo intero'}
+                >
+                  {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
                 </button>
                 <button
                   onClick={handleUndo}
