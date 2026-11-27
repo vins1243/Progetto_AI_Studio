@@ -209,42 +209,99 @@ export default function FlashcardsView({
 
           <div
             onClick={() => setIsFlipped((f) => !f)}
-            className={`min-h-[260px] p-6 sm:p-8 rounded-3xl border-2 cursor-pointer transition-all shadow-xl flex flex-col justify-between select-none ${
-              isFlipped
-                ? theme === 'light'
-                  ? 'bg-emerald-50/70 border-emerald-400 text-slate-900'
-                  : 'bg-[#13221a] border-emerald-500/60 text-emerald-50'
-                : theme === 'light'
-                  ? 'bg-white border-rose-200 hover:border-indigo-400 text-slate-900'
-                  : 'bg-[#1c1018] border-[#3e2133] hover:border-indigo-500/60 text-gray-100'
-            }`}
+            className="cursor-pointer select-none"
+            style={{ perspective: '1200px' }}
           >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-600 dark:text-indigo-300">
-                {isFlipped ? 'RISPOSTA' : currentCard.tag || 'DOMANDA'}
-              </span>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDeleteCard(currentCard.id);
+            <div
+              className="grid"
+              style={{
+                transformStyle: 'preserve-3d',
+                transition: 'transform 0.55s cubic-bezier(0.22, 1, 0.36, 1)',
+                transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
+              }}
+            >
+              {/* FRONTE (DOMANDA) */}
+              <div
+                className={`col-start-1 row-start-1 min-h-[260px] p-6 sm:p-8 rounded-3xl border-2 shadow-xl flex flex-col justify-between ${
+                  theme === 'light'
+                    ? 'bg-white border-rose-200 hover:border-indigo-400 text-slate-900'
+                    : 'bg-[#1c1018] border-[#3e2133] hover:border-indigo-500/60 text-gray-100'
+                }`}
+                style={{
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
                 }}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 transition"
-                title="Elimina questa flashcard"
               >
-                <Trash2 size={14} />
-              </button>
-            </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-600 dark:text-indigo-300">
+                    {currentCard.tag || 'DOMANDA'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteCard(currentCard.id);
+                    }}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 transition"
+                    title="Elimina questa flashcard"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
 
-            <div className="my-6 text-center px-2">
-              <p className={`font-bold leading-relaxed ${isFlipped ? 'text-base sm:text-lg font-medium' : 'text-lg sm:text-xl'}`}>
-                {isFlipped ? currentCard.back : currentCard.front}
-              </p>
-            </div>
+                <div className="my-6 text-center px-2">
+                  <p className="text-lg sm:text-xl font-bold leading-relaxed">
+                    {currentCard.front}
+                  </p>
+                </div>
 
-            <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400 font-semibold">
-              <RotateCw size={12} />
-              <span>{isFlipped ? 'Valuta quanto la ricordavi qui sotto' : 'Clicca la carta per girare e vedere la risposta'}</span>
+                <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400 font-semibold">
+                  <RotateCw size={12} />
+                  <span>Clicca la carta per girare e vedere la risposta</span>
+                </div>
+              </div>
+
+              {/* RETRO (RISPOSTA) */}
+              <div
+                className={`col-start-1 row-start-1 min-h-[260px] p-6 sm:p-8 rounded-3xl border-2 shadow-xl flex flex-col justify-between ${
+                  theme === 'light'
+                    ? 'bg-emerald-50 border-emerald-400 text-slate-900'
+                    : 'bg-[#13221a] border-emerald-500/60 text-emerald-50'
+                }`}
+                style={{
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
+                  transform: 'rotateY(180deg)',
+                }}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                    RISPOSTA
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteCard(currentCard.id);
+                    }}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 transition"
+                    title="Elimina questa flashcard"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+
+                <div className="my-6 text-center px-2">
+                  <p className="text-base sm:text-lg font-medium leading-relaxed">
+                    {currentCard.back}
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-center gap-1.5 text-[11px] text-emerald-600/80 dark:text-emerald-300/80 font-semibold">
+                  <RotateCw size={12} />
+                  <span>Valuta quanto la ricordavi qui sotto (oppure clicca per rigirare)</span>
+                </div>
+              </div>
             </div>
           </div>
 
