@@ -1168,7 +1168,7 @@ function MainAppContent() {
   // -------------------------------------------------------------
   // ESPORTAZIONE PDF DELLA LEZIONE CON HTML2PDF
   // -------------------------------------------------------------
-  const handleDownloadLessonPDF = () => {
+  const handleDownloadLessonPDF = async () => {
     if (!wysiwygEditorRef.current || !currentSelectedTopic) return;
     setIsExportingPDF(true);
 
@@ -1178,86 +1178,137 @@ function MainAppContent() {
       const dayTitle = currentDayData?.dayTitle || '';
       const dayDate = currentDayData?.date || '';
 
-      // Contenitore A4 (794px) visibile a html2canvas con z-index basso per non disturbare la vista utente
+      // Contenitore detached (NON position:fixed!) così html2pdf lo monta nel proprio overlay e non genera pagine bianche
       const printContainer = document.createElement('div');
       printContainer.id = 'minerva-pdf-render-target';
       printContainer.className = 'pdf-export-container';
-      printContainer.style.position = 'fixed';
-      printContainer.style.left = '0';
-      printContainer.style.top = '0';
-      printContainer.style.width = '794px';
-      printContainer.style.minWidth = '794px';
-      printContainer.style.maxWidth = '794px';
+      printContainer.style.width = '750px';
       printContainer.style.backgroundColor = '#ffffff';
-      printContainer.style.color = '#0f172a';
-      printContainer.style.padding = '36px 40px';
+      printContainer.style.color = '#1e293b';
+      printContainer.style.padding = '28px 34px';
       printContainer.style.boxSizing = 'border-box';
-      printContainer.style.zIndex = '999999';
-      printContainer.style.overflow = 'visible';
+      printContainer.style.fontFamily = '"Plus Jakarta Sans", Inter, -apple-system, BlinkMacSystemFont, sans-serif';
 
+      // Forza colori scuri su sfondo bianco indipendentemente dal tema Dark attivo su <html>
+      const bodyHtml = wysiwygEditorRef.current.innerHTML;
       printContainer.innerHTML = `
-        <div style="border-bottom: 2.5px solid #2563eb; padding-bottom: 14px; margin-bottom: 24px;">
+        <style>
+          #minerva-pdf-render-target, #minerva-pdf-render-target * {
+            color: #1e293b !important;
+            background-color: transparent !important;
+            border-color: #e2e8f0 !important;
+          }
+          #minerva-pdf-render-target {
+            background-color: #ffffff !important;
+          }
+          #minerva-pdf-render-target h1 {
+            color: #881337 !important;
+            font-size: 22px !important;
+            font-weight: 800 !important;
+            margin: 16px 0 10px 0 !important;
+          }
+          #minerva-pdf-render-target h2 {
+            color: #9f1239 !important;
+            font-size: 17px !important;
+            font-weight: 700 !important;
+            margin: 16px 0 8px 0 !important;
+          }
+          #minerva-pdf-render-target h3 {
+            color: #a21caf !important;
+            font-size: 14.5px !important;
+            font-weight: 700 !important;
+            margin: 12px 0 6px 0 !important;
+          }
+          #minerva-pdf-render-target p, #minerva-pdf-render-target li {
+            color: #1e293b !important;
+            font-size: 12.5px !important;
+            line-height: 1.7 !important;
+            margin-bottom: 8px !important;
+          }
+          #minerva-pdf-render-target strong, #minerva-pdf-render-target b {
+            color: #0f172a !important;
+            font-weight: 700 !important;
+          }
+          #minerva-pdf-render-target table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+            margin: 14px 0 !important;
+          }
+          #minerva-pdf-render-target th {
+            background-color: #fdf2f8 !important;
+            color: #881337 !important;
+            border: 1px solid #f3d5e0 !important;
+            padding: 7px 10px !important;
+            font-size: 11.5px !important;
+            font-weight: 700 !important;
+          }
+          #minerva-pdf-render-target td {
+            border: 1px solid #e2e8f0 !important;
+            padding: 7px 10px !important;
+            font-size: 11.5px !important;
+          }
+          #minerva-pdf-render-target .callout-box {
+            background-color: #fff1f2 !important;
+            border-left: 4px solid #be123c !important;
+            padding: 10px 14px !important;
+            border-radius: 8px !important;
+            margin: 12px 0 !important;
+          }
+          #minerva-pdf-render-target img {
+            max-width: 100% !important;
+            height: auto !important;
+            border-radius: 8px !important;
+          }
+        </style>
+        <div style="border-bottom: 2.5px solid #be123c; padding-bottom: 14px; margin-bottom: 22px;">
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-            <div style="font-size: 11px; color: #2563eb; font-weight: 800; text-transform: uppercase; letter-spacing: 1.2px;">
-              MinervaAI • Compendio Didattico Universitario
+            <div style="font-size: 11px; color: #be123c !important; font-weight: 800; text-transform: uppercase; letter-spacing: 1.2px;">
+              MinervaAI • Compendio Didattico
             </div>
-            <div style="font-size: 11px; color: #64748b; font-weight: 600;">
+            <div style="font-size: 11px; color: #64748b !important; font-weight: 600;">
               ${dayTitle ? `${dayTitle} • ` : ''}${dayDate || new Date().toLocaleDateString('it-IT')}
             </div>
           </div>
-          <h1 style="margin: 6px 0 6px 0; font-size: 24px; color: #0f172a; font-weight: 800; line-height: 1.3;">
+          <h1 style="margin: 6px 0 6px 0; font-size: 24px; color: #0f172a !important; font-weight: 800; line-height: 1.3;">
             ${topicTitle}
           </h1>
-          <div style="font-size: 12px; color: #475569; font-style: italic;">
+          <div style="font-size: 12px; color: #475569 !important; font-style: italic;">
             <strong>Materia:</strong> ${examName}
           </div>
         </div>
-        <div class="pdf-body-content" style="font-size: 12.5px; color: #1e293b; line-height: 1.7;">
-          ${wysiwygEditorRef.current.innerHTML}
+        <div class="pdf-body-content">
+          ${bodyHtml}
         </div>
-        <div style="border-top: 1px solid #e2e8f0; margin-top: 36px; padding-top: 12px; font-size: 10px; color: #94a3b8; display: flex; justify-content: space-between; align-items: center;">
-          <span>MinervaAI • Piattaforma per lo Studio Universitario</span>
-          <span>Data esportazione: ${new Date().toLocaleDateString('it-IT')}</span>
+        <div style="border-top: 1px solid #e2e8f0; margin-top: 32px; padding-top: 10px; font-size: 10px; color: #64748b !important; display: flex; justify-content: space-between; align-items: center;">
+          <span>MinervaAI • Piattaforma di Studio AI</span>
+          <span>Esportato il ${new Date().toLocaleDateString('it-IT')}</span>
         </div>
       `;
-
-      document.body.appendChild(printContainer);
 
       const opt = {
         margin: [10, 10, 10, 10],
         filename: `${topicTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}_Compendio.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { 
-          scale: 2, 
-          useCORS: true, 
+        image: { type: 'jpeg', quality: 0.96 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
           logging: false,
-          scrollX: 0,
-          scrollY: 0,
-          width: 794
+          windowWidth: 794,
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-      };
-
-      const cleanup = () => {
-        if (printContainer && printContainer.parentNode) {
-          printContainer.parentNode.removeChild(printContainer);
-        }
-        setIsExportingPDF(false);
+        pagebreak: { mode: ['css', 'legacy'] },
       };
 
       if (typeof window !== 'undefined' && window.html2pdf) {
-        window.html2pdf().set(opt).from(printContainer).save().then(cleanup).catch(err => {
-          console.error("html2pdf save error:", err);
-          cleanup();
-        });
+        await window.html2pdf().set(opt).from(printContainer).save();
       } else {
-        cleanup();
-        window.print();
+        alert('Libreria PDF non ancora caricata. Ricarica la pagina e riprova.');
       }
     } catch (err) {
-      console.error("Errore esportazione PDF:", err);
-      alert("Errore durante la generazione del PDF: " + err.message);
+      console.error('Errore esportazione PDF:', err);
+      alert(`Errore durante la creazione del PDF: ${err.message}`);
+    } finally {
       setIsExportingPDF(false);
     }
   };
@@ -4123,9 +4174,23 @@ function MainAppContent() {
             </button>
           )}
 
+          {/* PULSANTE SEMPRE VISIBILE TEMA CHIARO / SCURO */}
+          <button
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Passa a Modalità Giorno (Tema Chiaro)' : 'Passa a Modalità Notte (Tema Scuro)'}
+            className={`flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-full border transition shadow-sm ${
+              theme === 'light'
+                ? 'bg-rose-50 hover:bg-rose-100 text-rose-900 border-rose-200'
+                : 'bg-geminiDarkSecondary hover:bg-geminiHover text-rose-200 border-geminiBorder'
+            }`}
+          >
+            {theme === 'dark' ? <Sun size={15} className="text-amber-300" /> : <Moon size={15} className="text-rose-700" />}
+            <span className="hidden sm:inline">{theme === 'dark' ? 'Chiaro' : 'Scuro'}</span>
+          </button>
+
           <button 
             onClick={handleStartWizard}
-              className="flex items-center gap-2 text-xs sm:text-sm font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-4 py-2 rounded-full shadow-lg shadow-blue-600/20 transition transform active:scale-95"
+              className="flex items-center gap-2 text-xs sm:text-sm font-semibold bg-gradient-to-r from-indigo-700 via-indigo-600 to-blue-600 hover:from-indigo-600 hover:to-blue-500 text-white px-4 py-2 rounded-full shadow-lg shadow-indigo-700/30 transition transform active:scale-95"
             >
               <Sparkles size={16} />
               <span>Crea guida allo studio</span>

@@ -45,17 +45,17 @@ export default function LandingPage({ theme, toggleTheme, onOpenAuth, onOpenLega
     <div
       className={`min-h-screen w-full transition-colors ${
         theme === 'light'
-          ? 'bg-[#f5f7fc] text-slate-900'
-          : 'bg-[#0f111a] text-gray-100'
+          ? 'bg-[#fdf7f9] text-slate-900'
+          : 'bg-[#120a10] text-rose-50'
       }`}
     >
       {/* NAVBAR GLASS */}
-      <header className="sticky top-0 z-40 backdrop-blur-xl border-b border-slate-200/80 dark:border-[#2a2f45] bg-white/80 dark:bg-[#0f111a]/85">
+      <header className="sticky top-0 z-40 backdrop-blur-xl border-b border-rose-200/70 dark:border-[#3e2133] bg-white/85 dark:bg-[#120a10]/85">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <img src={logoImg} alt="MinervaAI" className="w-8 h-8 object-contain" />
             <span className="font-extrabold text-lg tracking-tight">
-              Minerva<span className="bg-gradient-to-r from-indigo-500 to-teal-400 bg-clip-text text-transparent">AI</span>
+              Minerva<span className="bg-gradient-to-r from-indigo-500 to-blue-500 bg-clip-text text-transparent">AI</span>
             </span>
           </div>
 
@@ -101,7 +101,7 @@ export default function LandingPage({ theme, toggleTheme, onOpenAuth, onOpenLega
 
           <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight leading-[1.08]">
             Studia più velocemente con{' '}
-            <span className="bg-gradient-to-r from-indigo-500 via-violet-500 to-teal-400 bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-indigo-500 via-rose-500 to-blue-500 bg-clip-text text-transparent">
               Mappe Interattive, Compendi e Quiz AI
             </span>
           </h1>
