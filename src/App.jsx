@@ -244,6 +244,22 @@ async function extractTextFromPdf(arrayBuffer) {
       if (extractedImages.length < MAX_EXTRACTED_FIGURES && typeof document !== 'undefined') {
         try {
           const opList = await page.getOperatorList();
+          const hasAnyImgOp = opList?.fnArray?.some(
+            (fn) => fn === OPS.paintImageXObject || fn === OPS.paintJpegXObject || fn === OPS.paintInlineImageXObject
+          );
+          if (hasAnyImgOp) {
+            // Forza la decodifica degli oggetti immagine in page.objs tramite un render leggerissimo su canvas offscreen
+            try {
+              const tinyVp = page.getViewport({ scale: 0.2 });
+              const tinyCanvas = document.createElement('canvas');
+              tinyCanvas.width = Math.max(1, Math.round(tinyVp.width));
+              tinyCanvas.height = Math.max(1, Math.round(tinyVp.height));
+              await page.render({ canvasContext: tinyCanvas.getContext('2d'), viewport: tinyVp }).promise;
+            } catch {
+              // ignore tiny render errors
+            }
+          }
+
           const seenOnPage = new Set();
           const captionsOnPage = pageText.match(/Figura\s+\d+[^.]*\./gi) || [];
           let figIdxOnPage = 0;

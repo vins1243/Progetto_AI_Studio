@@ -619,8 +619,8 @@ ${
 ${availableImagesList
   .map((img) => `- ID ESATTO: "${img.id}" -> ${img.name} (${img.fileName})`)
   .join('\n')}
-Inserisci nei capitoli pertinenti almeno 2–5 di queste figure reali usando ESATTAMENTE questa sintassi su una riga dedicata (senza backtick):
-![Descrizione didattica della figura](ID_ESATTO)`
+Inserisci nei capitoli pertinenti almeno 2–5 di queste figure reali usando ESATTAMENTE questa sintassi su una riga dedicata (senza backtick), sostituendo il testo tra parentesi quadre con la didascalia reale della figura:
+![Stadio CEAP C1-C2 / Eco-Color-Doppler / nome reale della figura](ID_ESATTO)`
     : 'Non inventare URL di immagini esterne; usa tabelle Markdown ricche per schematizzare.'
 }
 6. **CHIUSURA INTERATTIVA (AUTO-VERIFICA RAPIDA)**:
