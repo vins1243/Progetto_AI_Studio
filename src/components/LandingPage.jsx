@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { LEGAL_INFO } from '../config/legalConfig.js';
 import {
   Sparkles,
   Network,
@@ -445,20 +446,28 @@ export default function LandingPage({ theme, toggleTheme, onOpenAuth, onOpenLega
         </div>
       </section>
 
-      {/* FOOTER */}
+      {/* FOOTER LEGALE (CODICE DEL CONSUMO & GDPR) */}
       <footer className="py-10 px-4 sm:px-6 border-t border-slate-200/70 dark:border-[#3e2133] text-xs text-slate-500 dark:text-slate-400">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <ShieldCheck size={15} className="text-teal-500" />
-            <span>© {new Date().getFullYear()} MinervaAI · Pagamenti sicuri con Stripe</span>
+        <div className="max-w-6xl mx-auto space-y-4">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <ShieldCheck size={15} className="text-indigo-500" />
+              <span>© {new Date().getFullYear()} {LEGAL_INFO.brandName} · Pagamenti sicuri con Stripe · GDPR Compliant</span>
+            </div>
+            <div className="flex items-center gap-5">
+              <button onClick={() => onOpenLegal?.('terms')} className="hover:text-indigo-500 transition">
+                Termini di Servizio
+              </button>
+              <button onClick={() => onOpenLegal?.('privacy')} className="hover:text-indigo-500 transition">
+                Privacy &amp; Cookie Policy
+              </button>
+              <a href={`mailto:${LEGAL_INFO.supportEmail}`} className="hover:text-indigo-500 transition">
+                Supporto
+              </a>
+            </div>
           </div>
-          <div className="flex items-center gap-5">
-            <button onClick={() => onOpenLegal?.('terms')} className="hover:text-indigo-500 transition">
-              Termini di Servizio
-            </button>
-            <button onClick={() => onOpenLegal?.('privacy')} className="hover:text-indigo-500 transition">
-              Privacy Policy
-            </button>
+          <div className="text-[11px] text-center sm:text-left opacity-75 border-t border-slate-200/50 dark:border-[#3e2133]/60 pt-3">
+            Titolare: {LEGAL_INFO.ownerName} · P.IVA: {LEGAL_INFO.vatNumber} · Sede: {LEGAL_INFO.legalAddress} · Email: {LEGAL_INFO.supportEmail} · PEC: {LEGAL_INFO.pecEmail}
           </div>
         </div>
       </footer>

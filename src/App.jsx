@@ -98,6 +98,7 @@ import PomodoroStreakBar from './components/PomodoroStreakBar.jsx';
 import GlossaryModal from './components/GlossaryModal.jsx';
 import PublicShareView from './components/PublicShareView.jsx';
 import { exportLessonToWord, exportFullCoursePDF } from './utils/exportUtils.js';
+import { LEGAL_INFO } from './config/legalConfig.js';
 import {
   callAiApi,
   streamAiApi,
@@ -124,6 +125,7 @@ import {
   saveChatToCloud, 
   deleteChatFromCloud,
   fetchUserProfile,
+  getAccessToken,
   createSharedItem,
   fetchSharedItem,
   setSubscriptionActive,
@@ -812,6 +814,10 @@ function MainAppContent() {
   const [isGlossaryOpen, setIsGlossaryOpen] = useState(false);
   const [shareToast, setShareToast] = useState('');
   const [publicSharedItem, setPublicSharedItem] = useState(null);
+  const [isDeleteAccountModalOpen, setIsDeleteAccountModalOpen] = useState(false);
+  const [deleteAccountConfirm, setDeleteAccountConfirm] = useState('');
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [deleteAccountError, setDeleteAccountError] = useState('');
 
   // Caricamento link pubblico condiviso (?share=...)
   useEffect(() => {
@@ -3100,6 +3106,43 @@ function MainAppContent() {
     currentTier === 'pro' ? 'Pro' :
     currentTier === 'plus' ? 'Plus' : 'Free';
 
+  const handleDeleteAccount = async () => {
+    if (deleteAccountConfirm.trim().toUpperCase() !== 'ELIMINA') {
+      setDeleteAccountError('Digita ELIMINA per confermare la cancellazione definitiva.');
+      return;
+    }
+    setDeleteAccountError('');
+    setIsDeletingAccount(true);
+    try {
+      const token = await getAccessToken();
+      const res = await fetch('/.netlify/functions/delete-account', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Impossibile completare la cancellazione dell account.');
+      }
+      try {
+        localStorage.removeItem('study_ai_projects');
+        localStorage.removeItem('study_ai_chats');
+      } catch {
+        // ignore
+      }
+      setIsDeleteAccountModalOpen(false);
+      setDeleteAccountConfirm('');
+      await handleSignOut();
+      alert('Il tuo account e tutti i tuoi dati personali sono stati eliminati definitivamente.');
+    } catch (err) {
+      setDeleteAccountError(err.message || 'Errore durante la cancellazione.');
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
+
   const handleSaveConceptMaps = (nextMaps) => {
     if (!activeProject) return;
     const updatedProject = { ...activeProject, conceptMaps: nextMaps };
@@ -4544,12 +4587,25 @@ function MainAppContent() {
                       {isPro ? currentTierLabel : 'da 9,99 €'}
                     </span>
                   </button>
-<button
+                  <button
                     onClick={() => { setIsProfileMenuOpen(false); handleSignOut(); }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-red-400 hover:bg-red-500/10 rounded-xl transition"
                   >
                     <LogOut size={14} />
                     <span>Disconnetti</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsProfileMenuOpen(false);
+                      setDeleteAccountConfirm('');
+                      setDeleteAccountError('');
+                      setIsDeleteAccountModalOpen(true);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition border-t border-geminiBorder/40 pt-2.5"
+                  >
+                    <Trash2 size={13} />
+                    <span>Elimina account e dati (GDPR)</span>
                   </button>
                 </div>
               )}
@@ -7107,40 +7163,71 @@ function MainAppContent() {
             <div className="flex-1 overflow-y-auto pr-2 space-y-4 text-xs leading-relaxed text-slate-600 dark:text-gray-300">
               {legalModalTab === 'terms' ? (
                 <div className="space-y-3">
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">1. Oggetto del Servizio</h4>
-                  <p>MinervaAI è una piattaforma web SaaS destinata al supporto didattico e alla preparazione degli esami universitari, dotata di strumenti di intelligenza artificiale per l'elaborazione di dispense, piani di studio e simulazioni d'esame.</p>
+                  <p className="text-[11px] opacity-75">Ultimo aggiornamento: {LEGAL_INFO.lastUpdated} · Titolare: {LEGAL_INFO.ownerName} (P.IVA: {LEGAL_INFO.vatNumber})</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">1. Oggetto del Servizio e Trasparenza AI (Reg. UE 2024/1689)</h4>
+                  <p>{LEGAL_INFO.brandName} è una piattaforma web SaaS di supporto didattico per studenti delle scuole superiori e dell&apos;università. In conformità al Regolamento (UE) 2024/1689 (AI Act), informiamo l&apos;utente che piani di studio, lezioni, mappe mentali, flashcard, podcast, glossari e simulazioni d&apos;esame sono generati mediante sistemi di Intelligenza Artificiale. Tali output possono contenere imprecisioni o semplificazioni e devono sempre essere verificati sui testi ufficiali del docente.</p>
 
                   <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">2. Piani, Abbonamento e Fatturazione</h4>
-                  <p>MinervaAI offre un piano gratuito di prova una tantum (protetto da controllo anti-multi-account per dispositivo) e piani mensili in abbonamento: Plus (9,99 €/mese), Pro (17,99 €/mese) e Ultra (29,99 €/mese), IVA inclusa dove applicabile, con rinnovo automatico mensile. I pagamenti sono elaborati in modo sicuro tramite Stripe Inc. L'utente può cambiare piano o disdire in qualsiasi momento dal proprio profilo tramite il Customer Portal di Stripe senza penali né vincoli di permanenza.</p>
+                  <p>{LEGAL_INFO.brandName} offre un piano gratuito di prova una tantum (protetto da controllo anti-multi-account per dispositivo) e piani mensili in abbonamento: <strong>Plus (9,99 €/mese)</strong>, <strong>Pro (17,99 €/mese)</strong> e <strong>Ultra (29,99 €/mese)</strong>, IVA inclusa ove applicabile, con rinnovo automatico mensile. I pagamenti sono elaborati in modo sicuro tramite Stripe Inc. L&apos;utente può cambiare piano o disdire in qualsiasi momento dal proprio profilo tramite il Customer Portal di Stripe senza penali né vincoli di permanenza.</p>
 
                   <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">3. Diritto di Recesso e Contenuti Digitali</h4>
-                  <p>Ai sensi dell'art. 59, comma 1, lettera (o) del D.Lgs. 206/2005 (Codice del Consumo), il diritto di recesso di 14 giorni è escluso per i servizi digitali eseguiti con l'accordo espresso del consumatore e con l'accettazione della perdita di tale diritto a seguito della piena fornitura o attivazione immediata dell'accesso.</p>
+                  <p>Ai sensi dell&apos;art. 59, comma 1, lettera (o) del D.Lgs. 206/2005 (Codice del Consumo), il diritto di recesso di 14 giorni è escluso per la fornitura di contenuto/servizio digitale la cui esecuzione è iniziata con l&apos;accordo espresso del consumatore e con l&apos;accettazione della perdita del diritto di recesso a seguito dell&apos;attivazione immediata del servizio.</p>
 
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">4. Limitazione di Responsabilità</h4>
-                  <p>MinervaAI costituisce un ausilio integrativo allo studio e non sostituisce in alcun modo i programmi didattici ufficiali dei docenti o i testi d'esame universitari. Nonostante l'adozione di modelli IA avanzati, MinervaAI non garantisce l'assoluta esattezza di ogni risposta generata né l'esito delle prove accademiche degli utenti.</p>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">4. Requisiti di Età e Minori</h4>
+                  <p>In conformità all&apos;art. 8 GDPR e all&apos;art. 2-quinquies del D.Lgs. 196/2003 (Codice Privacy italiano), la registrazione autonoma è consentita a utenti che abbiano compiuto almeno <strong>14 anni</strong>. Per gli utenti minori di 18 anni, la sottoscrizione di piani a pagamento deve avvenire con l&apos;autorizzazione o tramite chi esercita la responsabilità genitoriale.</p>
 
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">5. Uso Accettabile</h4>
-                  <p>L'utente si impegna a non caricare materiali in violazione del diritto d'autore o materiale diffamatorio o illecito. Ogni account è strettamente personale e non cedibile a terzi.</p>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">5. Registrazione Audio in Aula (Sbobina AI)</h4>
+                  <p>Qualora l&apos;utente utilizzi la funzione di registrazione o caricamento audio di lezioni universitarie/scolastiche, dichiara e garantisce di farlo nel rispetto dei regolamenti del proprio istituto e dei diritti del docente, per <strong>uso strettamente personale di studio</strong>, con espresso divieto di diffusione, pubblicazione o cessione a terzi della registrazione o della sbobina.</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">6. Condivisione Pubblica di Contenuti (Link Condivisi)</h4>
+                  <p>Utilizzando il pulsante &quot;Condividi&quot;, l&apos;utente genera volontariamente un link pubblico in sola lettura accessibile a chiunque disponga dell&apos;URL. L&apos;utente è l&apos;unico responsabile dei contenuti condivisi e si impegna a non pubblicare materiale protetto da diritto d&apos;autore di terzi o contenente dati personali/sensibili altrui.</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">7. Limitazione di Responsabilità e Disclaimer Medico/Scientifico</h4>
+                  <p>{LEGAL_INFO.brandName} è uno strumento integrativo allo studio e non sostituisce i testi accademici ufficiali né garantisce l&apos;esito degli esami. Eventuali contenuti generati in ambito medico, sanitario, biologico o giuridico hanno <strong>esclusivo scopo didattico</strong> e non costituiscono in alcun caso consulenza medica, diagnosi, prescrizione clinica o parere legale.</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">8. Uso Accettabile e Account Personale</h4>
+                  <p>Ogni account è strettamente personale e non cedibile. È vietato caricare materiale illecito, diffamatorio o in violazione del copyright, nonché tentare di aggirare i limiti del piano gratuito mediante account multipli o automazioni.</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">9. Legge Applicabile e Foro Competente</h4>
+                  <p>I presenti Termini sono regolati dalla legge italiana. Per i consumatori residenti in Italia è competente in via esclusiva il giudice del luogo di residenza o domicilio del consumatore ai sensi del D.Lgs. 206/2005.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
+                  <p className="text-[11px] opacity-75">Informativa resa ai sensi dell&apos;art. 13 del Regolamento (UE) 2016/679 (GDPR) · Aggiornata al {LEGAL_INFO.lastUpdated}</p>
+
                   <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">1. Titolare del Trattamento</h4>
-                  <p>Il titolare del trattamento dei dati è il gestore della piattaforma MinervaAI. Per qualsiasi informazione, richiesta di rettifica o cancellazione è possibile contattare l'assistenza via email.</p>
+                  <p>Il Titolare del trattamento è <strong>{LEGAL_INFO.ownerName}</strong>, P.IVA <strong>{LEGAL_INFO.vatNumber}</strong>, con sede in {LEGAL_INFO.legalAddress}. Contatti: email <strong>{LEGAL_INFO.supportEmail}</strong> · PEC <strong>{LEGAL_INFO.pecEmail}</strong>.</p>
 
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">2. Dati Raccolti e Finalità</h4>
-                  <p>Raccogliamo: dati anagrafici e di contatto (email, nome) necessari per l'autenticazione dell'account; dati di utilizzo didattico (piani di studio creati, conversazioni, file caricati per l'estrazione didattica). La base giuridica è l'esecuzione del contratto di servizio richiesto dall'utente (art. 6, par. 1, lett. b GDPR).</p>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">2. Categorie di Dati, Finalità e Basi Giuridiche</h4>
+                  <ul className="list-disc ml-4 space-y-1">
+                    <li><strong>Dati di account</strong> (nome, email, stato abbonamento): necessari all&apos;erogazione del servizio e gestione pagamenti (<em>art. 6, par. 1, lett. b GDPR — esecuzione del contratto</em>).</li>
+                    <li><strong>Materiali e contenuti didattici</strong> (file caricati, lezioni, mappe, flashcard, chat, cronologia quiz): elaborati esclusivamente per fornire le funzionalità richieste dall&apos;utente (<em>art. 6, par. 1, lett. b GDPR</em>).</li>
+                    <li><strong>Registrazioni audio e dettatura vocale</strong>: elaborate <strong>esclusivamente in transito</strong> per la trascrizione testuale e <strong>non archiviate permanentemente</strong> sui nostri server (<em>art. 6, par. 1, lett. b GDPR</em>).</li>
+                    <li><strong>Impronta crittografica anonima del dispositivo (Device Hash)</strong>: per il solo piano gratuito viene calcolato un hash SHA-256 non reversibile di parametri tecnici del browser per prevenire abusi e creazione di account multipli sul medesimo dispositivo (<em>art. 6, par. 1, lett. f GDPR — legittimo interesse alla prevenzione frodi</em>).</li>
+                    <li><strong>Dati fiscali e di fatturazione</strong>: trattati per adempiere agli obblighi contabili e tributari di legge (<em>art. 6, par. 1, lett. c GDPR</em>).</li>
+                  </ul>
 
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">3. Trattamento dei Dati con l'Intelligenza Artificiale</h4>
-                  <p>I testi e i contenuti inviati durante le sessioni di studio vengono elaborati tramite API protette di OpenAI/Google. In conformità con le policy enterprise delle API, i dati degli utenti <strong>non vengono utilizzati per l'addestramento</strong> di modelli pubblici di intelligenza artificiale.</p>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">3. Trattamento con Intelligenza Artificiale (No-Training)</h4>
+                  <p>I testi, i documenti e gli audio inviati vengono elaborati tramite API enterprise di Google (Gemini) e OpenAI. In conformità alle policy API enterprise, i dati degli utenti <strong>non vengono utilizzati per l&apos;addestramento</strong> di modelli pubblici di intelligenza artificiale.</p>
 
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">4. Destinatari e Sub-responsabili (Server UE)</h4>
-                  <p>I dati risiedono su infrastrutture cloud sicure con crittografia end-to-end e protocollo HTTPS (Supabase per il database con hosting in Unione Europea, Stripe per i pagamenti cifrati, Netlify per l'hosting web).</p>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">4. Sub-responsabili e Trasferimenti Extra-UE</h4>
+                  <p>I dati sono ospitati su infrastrutture sicure con cifratura HTTPS/TLS: <strong>Supabase</strong> (database e storage, regione UE), <strong>Stripe Inc.</strong> (pagamenti), <strong>Netlify Inc.</strong> (hosting web e serverless), <strong>Google LLC</strong> e <strong>OpenAI LLC</strong> (elaborazione AI API). Eventuali trasferimenti verso gli Stati Uniti avvengono nel rispetto del Capo V del GDPR sulla base dell&apos;<strong>EU-US Data Privacy Framework</strong> e delle <strong>Clausole Contrattuali Standard (SCC)</strong> della Commissione Europea.</p>
 
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">5. Cookie Policy</h4>
-                  <p>MinervaAI utilizza esclusivamente <strong>cookie e storage tecnici</strong> strettamente necessari per l'autenticazione e la persistenza della sessione di studio. Non vengono impiegati cookie di profilazione pubblicitaria di terze parti.</p>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">5. Tempi di Conservazione (Data Retention)</h4>
+                  <p>I dati dell&apos;account e i materiali di studio sono conservati per l&apos;intera durata dell&apos;iscrizione e cancellati immediatamente in caso di eliminazione dell&apos;account. I documenti fiscali e di fatturazione sono conservati per <strong>10 anni</strong> come previsto dal Codice Civile. L&apos;hash anonimo anti-frode del piano gratuito è conservato in forma pseudonimizzata non riconducibile all&apos;identità personale per finalità di sicurezza.</p>
 
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">6. Diritti dell'Interessato (GDPR)</h4>
-                  <p>Ai sensi degli articoli 15-22 del GDPR, l'utente ha diritto di accedere ai propri dati, richiederne la rettifica, la portabilità o la cancellazione definitiva (diritto all'oblio) in qualunque momento.</p>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">6. Condivisione Pubblica di Link</h4>
+                  <p>I contenuti per i quali l&apos;utente crea volontariamente un link condiviso (<code>?share=...</code>) sono resi accessibili in sola lettura a chiunque possieda il link. L&apos;utente può richiederne la rimozione in qualsiasi momento o eliminando il proprio account.</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">7. Cookie e Storage Tecnici</h4>
+                  <p>{LEGAL_INFO.brandName} utilizza esclusivamente <strong>cookie, localStorage e IndexedDB tecnici</strong> strettamente necessari per autenticazione, preferenza tema, persistenza dei file locali e sicurezza anti-frode. Non vengono installati cookie di profilazione pubblicitaria o tracciamento di terze parti.</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">8. Diritti dell&apos;Interessato e Cancellazione Self-Service (Artt. 15–22 GDPR)</h4>
+                  <p>L&apos;utente ha diritto di accesso, rettifica, portabilità, limitazione, opposizione e <strong>cancellazione definitiva (diritto all&apos;oblio)</strong>. È possibile eliminare autonomamente e immediatamente il proprio account e tutti i dati associati dal menu <strong>Profilo → Elimina account e dati (GDPR)</strong>, oppure scrivendo a <strong>{LEGAL_INFO.supportEmail}</strong>.</p>
+
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-gray-100">9. Diritto di Reclamo</h4>
+                  <p>Qualora ritenga che il trattamento violi il GDPR, l&apos;utente ha diritto di proporre reclamo all&apos;Autorità Garante per la protezione dei dati personali (<a href="https://www.garanteprivacy.it" target="_blank" rel="noreferrer" className="text-indigo-500 underline">www.garanteprivacy.it</a>).</p>
                 </div>
               )}
             </div>
@@ -7403,6 +7490,61 @@ function MainAppContent() {
         onSaveEntries={handleSaveGlossary}
         onQuotaExceeded={(msg) => openBillingWithReason(msg)}
       />
+
+      {isDeleteAccountModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
+          <div className="w-full max-w-md rounded-3xl border border-rose-500/40 bg-geminiDarkSecondary p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5 text-rose-500 font-extrabold text-sm">
+                <AlertTriangle size={18} />
+                <span>Elimina Account e Dati (GDPR)</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDeleteAccountModalOpen(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-white"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p className="text-xs text-gray-300 leading-relaxed">
+              Questa azione è <strong>irreversibile</strong>: eliminerà definitivamente il tuo account, tutti i progetti, le lezioni, le mappe concettuali, le flashcard, le chat e disdirà immediatamente qualsiasi abbonamento Stripe attivo.
+            </p>
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-gray-400">
+                Digita <span className="text-rose-400">ELIMINA</span> per confermare:
+              </label>
+              <input
+                type="text"
+                value={deleteAccountConfirm}
+                onChange={(e) => setDeleteAccountConfirm(e.target.value)}
+                placeholder="ELIMINA"
+                className="w-full px-3.5 py-2 rounded-xl bg-geminiDark border border-geminiBorder text-xs font-bold uppercase tracking-wider focus:outline-none focus:border-rose-500"
+              />
+            </div>
+            {deleteAccountError && (
+              <div className="text-xs text-rose-400 font-semibold">{deleteAccountError}</div>
+            )}
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setIsDeleteAccountModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold border border-geminiBorder hover:bg-geminiHover transition"
+              >
+                Annulla
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={isDeletingAccount || deleteAccountConfirm.trim().toUpperCase() !== 'ELIMINA'}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white transition"
+              >
+                {isDeletingAccount ? 'Eliminazione...' : 'Elimina definitivamente'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <BillingModal
         isOpen={isBillingModalOpen}
