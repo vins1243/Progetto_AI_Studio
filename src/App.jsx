@@ -124,7 +124,101 @@ async function getProjectDataFromDB(projectId) {
   return getProjectDataIDB(projectId);
 }
 
-// Estrazione testo + IMMAGINI/FIGURE reali dai PDF direttamente nel browser
+// Helper: converte un oggetto immagine nativo di PDF.js (solo l'immagine pura, senza il testo della pagina!) in DataURL JPEG
+function pdfImageObjToDataUrl(imgObj) {
+  if (!imgObj || typeof document === 'undefined') return null;
+  const w = imgObj.width || imgObj.bitmap?.width || 0;
+  const h = imgObj.height || imgObj.bitmap?.height || 0;
+  // Ignora icone/loghi minuscoli
+  if (w < 120 || h < 90) return null;
+
+  const srcCanvas = document.createElement('canvas');
+  srcCanvas.width = w;
+  srcCanvas.height = h;
+  const srcCtx = srcCanvas.getContext('2d');
+
+  if (imgObj.bitmap) {
+    srcCtx.drawImage(imgObj.bitmap, 0, 0, w, h);
+  } else if (imgObj.data) {
+    const data = imgObj.data;
+    const imgData = srcCtx.createImageData(w, h);
+    const dest = imgData.data;
+    const pixels = w * h;
+
+    if (data.length === pixels * 4) {
+      dest.set(data);
+    } else if (data.length === pixels * 3) {
+      for (let p = 0, s = 0, d = 0; p < pixels; p++, s += 3, d += 4) {
+        dest[d] = data[s];
+        dest[d + 1] = data[s + 1];
+        dest[d + 2] = data[s + 2];
+        dest[d + 3] = 255;
+      }
+    } else if (data.length === pixels) {
+      for (let p = 0, d = 0; p < pixels; p++, d += 4) {
+        const v = data[p];
+        dest[d] = v;
+        dest[d + 1] = v;
+        dest[d + 2] = v;
+        dest[d + 3] = 255;
+      }
+    } else {
+      return null;
+    }
+    srcCtx.putImageData(imgData, 0, 0);
+  } else {
+    return null;
+  }
+
+  // Ridimensiona in modo pulito se larghissima (max 960px) mantenendo alta nitidezza
+  const maxW = 960;
+  if (w > maxW) {
+    const scale = maxW / w;
+    const outCanvas = document.createElement('canvas');
+    outCanvas.width = maxW;
+    outCanvas.height = Math.round(h * scale);
+    const outCtx = outCanvas.getContext('2d');
+    outCtx.fillStyle = '#ffffff';
+    outCtx.fillRect(0, 0, outCanvas.width, outCanvas.height);
+    outCtx.drawImage(srcCanvas, 0, 0, outCanvas.width, outCanvas.height);
+    return outCanvas.toDataURL('image/jpeg', 0.88);
+  }
+  return srcCanvas.toDataURL('image/jpeg', 0.88);
+}
+
+function resolvePdfImageObject(page, imgName, timeoutMs = 1200) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) { settled = true; resolve(null); }
+    }, timeoutMs);
+
+    const finish = (obj) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        resolve(obj || null);
+      }
+    };
+
+    try {
+      const store = imgName.startsWith('g_') && page.commonObjs ? page.commonObjs : page.objs;
+      if (store?.has && store.has(imgName)) {
+        finish(store.get(imgName));
+        return;
+      }
+      if (store?.get) {
+        store.get(imgName, (obj) => finish(obj));
+      } else {
+        finish(null);
+      }
+    } catch {
+      finish(null);
+    }
+  });
+}
+
+// Estrazione testo + IMMAGINI PURE RITAGLIATE (senza testo/margini della pagina!) dai PDF nel browser
 async function extractTextFromPdf(arrayBuffer) {
   if (typeof window === 'undefined' || !window.pdfjsLib) {
     throw new Error("Libreria PDF.js non pronta.");
@@ -136,14 +230,8 @@ async function extractTextFromPdf(arrayBuffer) {
   let text = '';
   const extractedImages = [];
   const maxPages = Math.min(pdf.numPages, 150);
-  const MAX_EXTRACTED_FIGURES = 18;
+  const MAX_EXTRACTED_FIGURES = 24;
   const OPS = pdfjsLib.OPS || {};
-  const IMAGE_OPS = new Set([
-    OPS.paintImageXObject,
-    OPS.paintInlineImageXObject,
-    OPS.paintImageMaskXObject,
-    OPS.paintJpegXObject,
-  ].filter(Boolean));
 
   for (let i = 1; i <= maxPages; i++) {
     try {
@@ -152,33 +240,46 @@ async function extractTextFromPdf(arrayBuffer) {
       const pageText = content.items.map(item => item.str).join(' ').replace(/\s+/g, ' ').trim();
       text += `\n[Pagina ${i}]: ` + pageText;
 
-      // Rileva se la pagina contiene figure/diagrammi/immagini e la estrae come immagine nitida
+      // Estrae SOLO le singole immagini incorporate (bitmap reali) senza il resto della pagina
       if (extractedImages.length < MAX_EXTRACTED_FIGURES && typeof document !== 'undefined') {
         try {
           const opList = await page.getOperatorList();
-          const hasEmbeddedImage = opList?.fnArray?.some(fn => IMAGE_OPS.has(fn));
-          if (hasEmbeddedImage) {
-            const viewport = page.getViewport({ scale: 1.15 });
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            canvas.width = Math.min(viewport.width, 1100);
-            const ratio = canvas.width / viewport.width;
-            canvas.height = Math.round(viewport.height * ratio);
-            const scaledViewport = page.getViewport({ scale: 1.15 * ratio });
+          const seenOnPage = new Set();
+          const captionsOnPage = pageText.match(/Figura\s+\d+[^.]*\./gi) || [];
+          let figIdxOnPage = 0;
 
-            await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-            const snippet = pageText.slice(0, 95).replace(/["\n\r]/g, ' ').trim();
-            extractedImages.push({
-              id: `FIGURA_PDF_PAG_${i}`,
-              name: snippet ? `Figura/Slide Pagina ${i}: ${snippet}` : `Figura/Slide Pagina ${i}`,
-              dataUrl,
-              label: `Pagina ${i}`,
-              pageNumber: i,
-            });
+          for (let k = 0; k < (opList?.fnArray?.length || 0); k++) {
+            if (extractedImages.length >= MAX_EXTRACTED_FIGURES) break;
+            const fn = opList.fnArray[k];
+            const args = opList.argsArray[k];
+            let imgObj = null;
+
+            if (fn === OPS.paintImageXObject || fn === OPS.paintJpegXObject) {
+              const imgName = args?.[0];
+              if (!imgName || seenOnPage.has(imgName)) continue;
+              seenOnPage.add(imgName);
+              imgObj = await resolvePdfImageObject(page, imgName);
+            } else if (fn === OPS.paintInlineImageXObject) {
+              imgObj = args?.[0];
+            }
+
+            if (imgObj) {
+              const dataUrl = pdfImageObjToDataUrl(imgObj);
+              if (dataUrl) {
+                figIdxOnPage++;
+                const caption = captionsOnPage[figIdxOnPage - 1] || pageText.slice(0, 110).replace(/["\n\r]/g, ' ').trim();
+                extractedImages.push({
+                  id: `FIGURA_PDF_PAG_${i}_${figIdxOnPage}`,
+                  name: caption ? `Pagina ${i} — ${caption}` : `Figura Pagina ${i} (#${figIdxOnPage})`,
+                  dataUrl,
+                  label: `Pagina ${i} · Fig. ${figIdxOnPage}`,
+                  pageNumber: i,
+                });
+              }
+            }
           }
         } catch (imgErr) {
-          console.warn(`Estrazione immagine pagina ${i} saltata:`, imgErr);
+          console.warn(`Estrazione immagini pure pagina ${i} saltata:`, imgErr);
         }
       }
     } catch (pageErr) {
@@ -357,6 +458,11 @@ function renderMarkdownAndLatexToHtml(md, imagesMap = {}) {
     }
 
     // Headings
+    if (trimmed.startsWith('#### ')) {
+      if (inList) { output.push(inList === 'ul' ? '</ul>' : '</ol>'); inList = null; }
+      output.push('<h4 style="font-weight:700;margin-top:0.9rem;margin-bottom:0.35rem;font-size:0.98rem;">' + trimmed.slice(5).trim() + '</h4>');
+      continue;
+    }
     if (trimmed.startsWith('### ')) {
       if (inList) { output.push(inList === 'ul' ? '</ul>' : '</ol>'); inList = null; }
       output.push('<h3>' + trimmed.slice(4).trim() + '</h3>');
