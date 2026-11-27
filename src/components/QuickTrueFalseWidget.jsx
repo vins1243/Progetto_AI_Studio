@@ -106,16 +106,16 @@ export default function QuickTrueFalseWidget({ questions = [], topicId = '' }) {
             const isCorrectOption = q.correctAnswer === val;
 
             let cls =
-              'border-geminiBorder/80 bg-geminiDark/50 hover:border-indigo-500/60 hover:bg-geminiHover/50 text-gray-200';
+              'border-geminiBorder/80 bg-geminiDark/60 hover:border-indigo-500/60 hover:bg-geminiHover/60 text-slate-800 dark:text-gray-200';
             if (hasAnswered) {
               if (isSelected && isCorrectOption) {
-                cls = 'border-emerald-500 bg-emerald-500/15 text-emerald-400 font-bold shadow-sm shadow-emerald-500/20';
+                cls = 'border-emerald-500 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 font-bold shadow-sm shadow-emerald-500/20';
               } else if (isSelected && !isCorrectOption) {
-                cls = 'border-rose-500 bg-rose-500/15 text-rose-400 font-bold shadow-sm shadow-rose-500/20';
+                cls = 'border-rose-500 bg-rose-500/15 text-rose-700 dark:text-rose-400 font-bold shadow-sm shadow-rose-500/20';
               } else if (!isSelected && isCorrectOption) {
-                cls = 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400/90 font-semibold';
+                cls = 'border-emerald-500/60 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-semibold';
               } else {
-                cls = 'border-geminiBorder/40 opacity-50 text-gray-400';
+                cls = 'border-geminiBorder/40 opacity-50 text-slate-400 dark:text-gray-400';
               }
             }
 
@@ -156,8 +156,8 @@ export default function QuickTrueFalseWidget({ questions = [], topicId = '' }) {
                 <div
                   className={`p-3 rounded-2xl text-xs leading-relaxed flex items-start gap-2 border ${
                     isUserCorrect
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                      : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-rose-500/10 border-rose-500/30 text-rose-800 dark:text-rose-300'
                   }`}
                 >
                   {isUserCorrect ? (

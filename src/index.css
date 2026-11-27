@@ -72,46 +72,46 @@ html.dark .reading-comfort {
   background-color: #1a0d15 !important;
 }
 
-/* Scrollbar Scura (Dark) */
+/* Scrollbar Scura (Dark Bordeaux) */
 html.dark ::-webkit-scrollbar {
   width: 7px;
   height: 7px;
 }
 html.dark ::-webkit-scrollbar-track {
-  background: #131314;
+  background: #120a10;
 }
 html.dark ::-webkit-scrollbar-thumb {
-  background: #2a2b2f;
+  background: #3e2133;
   border-radius: 6px;
-  border: 1px solid #131314;
+  border: 1px solid #120a10;
 }
 html.dark ::-webkit-scrollbar-thumb:hover {
-  background: #3c4043;
+  background: #5c2d4a;
 }
 html.dark * {
   scrollbar-width: thin;
-  scrollbar-color: #2a2b2f #131314;
+  scrollbar-color: #3e2133 #120a10;
 }
 
-/* Scrollbar Chiara (Light) */
+/* Scrollbar Chiara (Light Rose) */
 html.light ::-webkit-scrollbar {
   width: 7px;
   height: 7px;
 }
 html.light ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: #fdf7f9;
 }
 html.light ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #e9c2d1;
   border-radius: 6px;
-  border: 1px solid #f1f5f9;
+  border: 1px solid #fdf7f9;
 }
 html.light ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #d49bb2;
 }
 html.light * {
   scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 #f1f5f9;
+  scrollbar-color: #e9c2d1 #fdf7f9;
 }
 
 /* ------------------------------------------------------------- */
@@ -174,16 +174,16 @@ html.light .shadow-xl {
 
 /* Gradients in Light mode per azzerare bande scure */
 html.light .bg-gradient-to-t {
-  background-image: linear-gradient(to top, #f8fafc 65%, rgba(248, 250, 252, 0.9) 85%, rgba(248, 250, 252, 0) 100%) !important;
+  background-image: linear-gradient(to top, #fdf7f9 65%, rgba(253, 247, 249, 0.92) 85%, rgba(253, 247, 249, 0) 100%) !important;
 }
 html.light .from-geminiDark {
-  --tw-gradient-from: #f8fafc var(--tw-gradient-from-position) !important;
-  --tw-gradient-to: rgba(248, 250, 252, 0) var(--tw-gradient-to-position) !important;
-  --tw-gradient-stops: var(--tw-gradient-from), #f8fafc var(--tw-gradient-via-position), var(--tw-gradient-to) !important;
+  --tw-gradient-from: #fdf7f9 var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgba(253, 247, 249, 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), #fdf7f9 var(--tw-gradient-via-position), var(--tw-gradient-to) !important;
 }
 html.light .via-geminiDark {
   --tw-gradient-via-position: 50% !important;
-  --tw-gradient-stops: var(--tw-gradient-from), #f8fafc var(--tw-gradient-via-position), var(--tw-gradient-to) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), #fdf7f9 var(--tw-gradient-via-position), var(--tw-gradient-to) !important;
 }
 html.light .from-geminiDarkSecondary {
   --tw-gradient-from: #ffffff var(--tw-gradient-from-position) !important;
@@ -286,13 +286,13 @@ html.dark .wysiwyg-editor table {
   overflow: hidden;
 }
 html.dark .wysiwyg-editor th, html.dark .wysiwyg-editor td {
-  border: 1px solid #2a2f45;
+  border: 1px solid #3e2133;
   padding: 0.7rem 0.95rem;
   text-align: left;
 }
 html.dark .wysiwyg-editor th {
-  background-color: #171a26;
-  color: #f8fafc;
+  background-color: #1c1018;
+  color: #fdf2f8;
   font-weight: 700;
 }
 html.dark .wysiwyg-editor tr:nth-child(even) {

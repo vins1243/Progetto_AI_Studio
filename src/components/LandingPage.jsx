@@ -69,19 +69,19 @@ export default function LandingPage({ theme, toggleTheme, onOpenAuth, onOpenLega
             <button
               onClick={toggleTheme}
               title={theme === 'dark' ? 'Passa a modalità giorno' : 'Passa a modalità notte'}
-              className="p-2 rounded-xl border border-slate-200 dark:border-[#2a2f45] hover:bg-slate-100 dark:hover:bg-[#171a26] transition"
+              className="p-2 rounded-xl border border-slate-200 dark:border-[#3e2133] hover:bg-slate-100 dark:hover:bg-[#1c1018] transition"
             >
               {theme === 'dark' ? <Sun size={16} className="text-amber-400" /> : <Moon size={16} className="text-slate-700" />}
             </button>
             <button
               onClick={() => onOpenAuth('login')}
-              className="px-3.5 py-2 text-sm font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-[#171a26] transition"
+              className="px-3.5 py-2 text-sm font-bold rounded-xl hover:bg-slate-100 dark:hover:bg-[#1c1018] transition"
             >
               Accedi
             </button>
             <button
               onClick={() => onOpenAuth('signup')}
-              className="px-4 py-2 text-sm font-bold rounded-xl bg-gradient-to-r from-indigo-600 to-teal-500 hover:from-indigo-500 hover:to-teal-400 text-white shadow-lg shadow-indigo-600/25 transition"
+              className="px-4 py-2 text-sm font-bold rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white shadow-lg shadow-indigo-600/25 transition"
             >
               Inizia Gratis
             </button>
@@ -91,7 +91,7 @@ export default function LandingPage({ theme, toggleTheme, onOpenAuth, onOpenLega
 
       {/* HERO + ANTEPRIMA INTERATTIVA STILE ALGOR */}
       <section className="relative overflow-hidden pt-14 pb-20 sm:pt-20 sm:pb-24 px-4 sm:px-6">
-        <div className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 w-[780px] h-[360px] rounded-full bg-gradient-to-r from-indigo-500/20 via-purple-500/15 to-teal-400/20 blur-3xl" />
+        <div className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 w-[780px] h-[360px] rounded-full bg-gradient-to-r from-indigo-500/20 via-purple-500/15 to-blue-500/20 blur-3xl" />
 
         <div className="relative max-w-5xl mx-auto text-center space-y-6">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 border border-indigo-500/25">
@@ -114,13 +114,13 @@ export default function LandingPage({ theme, toggleTheme, onOpenAuth, onOpenLega
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5 pt-1">
             <button
               onClick={() => onOpenAuth('signup')}
-              className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-teal-500 hover:from-indigo-500 hover:to-teal-400 text-white font-extrabold text-base shadow-xl shadow-indigo-600/30 flex items-center justify-center gap-2 transition hover:-translate-y-0.5"
+              className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-extrabold text-base shadow-xl shadow-indigo-600/30 flex items-center justify-center gap-2 transition hover:-translate-y-0.5"
             >
               Prova Gratis Ora <ArrowRight size={18} />
             </button>
             <a
               href="#pricing"
-              className="w-full sm:w-auto px-8 py-4 rounded-2xl border border-slate-300 dark:border-[#2a2f45] bg-white/70 dark:bg-[#171a26]/80 hover:border-indigo-400 font-bold text-base transition"
+              className="w-full sm:w-auto px-8 py-4 rounded-2xl border border-slate-300 dark:border-[#3e2133] bg-white/70 dark:bg-[#1c1018]/80 hover:border-indigo-400 font-bold text-base transition"
             >
               Scopri Piano Pro
             </a>
@@ -128,15 +128,15 @@ export default function LandingPage({ theme, toggleTheme, onOpenAuth, onOpenLega
 
           {/* ANTEPRIMA INTERATTIVA CLICCABILE */}
           <div className="pt-8 max-w-4xl mx-auto">
-            <div className="rounded-3xl border border-slate-200/90 dark:border-[#2a2f45] bg-white dark:bg-[#171a26] shadow-2xl shadow-indigo-500/10 overflow-hidden text-left">
-              <div className="px-4 py-3 border-b border-slate-200 dark:border-[#2a2f45] flex flex-wrap items-center justify-between gap-2 bg-slate-50/80 dark:bg-[#131622]">
+            <div className="rounded-3xl border border-slate-200/90 dark:border-[#3e2133] bg-white dark:bg-[#1c1018] shadow-2xl shadow-indigo-500/10 overflow-hidden text-left">
+              <div className="px-4 py-3 border-b border-slate-200 dark:border-[#3e2133] flex flex-wrap items-center justify-between gap-2 bg-slate-50/80 dark:bg-[#170c14]">
                 <div className="flex items-center gap-1.5">
                   <span className="w-3 h-3 rounded-full bg-rose-400" />
                   <span className="w-3 h-3 rounded-full bg-amber-400" />
                   <span className="w-3 h-3 rounded-full bg-emerald-400" />
                   <span className="ml-2 text-xs font-bold text-slate-500 dark:text-slate-400">MinervaAI Studio · Demo Interattiva</span>
                 </div>
-                <div className="flex items-center gap-1 p-1 rounded-2xl bg-slate-200/70 dark:bg-[#0f111a]">
+                <div className="flex items-center gap-1 p-1 rounded-2xl bg-slate-200/70 dark:bg-[#120a10]">
                   {[
                     { id: 'map', label: 'Mappa Concettuale', icon: Network },
                     { id: 'lesson', label: 'Compendio & Audio', icon: BookOpen },
@@ -175,8 +175,8 @@ export default function LandingPage({ theme, toggleTheme, onOpenAuth, onOpenLega
                         { title: 'Vene', sub: 'Valvole anti-reflusso · Ritorno venoso', border: 'border-violet-500', tag: 'ritorno al cuore' },
                         { title: 'Vasi Linfatici', sub: 'Drenaggio fluidi e immunità', border: 'border-amber-500', tag: 'equilibrio' },
                       ].map((n, i) => (
-                        <div key={i} className={`p-3.5 rounded-2xl bg-white dark:bg-[#171a26] border-2 ${n.border} shadow-md space-y-1`}>
-                          <span className="inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 dark:bg-[#222638] text-slate-500 dark:text-slate-300">
+                        <div key={i} className={`p-3.5 rounded-2xl bg-white dark:bg-[#1c1018] border-2 ${n.border} shadow-md space-y-1`}>
+                          <span className="inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 dark:bg-[#2b1824] text-slate-500 dark:text-slate-300">
                             {n.tag}
                           </span>
                           <div className="font-extrabold text-sm">{n.title}</div>
@@ -188,7 +188,7 @@ export default function LandingPage({ theme, toggleTheme, onOpenAuth, onOpenLega
                 )}
 
                 {previewTab === 'lesson' && (
-                  <div className="w-full max-w-2xl p-5 rounded-2xl bg-white dark:bg-[#171a26] border border-slate-200 dark:border-[#2a2f45] shadow-lg space-y-3">
+                  <div className="w-full max-w-2xl p-5 rounded-2xl bg-white dark:bg-[#1c1018] border border-slate-200 dark:border-[#3e2133] shadow-lg space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-extrabold uppercase tracking-wider text-indigo-500">Compendio Completo · Gemini Pro</span>
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-300 text-[11px] font-bold">
@@ -206,7 +206,7 @@ export default function LandingPage({ theme, toggleTheme, onOpenAuth, onOpenLega
                 )}
 
                 {previewTab === 'quiz' && (
-                  <div className="w-full max-w-2xl p-5 rounded-2xl bg-white dark:bg-[#171a26] border border-slate-200 dark:border-[#2a2f45] shadow-lg space-y-3">
+                  <div className="w-full max-w-2xl p-5 rounded-2xl bg-white dark:bg-[#1c1018] border border-slate-200 dark:border-[#3e2133] shadow-lg space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-amber-500">Valutazione AI Risposta Aperta</span>
                       <span className="px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-500 font-extrabold text-sm">29 / 30</span>
@@ -223,7 +223,7 @@ export default function LandingPage({ theme, toggleTheme, onOpenAuth, onOpenLega
       </section>
 
       {/* FEATURES */}
-      <section id="features" className="py-16 sm:py-20 px-4 sm:px-6 border-t border-slate-200/70 dark:border-[#2a2f45]">
+      <section id="features" className="py-16 sm:py-20 px-4 sm:px-6 border-t border-slate-200/70 dark:border-[#3e2133]">
         <div className="max-w-6xl mx-auto">
           <div className="text-center max-w-2xl mx-auto mb-12 space-y-3">
             <h2 className="text-2xl sm:text-4xl font-extrabold">Tutto il metodo di studio in un&apos;unica piattaforma</h2>
@@ -275,7 +275,7 @@ export default function LandingPage({ theme, toggleTheme, onOpenAuth, onOpenLega
               return (
                 <div
                   key={i}
-                  className="p-6 rounded-3xl border border-slate-200 dark:border-[#2a2f45] bg-white dark:bg-[#171a26] shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition"
+                  className="p-6 rounded-3xl border border-slate-200 dark:border-[#3e2133] bg-white dark:bg-[#1c1018] shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition"
                 >
                   <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 ${f.color}`}>
                     <Icon size={22} />
@@ -412,7 +412,7 @@ export default function LandingPage({ theme, toggleTheme, onOpenAuth, onOpenLega
       </section>
 
       {/* FAQ */}
-      <section id="faq" className="py-16 px-4 sm:px-6 border-t border-slate-200/70 dark:border-[#2a2f45]">
+      <section id="faq" className="py-16 px-4 sm:px-6 border-t border-slate-200/70 dark:border-[#3e2133]">
         <div className="max-w-3xl mx-auto">
           <h2 className="text-2xl sm:text-3xl font-extrabold text-center mb-8">Domande frequenti</h2>
           <div className="space-y-3">
@@ -421,7 +421,7 @@ export default function LandingPage({ theme, toggleTheme, onOpenAuth, onOpenLega
               return (
                 <div
                   key={idx}
-                  className="rounded-2xl border border-slate-200 dark:border-[#2a2f45] bg-white dark:bg-[#171a26] overflow-hidden"
+                  className="rounded-2xl border border-slate-200 dark:border-[#3e2133] bg-white dark:bg-[#1c1018] overflow-hidden"
                 >
                   <button
                     onClick={() => setOpenFaq(isOpen ? -1 : idx)}
@@ -446,7 +446,7 @@ export default function LandingPage({ theme, toggleTheme, onOpenAuth, onOpenLega
       </section>
 
       {/* FOOTER */}
-      <footer className="py-10 px-4 sm:px-6 border-t border-slate-200/70 dark:border-[#2a2f45] text-xs text-slate-500 dark:text-slate-400">
+      <footer className="py-10 px-4 sm:px-6 border-t border-slate-200/70 dark:border-[#3e2133] text-xs text-slate-500 dark:text-slate-400">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <ShieldCheck size={15} className="text-teal-500" />

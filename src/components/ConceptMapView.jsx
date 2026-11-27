@@ -436,9 +436,9 @@ export default function ConceptMapView({
   return (
     <div className="space-y-4">
       {/* HEADER GENERATOR BAR STILE ALGOR */}
-      <div className="p-3.5 sm:p-4 rounded-3xl border border-indigo-500/20 bg-white dark:bg-[#171a26] shadow-lg shadow-indigo-500/5 flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+      <div className="p-3.5 sm:p-4 rounded-3xl border border-indigo-500/20 bg-white dark:bg-[#1c1018] shadow-lg shadow-indigo-500/5 flex flex-col md:flex-row gap-3 items-stretch md:items-center">
         <div className="flex items-center gap-2.5 shrink-0">
-          <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-indigo-500 to-teal-400 text-white flex items-center justify-center shadow-md shadow-indigo-500/25">
+          <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-500 text-white flex items-center justify-center shadow-md shadow-indigo-500/25">
             <Network size={18} />
           </div>
           <div>
@@ -451,12 +451,12 @@ export default function ConceptMapView({
           value={customPrompt}
           onChange={(e) => setCustomPrompt(e.target.value)}
           placeholder="Scrivi l'argomento da mappare (es. Chirurgia Vascolare, Rivoluzione Francese...)"
-          className="flex-1 px-4 py-2.5 rounded-2xl text-sm bg-slate-100 dark:bg-[#0f111a] border border-slate-200 dark:border-[#2a2f45] outline-none focus:border-indigo-500 transition"
+          className="flex-1 px-4 py-2.5 rounded-2xl text-sm bg-slate-100 dark:bg-[#120a10] border border-slate-200 dark:border-[#3e2133] outline-none focus:border-indigo-500 transition"
         />
         <button
           onClick={handleGenerateMap}
           disabled={isGenerating}
-          className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-teal-500 hover:from-indigo-500 hover:to-teal-400 disabled:opacity-60 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25 transition shrink-0"
+          className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 disabled:opacity-60 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25 transition shrink-0"
         >
           {isGenerating ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
           {isGenerating ? 'Creazione Mappa AI...' : 'Genera Mappa AI'}
@@ -483,7 +483,7 @@ export default function ConceptMapView({
               className={`px-3.5 py-1.5 rounded-full text-xs font-bold border transition ${
                 activeMap?.id === m.id
                   ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/25'
-                  : 'bg-white dark:bg-[#171a26] border-slate-200 dark:border-[#2a2f45] hover:border-indigo-400'
+                  : 'bg-white dark:bg-[#1c1018] border-slate-200 dark:border-[#3e2133] hover:border-indigo-400'
               }`}
             >
               {m.title}
@@ -495,9 +495,9 @@ export default function ConceptMapView({
       {/* CANVAS INTERATTIVO + SIDEBAR NODO */}
       {activeMap ? (
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-          <div className="lg:col-span-3 rounded-3xl border border-slate-200 dark:border-[#2a2f45] bg-[#f5f7fc] dark:bg-[#0f111a] overflow-hidden relative shadow-xl">
+          <div className="lg:col-span-3 rounded-3xl border border-slate-200 dark:border-[#3e2133] bg-[#fdf7f9] dark:bg-[#120a10] overflow-hidden relative shadow-xl">
             {/* TOP BAR LEGGERA */}
-            <div className="px-4 py-2.5 border-b border-slate-200/80 dark:border-[#2a2f45] bg-white/90 dark:bg-[#171a26]/90 backdrop-blur-md flex flex-wrap items-center justify-between gap-2">
+            <div className="px-4 py-2.5 border-b border-slate-200/80 dark:border-[#3e2133] bg-white/90 dark:bg-[#1c1018]/90 backdrop-blur-md flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="w-2.5 h-2.5 rounded-full bg-teal-400 shrink-0" />
                 <span className="font-bold text-xs sm:text-sm truncate">{activeMap.title}</span>
@@ -509,7 +509,7 @@ export default function ConceptMapView({
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => setOrientation((o) => (o === 'tree' ? 'horizontal' : 'tree'))}
-                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-[#222638] hover:bg-indigo-500/15 text-xs font-semibold flex items-center gap-1.5 transition"
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-[#2b1824] hover:bg-indigo-500/15 text-xs font-semibold flex items-center gap-1.5 transition"
                   title="Cambia layout Albero / Mappa Mentale"
                 >
                   {orientation === 'tree' ? <GitBranch size={13} className="text-indigo-500" /> : <Rows3 size={13} className="text-teal-500" />}
@@ -524,7 +524,7 @@ export default function ConceptMapView({
                       setCollapsedIds(new Set(level1));
                     }
                   }}
-                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-[#222638] hover:bg-indigo-500/15 text-xs font-semibold flex items-center gap-1.5 transition"
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-[#2b1824] hover:bg-indigo-500/15 text-xs font-semibold flex items-center gap-1.5 transition"
                   title="Modalità Ripasso Attivo: nascondi o mostra i sotto-rami"
                 >
                   {collapsedIds.size > 0 ? <Eye size={13} className="text-teal-500" /> : <EyeOff size={13} className="text-amber-500" />}
@@ -594,7 +594,7 @@ export default function ConceptMapView({
                               width="104"
                               height="22"
                               rx="11"
-                              fill={theme === 'dark' ? '#171a26' : '#ffffff'}
+                              fill={theme === 'dark' ? '#1c1018' : '#ffffff'}
                               stroke={style.border}
                               strokeWidth="1.2"
                               strokeOpacity="0.55"
@@ -715,10 +715,10 @@ export default function ConceptMapView({
               </div>
 
               {/* DOCK FLUTTUANTE IN BASSO (STILE ALGOR / FIGJAM) */}
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 px-2.5 py-1.5 rounded-2xl bg-white/95 dark:bg-[#171a26]/95 backdrop-blur-md border border-slate-200 dark:border-[#2a2f45] shadow-xl">
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 px-2.5 py-1.5 rounded-2xl bg-white/95 dark:bg-[#1c1018]/95 backdrop-blur-md border border-slate-200 dark:border-[#3e2133] shadow-xl">
                 <button
                   onClick={() => setZoom((z) => Math.max(0.35, Number((z - 0.1).toFixed(2))))}
-                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-[#222638] transition"
+                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-[#2b1824] transition"
                   title="Zoom indietro"
                 >
                   <ZoomOut size={15} />
@@ -726,18 +726,18 @@ export default function ConceptMapView({
                 <span className="text-[11px] font-bold font-mono w-10 text-center">{Math.round(zoom * 100)}%</span>
                 <button
                   onClick={() => setZoom((z) => Math.min(1.8, Number((z + 0.1).toFixed(2))))}
-                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-[#222638] transition"
+                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-[#2b1824] transition"
                   title="Zoom avanti"
                 >
                   <ZoomIn size={15} />
                 </button>
-                <div className="w-px h-4 bg-slate-200 dark:bg-[#2a2f45] mx-0.5" />
+                <div className="w-px h-4 bg-slate-200 dark:bg-[#3e2133] mx-0.5" />
                 <button
                   onClick={() => {
                     setZoom(0.88);
                     setPan({ x: 0, y: 0 });
                   }}
-                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-[#222638] transition"
+                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-[#2b1824] transition"
                   title="Centra lavagna"
                 >
                   <Maximize2 size={15} />
@@ -745,12 +745,12 @@ export default function ConceptMapView({
                 <button
                   onClick={handleUndo}
                   disabled={undoStack.length === 0}
-                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-[#222638] disabled:opacity-30 transition"
+                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-[#2b1824] disabled:opacity-30 transition"
                   title="Annulla"
                 >
                   <Undo2 size={15} />
                 </button>
-                <div className="w-px h-4 bg-slate-200 dark:bg-[#2a2f45] mx-0.5" />
+                <div className="w-px h-4 bg-slate-200 dark:bg-[#3e2133] mx-0.5" />
                 <button
                   onClick={handleExportPng}
                   className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 transition"
@@ -762,7 +762,7 @@ export default function ConceptMapView({
           </div>
 
           {/* PANNELLO ISPEZIONE / MODIFICA NODO */}
-          <div className="rounded-3xl border border-slate-200 dark:border-[#2a2f45] bg-white dark:bg-[#171a26] p-5 space-y-4 shadow-lg">
+          <div className="rounded-3xl border border-slate-200 dark:border-[#3e2133] bg-white dark:bg-[#1c1018] p-5 space-y-4 shadow-lg">
             <div className="flex items-center justify-between">
               <h4 className="font-extrabold text-sm flex items-center gap-2">
                 <Edit3 size={15} className="text-indigo-500" />
@@ -783,7 +783,7 @@ export default function ConceptMapView({
                     type="text"
                     value={selectedNode.label}
                     onChange={(e) => handleUpdateNode(selectedNode.id, { label: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-[#0f111a] border border-slate-200 dark:border-[#2a2f45] outline-none focus:border-indigo-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-[#120a10] border border-slate-200 dark:border-[#3e2133] outline-none focus:border-indigo-500"
                   />
                 </div>
 
@@ -793,7 +793,7 @@ export default function ConceptMapView({
                     rows={4}
                     value={selectedNode.summary || ''}
                     onChange={(e) => handleUpdateNode(selectedNode.id, { summary: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-[#0f111a] border border-slate-200 dark:border-[#2a2f45] outline-none focus:border-indigo-500 resize-none"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-[#120a10] border border-slate-200 dark:border-[#3e2133] outline-none focus:border-indigo-500 resize-none"
                   />
                 </div>
 
@@ -805,7 +805,7 @@ export default function ConceptMapView({
                       value={selectedNode.edgeLabel || ''}
                       onChange={(e) => handleUpdateNode(selectedNode.id, { edgeLabel: e.target.value })}
                       placeholder="es. causa, include, porta a..."
-                      className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-[#0f111a] border border-slate-200 dark:border-[#2a2f45] outline-none focus:border-indigo-500"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-[#120a10] border border-slate-200 dark:border-[#3e2133] outline-none focus:border-indigo-500"
                     />
                   </div>
                 )}
@@ -859,7 +859,7 @@ export default function ConceptMapView({
         </div>
       ) : (
         <div className="algor-dot-grid p-12 rounded-3xl border-2 border-dashed border-indigo-300/60 dark:border-indigo-500/30 text-center space-y-3">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-indigo-500 to-teal-400 text-white flex items-center justify-center shadow-lg shadow-indigo-500/25">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-500 text-white flex items-center justify-center shadow-lg shadow-indigo-500/25">
             <Network size={28} />
           </div>
           <h3 className="font-extrabold text-base">Trasforma questa lezione in una Mappa Concettuale Interattiva</h3>
@@ -869,7 +869,7 @@ export default function ConceptMapView({
           <button
             onClick={handleGenerateMap}
             disabled={isGenerating}
-            className="mt-2 inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-teal-500 hover:from-indigo-500 hover:to-teal-400 text-white font-bold text-xs shadow-lg shadow-indigo-500/25 transition"
+            className="mt-2 inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-indigo-500/25 transition"
           >
             {isGenerating ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
             {isGenerating ? 'Generazione in corso...' : 'Crea la tua prima Mappa AI'}
