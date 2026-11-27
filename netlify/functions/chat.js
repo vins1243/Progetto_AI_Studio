@@ -601,8 +601,10 @@ REGOLE FERREE DI QUALITÀ (STILE EDITORIALE D'ELITE):
 2. **ESTRAZIONE FORENSE DALLE DISPENSE DEL DOCENTE (PRIORITÀ ASSOLUTA)**:
    - Se sono presenti documenti caricati dallo studente, DEVI estrarre, citare esplicitamente e spiegare a fondo **OGNI singolo dettaglio specifico delle dispense**: nomi di autori/professori, studi citati (con rivista, anno, campione, percentuali), geni/loci cromosomici, biomarcatori, segni clinici eponimi, sottoclassi complete (es. C0s, C2r, C4a, C4b, C4c, C6r), calibri/cut-off numerici, meccanismi molecolari e classificazioni aggiornate.
    - Non sostituire mai i dettagli specifici delle dispense con generalizzazioni scolastiche!
-3. **SPIEGAZIONE DISCORSIVA RAGIONATA (CAUSA -> MECCANISMO -> EFFETTO)**:
-   - Spiega ogni processo passo dopo passo (cascate fisiopatologiche, dimostrazioni, nessi storici/giuridici/tecnici) con elenchi numerati e paragrafi ricchi, chiari e scorrevoli.
+3. **REGOLA ANTI-COMPRESSIONE (SPIEGAZIONE DISCORSIVA COMPLETA IN OGNI SOTTOCAPITOLO)**:
+   - **VIETATO comprimere o riassumere la seconda metà della lezione!** Ogni singolo sottocapitolo (###) DEVE avere almeno **2–3 paragrafi discorsivi completi (120–180+ parole ciascuno)**, mai 2–4 righe telegrafiche.
+   - **NON limitarti a nominare** una manovra, un segno, una tecnica o uno studio: **spiega sempre il COME e il PERCHÉ** (es. come si esegue passo passo una manovra semeiologica o ecografica, cosa corrisponde anatomicamente a un segno clinico/ecografico, come agisce una classe farmacologica o una procedura, e quali sono i numeri/percentuali/campioni/risultati esatti di ogni studio citato nelle dispense).
+   - Spiega ogni processo causale passo dopo passo (cascate fisiopatologiche, dimostrazioni, nessi storici/giuridici/tecnici) con elenchi numerati argomentati e prosa chiara da manuale universitario.
 4. **FORMATTING RICCO E SCANSIONABILE**:
    - Usa grassetti selettivi solo sui termini tecnici chiave (**termine**).
    - Inserisci **almeno 1–2 TABELLE MARKDOWN** dettagliate per classificazioni, sottoclassi o confronti.
