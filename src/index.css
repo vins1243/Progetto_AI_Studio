@@ -397,6 +397,90 @@ html.light .wysiwyg-editor blockquote {
   padding-bottom: 0.4rem;
 }
 
+/* Stili compatti per i messaggi formattati nella Chat AI */
+.chat-formatted {
+  font-size: 0.92rem;
+  line-height: 1.7;
+}
+.chat-formatted h1 {
+  font-size: 1.25rem;
+  font-weight: 800;
+  margin-top: 0.9rem;
+  margin-bottom: 0.5rem;
+}
+.chat-formatted h2 {
+  font-size: 1.12rem;
+  font-weight: 700;
+  margin-top: 0.9rem;
+  margin-bottom: 0.45rem;
+}
+.chat-formatted h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-top: 0.85rem;
+  margin-bottom: 0.35rem;
+}
+html.dark .chat-formatted h1,
+html.dark .chat-formatted h2 {
+  color: #fdf2f8;
+}
+html.dark .chat-formatted h3 {
+  color: #fb7185;
+}
+html.light .chat-formatted h1,
+html.light .chat-formatted h2 {
+  color: #2a0a18;
+}
+html.light .chat-formatted h3 {
+  color: #be123c;
+}
+.chat-formatted p {
+  margin-bottom: 0.65rem;
+}
+.chat-formatted p:last-child {
+  margin-bottom: 0;
+}
+.chat-formatted strong, .chat-formatted b {
+  font-weight: 700;
+}
+html.dark .chat-formatted strong, html.dark .chat-formatted b {
+  color: #ffffff;
+}
+html.light .chat-formatted strong, html.light .chat-formatted b {
+  color: #2a0a18;
+}
+.chat-formatted ul, .chat-formatted ol {
+  margin-left: 1.35rem;
+  margin-bottom: 0.7rem;
+}
+.chat-formatted ul {
+  list-style-type: disc;
+}
+.chat-formatted ol {
+  list-style-type: decimal;
+}
+.chat-formatted li {
+  margin-bottom: 0.3rem;
+}
+.chat-formatted li::marker {
+  color: #e11d48;
+  font-weight: 700;
+}
+.chat-formatted table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.85rem 0;
+  font-size: 0.84rem;
+}
+.chat-formatted th, .chat-formatted td {
+  border: 1px solid var(--border-color);
+  padding: 0.45rem 0.65rem;
+  text-align: left;
+}
+.chat-formatted th {
+  font-weight: 700;
+}
+
 /* Stili Immagini nell'Editor */
 .lesson-image-wrapper {
   position: relative;

@@ -77,7 +77,9 @@ import {
   Zap,
   Volume2,
   VolumeX,
-  Eye
+  Eye,
+  Copy,
+  Pencil
 } from 'lucide-react';
 
 import LandingPage from './components/LandingPage.jsx';
@@ -620,6 +622,9 @@ function MainAppContent() {
   const [isTutorDrawerOpen, setIsTutorDrawerOpen] = useState(false);
   const [showEditorToolbar, setShowEditorToolbar] = useState(false);
   const [expandedSections, setExpandedSections] = useState({});
+  const [editingMsgIdx, setEditingMsgIdx] = useState(null);
+  const [editingMsgText, setEditingMsgText] = useState('');
+  const [copiedMsgIdx, setCopiedMsgIdx] = useState(null);
   const [isCheckingPayment, setIsCheckingPayment] = useState(false);
   const [isSubManageModalOpen, setIsSubManageModalOpen] = useState(false);
   const [isCropModalOpen, setIsCropModalOpen] = useState(false);
@@ -2606,6 +2611,94 @@ function MainAppContent() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
+    }
+  };
+
+  // Copia risposta AI negli appunti mantenendo la formattazione (HTML Rich Text + testo pulito)
+  const handleCopyFormattedMessage = async (rawText, idx) => {
+    try {
+      const html = renderMarkdownAndLatexToHtml(rawText || '');
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = html;
+      const plainText = tempDiv.innerText || rawText || '';
+
+      if (typeof window !== 'undefined' && navigator.clipboard && typeof window.ClipboardItem !== 'undefined') {
+        const htmlBlob = new Blob(
+          [`<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1e293b; line-height: 1.6;">${html}</div>`],
+          { type: 'text/html' }
+        );
+        const textBlob = new Blob([plainText], { type: 'text/plain' });
+        await navigator.clipboard.write([
+          new window.ClipboardItem({
+            'text/html': htmlBlob,
+            'text/plain': textBlob,
+          }),
+        ]);
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(plainText);
+      }
+      setCopiedMsgIdx(idx);
+      setTimeout(() => setCopiedMsgIdx((prev) => (prev === idx ? null : prev)), 2000);
+    } catch (err) {
+      console.warn('Copia formattata fallback:', err);
+      try {
+        await navigator.clipboard.writeText(rawText || '');
+        setCopiedMsgIdx(idx);
+        setTimeout(() => setCopiedMsgIdx((prev) => (prev === idx ? null : prev)), 2000);
+      } catch {
+        alert('Impossibile copiare negli appunti.');
+      }
+    }
+  };
+
+  // Modifica un messaggio utente già inviato e rigenera automaticamente la risposta AI
+  const handleSaveEditedUserMessage = async (idx) => {
+    const editedPrompt = editingMsgText.trim();
+    if (!editedPrompt || isLoading) return;
+
+    const priorHistory = messages.slice(0, idx);
+    const originalMsg = messages[idx] || {};
+    const updatedUserMsg = { ...originalMsg, role: 'user', text: editedPrompt };
+    const newMessages = [...priorHistory, updatedUserMsg];
+
+    setEditingMsgIdx(null);
+    setEditingMsgText('');
+    setMessages([...newMessages, { role: 'assistant', text: '' }]);
+    setIsLoading(true);
+
+    try {
+      const { reply } = await streamAiApi(
+        {
+          prompt: editedPrompt,
+          history: priorHistory,
+          files: [],
+        },
+        {
+          onChunk: (_delta, fullText) => {
+            setMessages([...newMessages, { role: 'assistant', text: fullText }]);
+          },
+        }
+      );
+
+      const aiMessage = { role: 'assistant', text: reply || 'Nessuna risposta generata.' };
+      const updatedMessages = [...newMessages, aiMessage];
+      setMessages(updatedMessages);
+      refreshUsageQuota();
+
+      if (currentChatId) {
+        const existingTitle = conversations.find((c) => c.id === currentChatId)?.title || editedPrompt.slice(0, 28);
+        setConversations((conversations || []).map((c) => (c.id === currentChatId ? { ...c, messages: updatedMessages } : c)));
+        if (user) {
+          saveChatToCloud(user.id, { id: currentChatId, title: existingTitle, messages: updatedMessages });
+        }
+      }
+    } catch (err) {
+      if (err instanceof QuotaExceededError) {
+        openBillingWithReason(err.message);
+      }
+      setMessages([...newMessages, { role: 'assistant', text: `Si è verificato un errore: ${err.message}` }]);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -5716,7 +5809,7 @@ function MainAppContent() {
                   messages.map((msg, idx) => (
                     <div 
                       key={idx} 
-                      className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                      className={`group flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                     >
                       {msg.role === 'assistant' && (
                         <div className="w-8 h-8 rounded-lg bg-blue-600/10 border border-blue-500/30 flex items-center justify-center shrink-0 mt-1 shadow-sm overflow-hidden p-1">
@@ -5724,25 +5817,98 @@ function MainAppContent() {
                         </div>
                       )}
 
-                      <div className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed break-words overflow-hidden ${
-                        msg.role === 'user' 
-                          ? 'bg-blue-600 text-white rounded-br-sm shadow-md whitespace-pre-wrap' 
-                          : 'bg-geminiDarkSecondary border border-geminiBorder text-gray-200 rounded-tl-sm shadow-sm'
-                      }`}>
-                        {msg.files && msg.files.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 mb-2.5">
-                            {msg.files.map((f, fi) => (
-                              <div key={fi} className="flex items-center gap-1.5 px-2 py-1 bg-black/30 rounded-lg text-xs text-gray-200 border border-white/10">
-                                {f.isImage ? <ImageIcon size={12} className="text-indigo-300" /> : <FileText size={12} className="text-blue-300" />}
-                                <span className="font-medium truncate max-w-[140px]">{f.name}</span>
+                      <div className={`flex flex-col max-w-[85%] sm:max-w-[78%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                        {msg.role === 'user' && editingMsgIdx === idx ? (
+                          <div className="w-full min-w-[260px] sm:min-w-[420px] rounded-2xl p-3 bg-geminiDarkSecondary border border-indigo-500/50 shadow-lg space-y-2.5">
+                            <textarea
+                              rows={3}
+                              value={editingMsgText}
+                              onChange={(e) => setEditingMsgText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                  e.preventDefault();
+                                  handleSaveEditedUserMessage(idx);
+                                }
+                              }}
+                              className="w-full bg-geminiDark border border-geminiBorder rounded-xl p-2.5 text-sm text-gray-100 focus:outline-none focus:border-indigo-500 resize-none"
+                              autoFocus
+                            />
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => { setEditingMsgIdx(null); setEditingMsgText(''); }}
+                                className="px-3 py-1.5 rounded-xl text-xs font-semibold border border-geminiBorder text-gray-300 hover:bg-geminiHover transition"
+                              >
+                                Annulla
+                              </button>
+                              <button
+                                onClick={() => handleSaveEditedUserMessage(idx)}
+                                disabled={!editingMsgText.trim() || isLoading}
+                                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white shadow-sm transition flex items-center gap-1.5"
+                              >
+                                <Sparkles size={12} />
+                                <span>Salva e Rigenera</span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed break-words overflow-hidden ${
+                            msg.role === 'user' 
+                              ? 'bg-blue-600 text-white rounded-br-sm shadow-md whitespace-pre-wrap' 
+                              : 'bg-geminiDarkSecondary border border-geminiBorder text-gray-200 rounded-tl-sm shadow-sm'
+                          }`}>
+                            {msg.files && msg.files.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 mb-2.5">
+                                {msg.files.map((f, fi) => (
+                                  <div key={fi} className="flex items-center gap-1.5 px-2 py-1 bg-black/30 rounded-lg text-xs text-gray-200 border border-white/10">
+                                    {f.isImage ? <ImageIcon size={12} className="text-indigo-300" /> : <FileText size={12} className="text-blue-300" />}
+                                    <span className="font-medium truncate max-w-[140px]">{f.name}</span>
+                                  </div>
+                                ))}
                               </div>
-                            ))}
+                            )}
+                            
+                            {msg.role === 'user' ? (
+                              <p className="whitespace-pre-wrap">{msg.text}</p>
+                            ) : (
+                              <div
+                                className="chat-formatted max-w-none"
+                                dangerouslySetInnerHTML={{ __html: renderMarkdownAndLatexToHtml(msg.text || '') }}
+                              />
+                            )}
                           </div>
                         )}
-                        
-                        <div className="prose prose-invert max-w-none text-sm leading-relaxed text-gray-200">
-                          <p className="whitespace-pre-wrap">{msg.text}</p>
-                        </div>
+
+                        {/* AZIONI RAPIDE SOTTO IL MESSAGGIO (MODIFICA PER UTENTE, COPIA FORMATTATA PER AI) */}
+                        {msg.role === 'user' && editingMsgIdx !== idx && !isLoading && (
+                          <button
+                            onClick={() => {
+                              setEditingMsgIdx(idx);
+                              setEditingMsgText(msg.text || '');
+                            }}
+                            className="mt-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold text-gray-400 hover:text-indigo-400 hover:bg-geminiDarkSecondary/80 flex items-center gap-1 opacity-75 group-hover:opacity-100 transition"
+                            title="Modifica messaggio e rigenera la risposta"
+                          >
+                            <Pencil size={11} />
+                            <span>Modifica</span>
+                          </button>
+                        )}
+
+                        {msg.role === 'assistant' && msg.text && (
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <button
+                              onClick={() => handleCopyFormattedMessage(msg.text, idx)}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border flex items-center gap-1.5 transition ${
+                                copiedMsgIdx === idx
+                                  ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                                  : 'bg-geminiDarkSecondary/70 hover:bg-geminiHover text-gray-400 hover:text-gray-100 border-geminiBorder/70'
+                              }`}
+                              title="Copia la risposta mantenendo titoli, grassetti, elenchi e tabelle"
+                            >
+                              {copiedMsgIdx === idx ? <Check size={12} /> : <Copy size={12} />}
+                              <span>{copiedMsgIdx === idx ? 'Copiato con formattazione!' : 'Copia formattato'}</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))
