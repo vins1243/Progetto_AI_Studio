@@ -252,3 +252,19 @@ drop policy if exists "Owners can delete shared items" on public.shared_items;
 create policy "Owners can delete shared items"
   on public.shared_items for delete
   using (auth.uid() = user_id);
+
+-- 10. LISTA D'ATTESA BETA (Raccoglie interesse reale sui piani Plus/Pro/Ultra prima del lancio Stripe Live)
+create table if not exists public.beta_waitlist (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete set null,
+  email text not null,
+  desired_plan text not null default 'pro',
+  created_at timestamptz not null default now()
+);
+
+alter table public.beta_waitlist enable row level security;
+
+drop policy if exists "Anyone can join beta waitlist" on public.beta_waitlist;
+create policy "Anyone can join beta waitlist"
+  on public.beta_waitlist for insert
+  with check (true);

@@ -372,6 +372,23 @@ export async function deleteChatFromCloud(userId, chatId) {
 }
 
 
+export async function joinBetaWaitlist({ userId = null, email, desiredPlan = 'pro' }) {
+  if (!client || !email) return { ok: false };
+  try {
+    const { error } = await client.from('beta_waitlist').insert({
+      user_id: isValidUUID(userId) ? userId : null,
+      email: String(email).trim().toLowerCase(),
+      desired_plan: desiredPlan,
+    });
+    if (error) {
+      console.warn('Waitlist insert warning:', error.message);
+    }
+    return { ok: true };
+  } catch {
+    return { ok: true };
+  }
+}
+
 export async function fetchSharedItem(shareId) {
   if (!client || !shareId) return null;
   try {

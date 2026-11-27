@@ -1263,9 +1263,13 @@ ${incomingBlueprintText ? `\n${incomingBlueprintText}\n` : ''}
 ${relevantSources ? `\nFONTI DEL DOCENTE:\n${relevantSources}` : ''}
 Scrivi la lezione definitiva completa al massimo livello universitario.`;
 
+      // Risparmio costi API in Beta: utenti Free usano Gemini Flash anche sul Macro-Agente (~1 cent/lezione), Pro/Plus/Ultra usano Gemini Pro
+      const isPaidUser = Boolean(profile?.is_premium || profile?.subscription_status === 'active');
+      const macroTier = isPaidUser ? 'heavy' : 'light';
+
       if (stream) {
         return await streamAIResponse({
-          tier: 'heavy',
+          tier: macroTier,
           systemPrompt: macroSystemPrompt,
           messages: [{ role: 'user', content: macroUserPrompt }],
           temperature: 0.3,
@@ -1275,7 +1279,7 @@ Scrivi la lezione definitiva completa al massimo livello universitario.`;
       }
 
       const { text, modelUsed } = await generateAI({
-        tier: 'heavy',
+        tier: macroTier,
         systemPrompt: macroSystemPrompt,
         messages: [{ role: 'user', content: macroUserPrompt }],
         temperature: 0.3,

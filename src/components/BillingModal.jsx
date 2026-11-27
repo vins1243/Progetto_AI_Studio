@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
-import { X, Zap, Check, CreditCard, ShieldCheck, RefreshCw, Crown } from 'lucide-react';
+import { X, Zap, Check, CreditCard, ShieldCheck, RefreshCw, Crown, Sparkles } from 'lucide-react';
 import { startStripeCheckout, openStripePortal } from '../utils/apiClient.js';
+import { joinBetaWaitlist } from '../supabaseClient.js';
+
+const IS_BETA_MODE = import.meta.env?.VITE_STRIPE_LIVE !== 'true';
 
 const PAID_PLANS = [
   {
@@ -33,19 +36,35 @@ export default function BillingModal({
   isPro,
   usageInfo,
   reasonMessage = '',
+  userEmail = '',
+  userId = null,
 }) {
   const [selectedPlan, setSelectedPlan] = useState('pro');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [waitlistEmail, setWaitlistEmail] = useState(userEmail || '');
+  const [waitlistJoined, setWaitlistJoined] = useState(false);
 
   if (!isOpen) return null;
 
   const currentTier = (usageInfo?.tier || usageInfo?.planType || (isPro ? 'pro' : 'free')).toLowerCase();
   const usage = usageInfo?.usage || { lessons: 0, chat: 0, maps: 0, quizzes: 0 };
-  const limits = usageInfo?.limits || { lessons: 2, chat: 10, maps: 2, quizzes: 1 };
+  const limits = usageInfo?.limits || { lessons: 1, chat: 5, maps: 1, quizzes: 1 };
 
   const handleCheckout = async (planId) => {
     setError('');
+    if (IS_BETA_MODE) {
+      const emailToSave = (waitlistEmail || userEmail || '').trim();
+      if (!emailToSave || !emailToSave.includes('@')) {
+        setError('Inserisci una email valida per bloccare lo sconto lancio del 30%.');
+        return;
+      }
+      setLoading(true);
+      await joinBetaWaitlist({ userId, email: emailToSave, desiredPlan: planId || selectedPlan });
+      setLoading(false);
+      setWaitlistJoined(true);
+      return;
+    }
     setLoading(true);
     try {
       await startStripeCheckout(planId || selectedPlan);
@@ -169,39 +188,70 @@ export default function BillingModal({
           })}
         </div>
 
+        {IS_BETA_MODE && (
+          <div className="p-3.5 rounded-2xl bg-indigo-500/15 border border-indigo-500/35 text-xs space-y-1">
+            <div className="font-extrabold text-indigo-400 flex items-center gap-1.5">
+              <Sparkles size={14} /> Beta Pubblica Gratuita Attiva
+            </div>
+            <p className="text-gray-300 leading-relaxed">
+              MinervaAI è attualmente in <strong>accesso Beta</strong>. Prenota il piano che preferisci qui sotto: al lancio ufficiale riceverai il <strong>30% di sconto</strong> riservato ai primi beta tester!
+            </p>
+          </div>
+        )}
+
         {error && (
           <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-medium">
             {error}
           </div>
         )}
 
-        <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
-          <button
-            onClick={() => handleCheckout(selectedPlan)}
-            disabled={loading}
-            className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 disabled:opacity-60 text-white font-extrabold text-sm shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition"
-          >
-            {loading ? <RefreshCw size={16} className="animate-spin" /> : <Zap size={16} />}
-            {loading
-              ? 'Reindirizzamento a Stripe...'
-              : `Attiva Piano ${PAID_PLANS.find((p) => p.id === selectedPlan)?.name} · ${PAID_PLANS.find((p) => p.id === selectedPlan)?.price}/mese`}
-          </button>
+        {waitlistJoined ? (
+          <div className="p-4 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-bold text-center space-y-1">
+            <div>Sei in lista prioritaria per il Piano {PAID_PLANS.find((p) => p.id === selectedPlan)?.name}!</div>
+            <div className="font-normal opacity-90">Ti avviseremo via email appena apriremo i piani ufficiali con il tuo 30% di sconto lancio.</div>
+          </div>
+        ) : (
+          <div className="space-y-2.5 pt-1">
+            {IS_BETA_MODE && !userEmail && (
+              <input
+                type="email"
+                value={waitlistEmail}
+                onChange={(e) => setWaitlistEmail(e.target.value)}
+                placeholder="La tua email universitaria..."
+                className="w-full px-4 py-2.5 rounded-2xl bg-geminiDark border border-geminiBorder text-xs focus:outline-none focus:border-indigo-500"
+              />
+            )}
+            <div className="flex flex-col sm:flex-row gap-2.5">
+              <button
+                onClick={() => handleCheckout(selectedPlan)}
+                disabled={loading}
+                className="flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 disabled:opacity-60 text-white font-extrabold text-sm shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition"
+              >
+                {loading ? <RefreshCw size={16} className="animate-spin" /> : <Zap size={16} />}
+                {loading
+                  ? IS_BETA_MODE ? 'Registrazione in corso...' : 'Reindirizzamento a Stripe...'
+                  : IS_BETA_MODE
+                    ? `Prenota Piano ${PAID_PLANS.find((p) => p.id === selectedPlan)?.name} (-30% al lancio)`
+                    : `Attiva Piano ${PAID_PLANS.find((p) => p.id === selectedPlan)?.name} · ${PAID_PLANS.find((p) => p.id === selectedPlan)?.price}/mese`}
+              </button>
 
-          {isPro && (
-            <button
-              onClick={handlePortal}
-              disabled={loading}
-              className="px-5 py-3.5 rounded-2xl border border-geminiBorder hover:bg-geminiHover font-bold text-xs flex items-center justify-center gap-2 transition"
-            >
-              <CreditCard size={15} />
-              <span>Portale Stripe</span>
-            </button>
-          )}
-        </div>
+              {!IS_BETA_MODE && isPro && (
+                <button
+                  onClick={handlePortal}
+                  disabled={loading}
+                  className="px-5 py-3.5 rounded-2xl border border-geminiBorder hover:bg-geminiHover font-bold text-xs flex items-center justify-center gap-2 transition"
+                >
+                  <CreditCard size={15} />
+                  <span>Portale Stripe</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="flex items-center justify-center gap-1.5 text-[11px] text-gray-400">
           <ShieldCheck size={13} className="text-emerald-500" />
-          <span>Pagamenti sicuri Stripe · Disdetta autonoma in 1 clic</span>
+          <span>{IS_BETA_MODE ? 'Accesso Beta gratuito · Nessuna carta richiesta oggi' : 'Pagamenti sicuri Stripe · Disdetta autonoma in 1 clic'}</span>
         </div>
       </div>
     </div>

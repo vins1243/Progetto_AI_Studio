@@ -7679,6 +7679,8 @@ function MainAppContent() {
         isPro={isPro}
         usageInfo={usageInfo}
         reasonMessage={billingReason}
+        userEmail={user?.email || ''}
+        userId={user?.id || null}
       />
 
       </div>
