@@ -643,6 +643,7 @@ function MainAppContent() {
   const [currentView, setCurrentView] = useState('chat');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState('projects');
+  const [homeTab, setHomeTab] = useState('projects'); // 'chats' | 'projects'
 
   // Chat Homepage (Supportata solo per utente autenticato)
   const [conversations, setConversations] = useState([]);
@@ -4107,15 +4108,15 @@ function MainAppContent() {
         />
       )}
 
-      {/* SIDEBAR CON SEGMENTED SWITCHER */}
+      {/* SIDEBAR MENU RAPIDO */}
       <aside 
         className={`fixed inset-y-0 left-0 z-50 flex flex-col w-80 max-w-[85vw] bg-geminiDarkSecondary border-r border-geminiBorder shadow-2xl transition-transform duration-300 ease-in-out overflow-hidden ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="p-3.5 border-b border-geminiBorder/60 space-y-3 bg-geminiDarkSecondary shrink-0">
+        <div className="p-3.5 border-b border-geminiBorder/60 space-y-2.5 bg-geminiDarkSecondary shrink-0">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Archivio Personale</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Menu Rapido</span>
             <button 
               onClick={() => setIsSidebarOpen(false)}
               className="p-1.5 text-gray-400 hover:text-white hover:bg-geminiHover rounded-lg transition"
@@ -4125,146 +4126,103 @@ function MainAppContent() {
             </button>
           </div>
 
-          <div className="flex bg-geminiDark p-1 rounded-2xl border border-geminiBorder/80">
-            <button
-              onClick={() => setSidebarTab('conversations')}
-              className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
-                sidebarTab === 'conversations'
-                  ? 'bg-geminiDarkSecondary text-blue-400 shadow-md border border-geminiBorder/60'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
-            >
-              <MessageSquare size={13} />
-              <span>Conversazioni</span>
-              {conversations.length > 0 && (
-                <span className="text-[10px] bg-geminiHover px-1.5 py-0.2 rounded-full text-gray-300 ml-0.5">
-                  {conversations.length}
-                </span>
-              )}
-            </button>
+          <button
+            onClick={() => {
+              setHomeTab('projects');
+              handleNewChat();
+            }}
+            className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-semibold bg-geminiDark hover:bg-geminiHover text-gray-100 rounded-xl border border-geminiBorder transition"
+          >
+            <FolderKanban size={14} className="text-indigo-400" />
+            <span>Home · Progetti ({savedProjects.length})</span>
+          </button>
 
-            <button
-              onClick={() => setSidebarTab('projects')}
-              className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
-                sidebarTab === 'projects'
-                  ? 'bg-geminiDarkSecondary text-blue-400 shadow-md border border-geminiBorder/60'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
-            >
-              <FolderKanban size={13} />
-              <span>Progetti</span>
-              {savedProjects.length > 0 && (
-                <span className="text-[10px] bg-geminiHover px-1.5 py-0.2 rounded-full text-gray-300 ml-0.5">
-                  {savedProjects.length}
-                </span>
-              )}
-            </button>
-          </div>
+          <button
+            onClick={() => {
+              setHomeTab('chats');
+              handleNewChat();
+            }}
+            className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-semibold bg-geminiDark hover:bg-geminiHover text-gray-100 rounded-xl border border-geminiBorder transition"
+          >
+            <MessageSquare size={14} className="text-blue-400" />
+            <span>Home · Chat ({conversations.length})</span>
+          </button>
 
-          {sidebarTab === 'conversations' ? (
-            <button 
-              onClick={handleNewChat}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-semibold bg-geminiHover hover:bg-geminiBorder text-gray-100 rounded-xl border border-geminiBorder transition shadow-sm"
-            >
-              <Plus size={14} />
-              <span>Nuova chat</span>
-            </button>
-          ) : (
-            <button 
-              onClick={handleStartWizard}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl shadow-md transition transform active:scale-98"
-            >
-              <Sparkles size={14} />
-              <span>Crea guida allo studio</span>
-            </button>
-          )}
+          <button 
+            onClick={handleStartWizard}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-semibold bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white rounded-xl shadow-md transition transform active:scale-98"
+          >
+            <Sparkles size={14} />
+            <span>Nuovo Progetto di Studio</span>
+          </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-3 space-y-2">
-          {sidebarTab === 'projects' && (
-            <div className="space-y-1">
-              <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-3 py-1 flex items-center justify-between">
-                <span>Guide e Corsi ({savedProjects.length})</span>
-              </div>
-              
-              {!savedProjects || savedProjects.length === 0 ? (
-                <div className="text-xs text-gray-500 px-3 py-6 text-center space-y-2">
-                  <FolderKanban size={24} className="mx-auto text-gray-600" />
-                  <p>Nessuna guida creata</p>
-                  <button 
-                    onClick={handleStartWizard}
-                    className="text-xs text-blue-400 underline font-semibold"
+        <div className="flex-1 overflow-y-auto p-3 space-y-4">
+          <div className="space-y-1">
+            <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-3 py-1">
+              Progetti Recenti ({savedProjects.length})
+            </div>
+            {!savedProjects || savedProjects.length === 0 ? (
+              <div className="text-xs text-gray-500 px-3 py-3">Nessun progetto creato</div>
+            ) : (
+              savedProjects.slice(0, 6).map(proj => (
+                <div
+                  key={proj.id}
+                  onClick={() => loadProjectWithFiles(proj)}
+                  className={`group flex items-center justify-between px-3 py-2 rounded-xl text-xs cursor-pointer transition ${
+                    activeProject?.id === proj.id && (currentView === 'project' || currentView === 'study_plan' || currentView === 'day_detail')
+                      ? 'bg-indigo-600/20 text-indigo-300 font-semibold border border-indigo-500/40'
+                      : 'text-gray-300 hover:bg-geminiHover/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 truncate pr-2">
+                    <Target size={13} className="text-indigo-400 shrink-0" />
+                    <span className="truncate">{proj.description || 'Progetto di Studio'}</span>
+                  </div>
+                  <button
+                    onClick={(e) => handleDeleteProject(e, proj.id)}
+                    className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-400 transition rounded"
+                    title="Elimina progetto"
                   >
-                    Crea la tua prima guida
+                    <Trash2 size={12} />
                   </button>
                 </div>
-              ) : (
-                savedProjects.map(proj => (
-                  <div
-                    key={proj.id}
-                    onClick={() => loadProjectWithFiles(proj)}
-                    className={`group flex items-center justify-between px-3 py-2.5 rounded-xl text-sm cursor-pointer transition ${
-                      activeProject?.id === proj.id && (currentView === 'project' || currentView === 'study_plan' || currentView === 'day_detail')
-                        ? 'bg-blue-600/20 text-blue-300 font-medium border border-blue-500/40'
-                        : 'text-gray-300 hover:bg-geminiHover/50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 truncate pr-2">
-                      <Target size={14} className="text-blue-400 shrink-0" />
-                      <span className="truncate">{proj.description || 'Progetto di Studio'}</span>
-                    </div>
-                    <button
-                      onClick={(e) => handleDeleteProject(e, proj.id)}
-                      className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-400 transition rounded"
-                      title="Elimina guida"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
+              ))
+            )}
+          </div>
 
-          {sidebarTab === 'conversations' && (
-            <div className="space-y-1">
-              <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-3 py-1 flex items-center justify-between">
-                <span>Sessioni Recenti ({conversations.length})</span>
-              </div>
-              
-              {!conversations || conversations.length === 0 ? (
-                <div className="text-xs text-gray-500 px-3 py-6 text-center space-y-2">
-                  <MessageSquare size={24} className="mx-auto text-gray-600" />
-                  <p>Nessuna conversazione recente</p>
+          <div className="space-y-1">
+            <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-3 py-1">
+              Chat Recenti ({conversations.length})
+            </div>
+            {!conversations || conversations.length === 0 ? (
+              <div className="text-xs text-gray-500 px-3 py-3">Nessuna chat recente</div>
+            ) : (
+              conversations.slice(0, 6).map((chat) => (
+                <div 
+                  key={chat.id}
+                  onClick={() => handleSelectChat(chat)}
+                  className={`group flex items-center justify-between px-3 py-2 rounded-xl text-xs cursor-pointer transition ${
+                    currentChatId === chat.id && currentView === 'chat' && messages.length > 0
+                      ? 'bg-geminiHover text-white font-semibold border border-geminiBorder/60' 
+                      : 'text-gray-300 hover:bg-geminiHover/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 truncate pr-2">
+                    <MessageSquare size={13} className="text-gray-400 shrink-0" />
+                    <span className="truncate">{chat.title}</span>
+                  </div>
+                  <button 
+                    onClick={(e) => handleDeleteChat(e, chat.id)}
+                    className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-400 rounded transition"
+                    title="Elimina chat"
+                  >
+                    <Trash2 size={12} />
+                  </button>
                 </div>
-              ) : (
-                conversations.map((chat) => (
-                  <div 
-                    key={chat.id}
-                    onClick={() => handleSelectChat(chat)}
-                    className={`group flex items-center justify-between px-3 py-2.5 rounded-xl text-sm cursor-pointer transition ${
-                      currentChatId === chat.id && currentView === 'chat'
-                        ? 'bg-geminiHover text-white font-medium border border-geminiBorder/60' 
-                        : 'text-gray-300 hover:bg-geminiHover/50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 truncate pr-2">
-                      <MessageSquare size={14} className="text-gray-400 shrink-0" />
-                      <span className="truncate">{chat.title}</span>
-                    </div>
-                    <button 
-                      onClick={(e) => handleDeleteChat(e, chat.id)}
-                      className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-400 rounded transition"
-                      title="Elimina conversazione"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-
+              ))
+            )}
+          </div>
         </div>
             {/* ACCOUNT / PROFILO FOOTER */}
       <div className="p-3 border-t border-geminiBorder/60 bg-geminiDarkSecondary shrink-0">
@@ -5986,43 +5944,349 @@ function MainAppContent() {
             )}
 
             <div className="flex-1 overflow-y-auto w-full px-4 sm:px-6">
-              <div className="max-w-3xl mx-auto py-6 space-y-6 pb-40">
+              <div className="max-w-4xl mx-auto py-6 space-y-6 pb-40">
                 
                 {messages.length === 0 ? (
-                  <div className="min-h-[55vh] flex flex-col items-center justify-center text-center">
-                    <div className="w-16 h-16 flex items-center justify-center mb-6 shrink-0 overflow-hidden">
-                      <img src={logoImg} alt="MinervaAI Logo" className="w-16 h-16 object-contain drop-shadow-md rounded-2xl" />
+                  <div className="space-y-6">
+                    {/* INTESTAZIONE COMPATTA HOME */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <img src={logoImg} alt="MinervaAI Logo" className="w-11 h-11 object-contain drop-shadow-md rounded-xl shrink-0" />
+                        <div>
+                          <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-gray-100">
+                            Cosa vuoi studiare oggi?
+                          </h1>
+                          <p className="text-xs text-slate-500 dark:text-gray-400">
+                            Scegli una sezione qui sotto oppure scrivi subito nella barra in basso.
+                          </p>
+                        </div>
+                      </div>
                     </div>
-                    
-                    <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-gray-100 mb-3">
-                      Cosa vuoi studiare oggi?
-                    </h1>
-                    <p className="text-gray-400 text-sm md:text-base max-w-md mb-8">
-                      Fai una domanda libera, usa la <strong>dettatura vocale</strong> o trascina fino a 10 file per un'analisi approfondita.
-                    </p>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg">
-                      {[
-                        { icon: BookOpen, text: "Spiegami un argomento complesso con parole semplici" },
-                        { icon: FileText, text: "Crea uno schema riassuntivo con i punti chiave" },
-                        { icon: GraduationCap, text: "Fammi 5 domande a risposta multipla per testarmi" },
-                        { icon: Sparkles, text: "Analizza e confronta i file che trascino qui" }
-                      ].map((item, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => handleSendMessage(item.text)}
-                          className="flex items-start gap-3 p-3.5 rounded-xl bg-geminiDarkSecondary/70 hover:bg-geminiDarkSecondary border border-geminiBorder/60 hover:border-gray-500 text-left transition group"
-                        >
-                          <item.icon size={18} className="text-blue-400 shrink-0 mt-0.5" />
-                          <span className="text-xs text-gray-300 group-hover:text-white leading-relaxed">
-                            {item.text}
-                          </span>
-                        </button>
-                      ))}
+                    {/* DUE RIQUADRI RETTANGOLARI IN ALTO: CHAT E PROGETTI */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <button
+                        type="button"
+                        onClick={() => setHomeTab('chats')}
+                        className={`group relative overflow-hidden rounded-2xl p-5 text-left border-2 transition-all flex items-center justify-between gap-4 ${
+                          homeTab === 'chats'
+                            ? 'bg-gradient-to-br from-indigo-600/15 via-blue-600/10 to-transparent border-indigo-500 shadow-lg shadow-indigo-500/15'
+                            : theme === 'light'
+                              ? 'bg-white hover:bg-rose-50/60 border-rose-200/80 hover:border-indigo-400 shadow-sm'
+                              : 'bg-geminiDarkSecondary/80 hover:bg-geminiDarkSecondary border-geminiBorder hover:border-indigo-500/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3.5 min-w-0">
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition ${
+                            homeTab === 'chats'
+                              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                              : 'bg-indigo-500/15 text-indigo-500 group-hover:bg-indigo-600 group-hover:text-white'
+                          }`}>
+                            <MessageSquare size={22} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-base font-extrabold text-slate-900 dark:text-white">Chat</span>
+                              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                                homeTab === 'chats'
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'bg-slate-200 dark:bg-geminiHover text-slate-700 dark:text-gray-300'
+                              }`}>
+                                {conversations.length}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-500 dark:text-gray-400 mt-0.5 truncate">
+                              Domande libere, tutor veloce e analisi file
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight size={18} className={`shrink-0 transition ${homeTab === 'chats' ? 'text-indigo-500 translate-x-0.5' : 'text-slate-400'}`} />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setHomeTab('projects')}
+                        className={`group relative overflow-hidden rounded-2xl p-5 text-left border-2 transition-all flex items-center justify-between gap-4 ${
+                          homeTab === 'projects'
+                            ? 'bg-gradient-to-br from-indigo-600/15 via-blue-600/10 to-transparent border-indigo-500 shadow-lg shadow-indigo-500/15'
+                            : theme === 'light'
+                              ? 'bg-white hover:bg-rose-50/60 border-rose-200/80 hover:border-indigo-400 shadow-sm'
+                              : 'bg-geminiDarkSecondary/80 hover:bg-geminiDarkSecondary border-geminiBorder hover:border-indigo-500/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3.5 min-w-0">
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition ${
+                            homeTab === 'projects'
+                              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                              : 'bg-indigo-500/15 text-indigo-500 group-hover:bg-indigo-600 group-hover:text-white'
+                          }`}>
+                            <FolderKanban size={22} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-base font-extrabold text-slate-900 dark:text-white">Progetti</span>
+                              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                                homeTab === 'projects'
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'bg-slate-200 dark:bg-geminiHover text-slate-700 dark:text-gray-300'
+                              }`}>
+                                {savedProjects.length}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-500 dark:text-gray-400 mt-0.5 truncate">
+                              Piani d&apos;esame, lezioni, mappe mentali e quiz
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight size={18} className={`shrink-0 transition ${homeTab === 'projects' ? 'text-indigo-500 translate-x-0.5' : 'text-slate-400'}`} />
+                      </button>
                     </div>
+
+                    {/* ELENCO DINAMICO: PROGETTI */}
+                    {homeTab === 'projects' && (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between gap-2">
+                          <h2 className="text-sm font-extrabold uppercase tracking-wider text-slate-500 dark:text-gray-400">
+                            I tuoi Progetti ({savedProjects.length})
+                          </h2>
+                          <button
+                            type="button"
+                            onClick={handleStartWizard}
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white text-xs font-bold shadow-md shadow-indigo-600/20 transition"
+                          >
+                            <Plus size={14} />
+                            <span>Nuovo Progetto</span>
+                          </button>
+                        </div>
+
+                        {!savedProjects || savedProjects.length === 0 ? (
+                          <div className={`rounded-2xl border-2 border-dashed p-10 text-center space-y-3 ${
+                            theme === 'light'
+                              ? 'bg-white border-rose-200 text-slate-600'
+                              : 'bg-geminiDarkSecondary/50 border-geminiBorder text-gray-400'
+                          }`}>
+                            <FolderKanban size={32} className="mx-auto text-indigo-400 opacity-80" />
+                            <div className="font-bold text-sm text-slate-800 dark:text-gray-100">
+                              Nessun progetto di studio ancora creato
+                            </div>
+                            <p className="text-xs max-w-sm mx-auto">
+                              Carica le tue dispense o scegli una materia per creare un piano giorno per giorno con lezioni, mappe concettuali e quiz d&apos;esame.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={handleStartWizard}
+                              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md transition mt-1"
+                            >
+                              <Sparkles size={14} />
+                              <span>Crea il tuo primo progetto</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                            {savedProjects.map((proj) => {
+                              const daysCount = (proj.schedule || []).length;
+                              let totalTopics = 0;
+                              let doneTopics = 0;
+                              (proj.schedule || []).forEach((d) => {
+                                (d.topics || []).forEach((t) => {
+                                  totalTopics += 1;
+                                  if (t?.completed) doneTopics += 1;
+                                });
+                              });
+                              const pct = totalTopics > 0 ? Math.round((doneTopics / totalTopics) * 100) : 0;
+
+                              return (
+                                <div
+                                  key={proj.id}
+                                  onClick={() => loadProjectWithFiles(proj)}
+                                  className={`group rounded-2xl p-4 border cursor-pointer transition-all hover:-translate-y-0.5 flex flex-col justify-between gap-3 ${
+                                    theme === 'light'
+                                      ? 'bg-white hover:border-indigo-400 border-rose-200/80 shadow-sm hover:shadow-md'
+                                      : 'bg-geminiDarkSecondary/85 hover:bg-geminiDarkSecondary border-geminiBorder hover:border-indigo-500/50'
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="flex items-start gap-2.5 min-w-0">
+                                      <div className="w-9 h-9 rounded-xl bg-indigo-500/15 text-indigo-500 flex items-center justify-center shrink-0 mt-0.5">
+                                        <Target size={16} />
+                                      </div>
+                                      <div className="min-w-0">
+                                        <h3 className="font-bold text-sm text-slate-900 dark:text-gray-100 line-clamp-2 leading-snug">
+                                          {proj.description || 'Progetto di Studio'}
+                                        </h3>
+                                        <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-500 dark:text-gray-400 flex-wrap">
+                                          <span>{daysCount} giorni</span>
+                                          <span>•</span>
+                                          <span>{totalTopics} lezioni</span>
+                                          {proj.examDate && (
+                                            <>
+                                              <span>•</span>
+                                              <span className="text-indigo-500 font-semibold">Esame: {proj.examDate}</span>
+                                            </>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleDeleteProject(e, proj.id)}
+                                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 opacity-70 group-hover:opacity-100 transition shrink-0"
+                                      title="Elimina progetto"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+
+                                  <div className="space-y-1">
+                                    <div className="flex items-center justify-between text-[11px]">
+                                      <span className="text-slate-500 dark:text-gray-400">Avanzamento</span>
+                                      <span className="font-bold text-indigo-500">{pct}%</span>
+                                    </div>
+                                    <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-geminiDark overflow-hidden">
+                                      <div
+                                        className="h-full rounded-full bg-gradient-to-r from-indigo-600 to-blue-500 transition-all"
+                                        style={{ width: `${pct}%` }}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ELENCO DINAMICO: CHAT */}
+                    {homeTab === 'chats' && (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between gap-2">
+                          <h2 className="text-sm font-extrabold uppercase tracking-wider text-slate-500 dark:text-gray-400">
+                            Le tue Chat ({conversations.length})
+                          </h2>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleNewChat();
+                              textareaRef.current?.focus();
+                            }}
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white text-xs font-bold shadow-md shadow-indigo-600/20 transition"
+                          >
+                            <Plus size={14} />
+                            <span>Nuova Chat</span>
+                          </button>
+                        </div>
+
+                        {conversations && conversations.length > 0 ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {conversations.map((chat) => (
+                              <div
+                                key={chat.id}
+                                onClick={() => handleSelectChat(chat)}
+                                className={`group rounded-2xl p-4 border cursor-pointer transition-all hover:-translate-y-0.5 flex items-center justify-between gap-3 ${
+                                  theme === 'light'
+                                    ? 'bg-white hover:border-indigo-400 border-rose-200/80 shadow-sm hover:shadow-md'
+                                    : 'bg-geminiDarkSecondary/85 hover:bg-geminiDarkSecondary border-geminiBorder hover:border-indigo-500/50'
+                                }`}
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="w-9 h-9 rounded-xl bg-blue-500/15 text-blue-500 flex items-center justify-center shrink-0">
+                                    <MessageSquare size={16} />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="font-bold text-sm text-slate-900 dark:text-gray-100 truncate">
+                                      {chat.title || 'Conversazione'}
+                                    </div>
+                                    <div className="text-[11px] text-slate-500 dark:text-gray-400 mt-0.5">
+                                      {(chat.messages || []).length} messaggi
+                                    </div>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleDeleteChat(e, chat.id)}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 opacity-70 group-hover:opacity-100 transition shrink-0"
+                                  title="Elimina chat"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className={`rounded-2xl border-2 border-dashed p-8 text-center space-y-2 ${
+                            theme === 'light'
+                              ? 'bg-white border-rose-200 text-slate-600'
+                              : 'bg-geminiDarkSecondary/50 border-geminiBorder text-gray-400'
+                          }`}>
+                            <MessageSquare size={28} className="mx-auto text-indigo-400 opacity-80" />
+                            <div className="font-bold text-sm text-slate-800 dark:text-gray-100">
+                              Nessuna chat salvata
+                            </div>
+                            <p className="text-xs">
+                              Scrivi una domanda nella barra qui sotto o scegli uno spunto rapido per iniziare.
+                            </p>
+                          </div>
+                        )}
+
+                        {/* SPUNTI RAPIDI CHAT */}
+                        <div className="pt-2 space-y-2">
+                          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                            Avvia una chat veloce
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            {[
+                              { icon: BookOpen, text: "Spiegami un argomento complesso con parole semplici" },
+                              { icon: FileText, text: "Crea uno schema riassuntivo con i punti chiave" },
+                              { icon: GraduationCap, text: "Fammi 5 domande a risposta multipla per testarmi" },
+                              { icon: Sparkles, text: "Analizza e confronta i file che trascino qui" }
+                            ].map((item, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => handleSendMessage(item.text)}
+                                className={`flex items-start gap-3 p-3 rounded-xl border text-left transition group ${
+                                  theme === 'light'
+                                    ? 'bg-white hover:bg-rose-50/70 border-rose-200/70 hover:border-indigo-400'
+                                    : 'bg-geminiDarkSecondary/70 hover:bg-geminiDarkSecondary border-geminiBorder/60 hover:border-indigo-500/40'
+                                }`}
+                              >
+                                <item.icon size={16} className="text-indigo-500 shrink-0 mt-0.5" />
+                                <span className="text-xs text-slate-700 dark:text-gray-300 group-hover:text-slate-900 dark:group-hover:text-white leading-relaxed">
+                                  {item.text}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
-                  messages.map((msg, idx) => (
+                  <>
+                  <div className="flex items-center justify-between pb-2 border-b border-geminiBorder/40">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHomeTab('chats');
+                        handleNewChat();
+                      }}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-gray-400 hover:text-indigo-500 dark:hover:text-white transition"
+                    >
+                      <ArrowLeft size={14} />
+                      <span>Torna alla Home (Chat & Progetti)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHomeTab('chats');
+                        handleNewChat();
+                      }}
+                      className="text-xs font-bold px-3 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-500 transition flex items-center gap-1"
+                    >
+                      <Plus size={13} /> Nuova Chat
+                    </button>
+                  </div>
+                  {messages.map((msg, idx) => (
                     <div 
                       key={idx} 
                       className={`group flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -6127,7 +6391,8 @@ function MainAppContent() {
                         )}
                       </div>
                     </div>
-                  ))
+                  ))}
+                  </>
                 )}
 
                 {isLoading && (
