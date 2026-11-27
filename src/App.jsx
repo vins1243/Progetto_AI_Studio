@@ -124,7 +124,7 @@ async function getProjectDataFromDB(projectId) {
   return getProjectDataIDB(projectId);
 }
 
-// Estrazione testo client-side nel browser
+// Estrazione testo + IMMAGINI/FIGURE reali dai PDF direttamente nel browser
 async function extractTextFromPdf(arrayBuffer) {
   if (typeof window === 'undefined' || !window.pdfjsLib) {
     throw new Error("Libreria PDF.js non pronta.");
@@ -135,13 +135,52 @@ async function extractTextFromPdf(arrayBuffer) {
   const pdf = await loadingTask.promise;
   let text = '';
   const extractedImages = [];
-  const maxPages = Math.min(pdf.numPages, 120);
+  const maxPages = Math.min(pdf.numPages, 150);
+  const MAX_EXTRACTED_FIGURES = 18;
+  const OPS = pdfjsLib.OPS || {};
+  const IMAGE_OPS = new Set([
+    OPS.paintImageXObject,
+    OPS.paintInlineImageXObject,
+    OPS.paintImageMaskXObject,
+    OPS.paintJpegXObject,
+  ].filter(Boolean));
+
   for (let i = 1; i <= maxPages; i++) {
     try {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-      const pageText = content.items.map(item => item.str).join(' ');
+      const pageText = content.items.map(item => item.str).join(' ').replace(/\s+/g, ' ').trim();
       text += `\n[Pagina ${i}]: ` + pageText;
+
+      // Rileva se la pagina contiene figure/diagrammi/immagini e la estrae come immagine nitida
+      if (extractedImages.length < MAX_EXTRACTED_FIGURES && typeof document !== 'undefined') {
+        try {
+          const opList = await page.getOperatorList();
+          const hasEmbeddedImage = opList?.fnArray?.some(fn => IMAGE_OPS.has(fn));
+          if (hasEmbeddedImage) {
+            const viewport = page.getViewport({ scale: 1.15 });
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = Math.min(viewport.width, 1100);
+            const ratio = canvas.width / viewport.width;
+            canvas.height = Math.round(viewport.height * ratio);
+            const scaledViewport = page.getViewport({ scale: 1.15 * ratio });
+
+            await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            const snippet = pageText.slice(0, 95).replace(/["\n\r]/g, ' ').trim();
+            extractedImages.push({
+              id: `FIGURA_PDF_PAG_${i}`,
+              name: snippet ? `Figura/Slide Pagina ${i}: ${snippet}` : `Figura/Slide Pagina ${i}`,
+              dataUrl,
+              label: `Pagina ${i}`,
+              pageNumber: i,
+            });
+          }
+        } catch (imgErr) {
+          console.warn(`Estrazione immagine pagina ${i} saltata:`, imgErr);
+        }
+      }
     } catch (pageErr) {
       console.warn(`Errore lettura pagina ${i} del PDF:`, pageErr);
     }
@@ -5241,56 +5280,95 @@ function MainAppContent() {
                   </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5">
-                  <div className="px-2 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    Pagine
+                <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
+                  {/* SEZIONE ATTIVA: SOLO GLI ARGOMENTI DEL GIORNO SELEZIONATO */}
+                  <div className="space-y-1.5">
+                    <div className="px-2 flex items-center justify-between">
+                      <span className="text-[11px] font-extrabold uppercase tracking-wider text-indigo-500">
+                        Giorno {currentDayData?.dayNumber} · Da fare oggi
+                      </span>
+                      <span className="text-[10px] text-slate-400">{currentDayData?.date || ''}</span>
+                    </div>
+                    <div className="space-y-1">
+                      {(currentDayData?.topics || []).map((t) => {
+                        const isActiveTopic = currentSelectedTopic?.id === t.id;
+                        return (
+                          <button
+                            key={t.id}
+                            onClick={() => {
+                              handleStopSpeaking();
+                              setSelectedTopicId(t.id);
+                              setFloatingPopup(null);
+                              setSelectedImageEl(null);
+                              setImageBoxRect(null);
+                              lastLoadedTopicIdRef.current = null;
+                            }}
+                            className={`w-full text-left px-3 py-2.5 rounded-xl text-xs transition flex items-center gap-2 border ${
+                              isActiveTopic
+                                ? 'bg-indigo-600 text-white border-indigo-600 font-bold shadow-md shadow-indigo-600/20'
+                                : theme === 'light'
+                                  ? 'bg-white text-slate-700 border-rose-100 hover:border-indigo-300'
+                                  : 'bg-[#1c1018] text-gray-200 border-geminiBorder hover:border-indigo-500/50'
+                            }`}
+                            title={t.title}
+                          >
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${t.completed ? 'bg-emerald-400' : isActiveTopic ? 'bg-white' : 'bg-indigo-400/60'}`} />
+                            <span className="truncate flex-1">{t.title}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                  {(activeProject?.schedule || []).map((day) => {
-                    const isCurrentDay = day.dayNumber === currentDayData?.dayNumber;
-                    const isOpen = expandedSections[day.dayNumber] ?? isCurrentDay;
-                    return (
-                      <div key={day.dayNumber} className="space-y-0.5">
-                        <button
-                          onClick={() => setExpandedSections(prev => ({ ...prev, [day.dayNumber]: !isOpen }))}
-                          className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-bold hover:bg-geminiHover/50 transition text-left"
-                        >
-                          <ChevronDown size={13} className={`shrink-0 text-slate-400 transition-transform ${isOpen ? '' : '-rotate-90'}`} />
-                          <span className="truncate flex-1">Sezione {day.dayNumber}</span>
-                          <span className="text-[11px] text-slate-500">({(day.topics || []).length})</span>
-                        </button>
-                        {isOpen && (
-                          <div className="pl-4 space-y-0.5">
-                            {(day.topics || []).map((t) => {
-                              const isActiveTopic = isCurrentDay && currentSelectedTopic?.id === t.id;
+
+                  {/* ANTEPRIMA PROSSIMI GIORNI (SEPARATA E RICHIUDIBILE PER NON CONFONDERSI) */}
+                  {((activeProject?.schedule || []).filter((d) => d.dayNumber > (currentDayData?.dayNumber || 0)).length > 0) && (
+                    <div className="pt-3 border-t border-geminiBorder/40 space-y-1.5">
+                      <button
+                        onClick={() => setExpandedSections(prev => ({ ...prev, _upcoming: !prev._upcoming }))}
+                        className="w-full px-2 py-1 flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-400 hover:text-indigo-400 transition"
+                      >
+                        <span>Prossimi giorni ({(activeProject?.schedule || []).filter((d) => d.dayNumber > (currentDayData?.dayNumber || 0)).length})</span>
+                        <ChevronDown size={13} className={`transition-transform ${expandedSections._upcoming ? '' : '-rotate-90'}`} />
+                      </button>
+
+                      {expandedSections._upcoming && (
+                        <div className="space-y-1.5 pt-1 opacity-80">
+                          {(activeProject?.schedule || [])
+                            .filter((d) => d.dayNumber > (currentDayData?.dayNumber || 0))
+                            .map((day) => {
+                              const isTomorrow = day.dayNumber === (currentDayData?.dayNumber || 0) + 1;
                               return (
                                 <button
-                                  key={t.id}
+                                  key={day.dayNumber}
                                   onClick={() => {
                                     handleStopSpeaking();
                                     setSelectedDayNumber(day.dayNumber);
-                                    setSelectedTopicId(t.id);
+                                    if (day.topics?.[0]) setSelectedTopicId(day.topics[0].id);
                                     setFloatingPopup(null);
                                     setSelectedImageEl(null);
                                     setImageBoxRect(null);
                                     lastLoadedTopicIdRef.current = null;
                                   }}
-                                  className={`w-full text-left px-2.5 py-2 rounded-xl text-xs truncate transition flex items-center gap-2 ${
-                                    isActiveTopic
-                                      ? 'bg-indigo-600/20 text-indigo-300 font-bold'
-                                      : 'text-slate-400 hover:text-gray-200 hover:bg-geminiHover/40'
+                                  className={`w-full text-left px-2.5 py-2 rounded-xl border transition space-y-0.5 ${
+                                    theme === 'light'
+                                      ? 'bg-rose-50/60 hover:bg-rose-100/70 border-rose-200/70 text-slate-700'
+                                      : 'bg-geminiDark/60 hover:bg-geminiHover/60 border-geminiBorder/50 text-gray-300'
                                   }`}
-                                  title={t.title}
                                 >
-                                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${t.completed ? 'bg-emerald-400' : isActiveTopic ? 'bg-indigo-400' : 'bg-slate-600'}`} />
-                                  <span className="truncate">{t.title}</span>
+                                  <div className="flex items-center justify-between text-[11px] font-bold">
+                                    <span>{isTomorrow ? `Domani · Giorno ${day.dayNumber}` : `Giorno ${day.dayNumber}`}</span>
+                                    <span className="text-[10px] opacity-70">{(day.topics || []).length} arg.</span>
+                                  </div>
+                                  <div className="text-[10px] opacity-70 truncate">
+                                    {(day.topics || []).map((t) => t.title).join(' · ')}
+                                  </div>
                                 </button>
                               );
                             })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* CTA IN BASSO STILE ALGOR */}

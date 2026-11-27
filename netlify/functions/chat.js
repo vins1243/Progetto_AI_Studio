@@ -477,8 +477,8 @@ FORMATO JSON OBBLIGATORIO:
       let validFilesCount = 0;
 
       if (!isOnlineSearch) {
-        const TOTAL_CHAR_BUDGET = 40000;
-        const budgetPerFile = Math.max(1500, Math.floor(TOTAL_CHAR_BUDGET / Math.max(1, allFiles.length)));
+        const TOTAL_CHAR_BUDGET = 80000;
+        const budgetPerFile = Math.max(2500, Math.floor(TOTAL_CHAR_BUDGET / Math.max(1, allFiles.length)));
 
         allFiles.forEach((f, idx) => {
           const fileName = f.name || `Documento ${idx + 1}`;
@@ -578,46 +578,49 @@ ${isOnlineSearch ? 'Genera il programma completo.' : `DOCUMENTI:\n${perFileSumma
       const relevantSources = extractRelevantChunks(
         allFiles,
         `${topicTitle || ''} ${examDescription || ''}`,
-        65000
+        120000
       );
 
-      const lessonSystemPrompt = `Sei un professore universitario ordinario e autore di manuali e trattati didattici di riferimento per scuole superiori e università.
-Il tuo compito è redigere un **COMPENDIO MONUMENTALE, DISCORSIVO, RAGIONATO ED ESAUSTIVO** sull'argomento richiesto, calibrato sulla materia ("${examDescription || 'Studio'}").
+      const prepTarget = Number(prepLevel) || 85;
+      const depthInstruction =
+        prepTarget >= 90
+          ? 'LIVELLO MASSIMO (90-100% / 30 e Lode): trattazione enciclopedica definitiva, zero tagli, copri OGNI minimo sottocapitolo, classificazione, meccanismo molecolare/teorico, eccezione, valore numerico, confronto e caso pratico.'
+          : prepTarget >= 75
+            ? 'LIVELLO ALTO (75-89%): trattazione completa e approfondita con tutti i concetti chiave, meccanismi, tabelle comparative, formule ed esempi.'
+            : 'LIVELLO SOLIDO (fino a 74%): trattazione chiara, completa e lineare focalizzata sui pilastri fondamentali ben spiegati senza banalizzazioni.';
 
-REGOLA D'ORO SULLA PROFONDITÀ (FONDAMENTALE):
-- **DIVIETO ASSOLUTO DI RIASSUNTI BREVI O SCHEMI TELEGRAFICI**: lo studente deve poter studiare SOLO da questo testo e superare l'esame con il massimo dei voti (30 e Lode / 10).
-- **LUNGHEZZA E RICCHEZZA**: scrivi un trattato esteso e completo (almeno 2.000–3.500 parole). Per ogni capitolo sviluppa paragrafi discorsivi ampi e ragionati spiegando sempre il *perché*, il *come*, le cause, i meccanismi sequenziali, le eccezioni e le applicazioni pratiche/cliniche/d'esame.
-- **ZERO FRASI RIEMPITIVE**: non scrivere mai "In questa lezione vedremo..." o "È importante notare che...". Parti subito con definizioni formali e contenuti densi.
-- **DATI QUANTITATIVI E TERMINOLOGIA PRECISA**: inserisci sempre tutti i valori numerici, soglie, date, articoli, teoremi, dosaggi, unità di misura e termini tecnici presenti nelle fonti o nella letteratura di riferimento.
-- **TABELLE COMPARATIVE OBBLIGATORIE**: inserisci almeno 2 TABELLE MARKDOWN ricche e complete (classificazioni, diagnosi differenziali, confronti tra teorie/metodi, protocolli o schemi risolutivi).
-- **FORMULE LATEX**: scrivi qualsiasi formula matematica, fisica, chimica, statistica o economica in LaTeX rigoroso ($...$ inline o $$...$$ a blocchi).
-- **CALLOUT DI EVIDENZIAZIONE**: inserisci 3–5 box di evidenziazione usando citazioni Markdown:
-  > **Regola Cardine:** [Spiegazione dettagliata]
-  > **Criteri e Standard di Riferimento:** [Dettagli e soglie]
-  > **Attenzione / Errore Frequente d'Esame:** [Avvertenza]
-- **GESTIONE OBBLIGATORIA DELLE FIGURE ED IMMAGINI**:
+      const lessonSystemPrompt = `Sei un professore universitario ordinario e autore di manuali e trattati didattici definitivi per scuole superiori e università.
+Il tuo compito è redigere una **LEZIONE DEFINITIVA, COMPLETA, DISCORSIVA ED ESAUSTIVA** sull'argomento richiesto, calibrata sulla materia ("${examDescription || 'Studio'}").
+
+${depthInstruction}
+
+REGOLA D'ORO SULLA COMPLETEZZA:
+- **LEZIONE DEFINITIVA DA CUI STUDIARE SENZA ALTRI LIBRI**: divieto assoluto di riassunti telegrafici o elenchi scarni. Ogni concetto deve essere spiegato per esteso con ragionamento causa-effetto, definizioni precise, contestualizzazione e collegamenti.
+- **LUNGHEZZA E RICCHEZZA**: redigi un testo esteso e profondo (almeno 2.500–4.000 parole per i livelli alti). Sviluppa ogni capitolo con paragrafi discorsivi completi, dati quantitativi, classificazioni, formule LaTeX ($...$ / $$...$$), almeno 2 tabelle Markdown dettagliate e 3–5 callout (> **Regola Cardine:** ..., > **Attenzione / Errore Frequente:** ...).
+- **ZERO FRASI RIEMPITIVE**: inizia ogni capitolo direttamente dal contenuto tecnico/scientifico/accademico.
+- **INSERIMENTO OBBLIGATORIO DELLE IMMAGINI DAI DOCUMENTI**:
 ${
   availableImagesList.length > 0
-    ? `Sono state estratte dai documenti dello studente le seguenti ${availableImagesList.length} immagini REALI:
+    ? `Dai documenti caricati dallo studente sono state estratte queste ${availableImagesList.length} immagini/slide REALI:
 ${availableImagesList
-  .map((img) => `- ID ESATTO: "${img.id}" -> "${img.name}" (da ${img.fileName})`)
+  .map((img) => `- ID ESATTO: "${img.id}" -> ${img.name} (${img.fileName})`)
   .join('\n')}
-DEVI OBBLIGATORIAMENTE inserire nel testo le immagini pertinenti usando ESATTAMENTE questa sintassi su una riga dedicata (senza backtick e senza modificare l'ID):
-![Descrizione didattica approfondita della figura](ID_ESATTO)
-Inserisci almeno 2–5 figure tra quelle elencate nei capitoli corrispondenti, commentandole nel testo.`
-    : 'Se un concetto richiede uno schema visivo, inserisci una tabella Markdown dettagliata o un box riassuntivo strutturato (non inventare URL esterni inesistenti).'
+DEVI OBBLIGATORIAMENTE integrare nei capitoli pertinenti almeno 2–6 di queste figure reali usando ESATTAMENTE questa sintassi su una riga dedicata (senza backtick e con l'ID identico):
+![Descrizione didattica della figura e cosa osservare](ID_ESATTO)
+Commenta sempre la figura nel testo subito prima o dopo averla inserita.`
+    : 'Se un concetto richiede uno schema visivo, inserisci una tabella Markdown dettagliata o uno schema strutturato (non inventare URL esterni).'
 }
 ${
   isStrict
-    ? '\nFONTI DELLO STUDENTE (REGOLA DI FERRO): copri il 100% degli argomenti, sottocapitoli, definizioni, numeri e dettagli presenti nei documenti caricati dallo studente, sviluppando ogni punto in modo esteso, chiaro ed enciclopedico senza tagliare nulla.'
+    ? '\nANALISI APPROFONDITA DELLE FONTI CARICATE (PRIORITÀ ASSOLUTA): estrai e spiega il 100% delle nozioni, terminologie, classificazioni, formule, dati numerici ed esempi presenti nei documenti dello studente relativi a questo argomento. Non omettere alcun dettaglio rilevante contenuto nei file.'
     : '\nSviluppa l’intera trattazione con rigore accademico completo, coprendo ogni aspetto teorico e applicativo dell’argomento.'
 }
 
 STRUTTURA OBBLIGATORIA DEL COMPENDIO:
 1. **# TITOLO COMPLETO DELLA LEZIONE** (in maiuscolo) con sottotitolo esplicativo
 2. **## 📋 Indice Analitico dei Capitoli** (almeno 6–8 capitoli numerati)
-3. **6–8 Capitoli Numerati (## 1. ..., ## 2. ...)** con sotto-paragrafi (### 1.1 ...), spiegazioni discorsive approfondite, tabelle Markdown, formule LaTeX, callout e figure dai documenti
-4. **## Domande Frequenti d'Esame e Collegamenti Trasversali** (3–5 snodi tipici richiesti dai docenti con risposta argomentata).`;
+3. **6–8 Capitoli Numerati (## 1. ..., ## 2. ...)** con sotto-paragrafi (### 1.1 ...), spiegazioni discorsive approfondite, tabelle Markdown, formule LaTeX, callout e figure reali estratte dai documenti
+4. **## Domande Frequenti d'Esame e Collegamenti Trasversali** (3–5 snodi tipici richiesti dai docenti con risposta argomentata completa).`;
 
       const lessonUserPrompt = `MATERIA: "${examDescription || 'Trattazione di Studio'}"
 ARGOMENTO SPECIFICO: "${topicTitle}"
