@@ -160,6 +160,7 @@ export async function saveProjectToCloud(userId, project) {
         name: f.name,
         size: f.size,
         mimeType: f.mimeType,
+        extractedText: (f.extractedText || f.text || '').slice(0, 150000),
         wordsCount: f.wordsCount || 0,
         pagesCount: f.pagesCount || 1,
       })),

@@ -341,8 +341,17 @@ function renderMarkdownAndLatexToHtml(md, imagesMap = {}) {
       flushTable();
     }
 
-    // Empty line
+    // Empty line: non chiudere <ol> se la prossima riga non vuota continua l'elenco numerato
     if (!trimmed) {
+      if (inList === 'ol') {
+        let nextLine = '';
+        for (let k = i + 1; k < lines.length; k++) {
+          if (lines[k].trim()) { nextLine = lines[k].trim(); break; }
+        }
+        if (/^\d+\.\s+/.test(nextLine)) {
+          continue;
+        }
+      }
       if (inList) { output.push(inList === 'ul' ? '</ul>' : '</ol>'); inList = null; }
       continue;
     }
@@ -1746,7 +1755,14 @@ function MainAppContent() {
     );
 
     const daysTotal = calculateDaysLeft(examDate);
-    const projectId = Date.now().toString();
+    // Genera subito un UUID v4 reale così IndexedDB (immagini/file) e Supabase usano ESATTAMENTE lo stesso ID!
+    const projectId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = (Math.random() * 16) | 0;
+          const v = c === 'x' ? r : (r & 0x3) | 0x8;
+          return v.toString(16);
+        });
 
     let currentPct = 15;
     const progressInterval = setInterval(() => {
@@ -1817,6 +1833,7 @@ function MainAppContent() {
           name: f.name,
           size: f.size,
           mimeType: f.mimeType,
+          extractedText: f.extractedText || '',
           wordsCount: f.wordsCount,
           pagesCount: f.pagesCount,
         })),
