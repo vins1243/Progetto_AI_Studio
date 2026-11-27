@@ -81,11 +81,8 @@ import {
   Copy,
   Pencil,
   Headphones,
-  Layers,
   Share2,
-  BookMarked,
-  FileAudio,
-  AlertTriangle
+  FileAudio
 } from 'lucide-react';
 
 import LandingPage from './components/LandingPage.jsx';
