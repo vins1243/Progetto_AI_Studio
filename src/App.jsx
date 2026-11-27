@@ -72,8 +72,24 @@ import {
   Cloud,
   CreditCard,
   Crop,
-  Maximize2
+  Maximize2,
+  Network,
+  Zap
 } from 'lucide-react';
+
+import LandingPage from './components/LandingPage.jsx';
+import ConceptMapView from './components/ConceptMapView.jsx';
+import BillingModal from './components/BillingModal.jsx';
+import {
+  callAiApi,
+  streamAiApi,
+  fetchUsageQuota,
+  QuotaExceededError,
+} from './utils/apiClient.js';
+import {
+  saveProjectDataIDB,
+  getProjectDataIDB,
+} from './utils/indexedDb.js';
 
 import { 
   supabase, 
@@ -94,54 +110,13 @@ import {
   isValidUUID
 } from './supabaseClient.js';
 
-const STRIPE_PAYMENT_URL = 'https://buy.stripe.com/test_fZu14p1No81J5Eg9nme7m00';
-
-
-// IndexedDB Helper
-const DB_NAME = 'MinervaAIDB_V11';
-const STORE_NAME = 'project_data_store';
-
-function getDB() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'projectId' });
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
+// Wrapper compatibilità IndexedDB dal modulo src/utils/indexedDb.js
 async function saveProjectDataToDB(projectId, data) {
-  try {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).put({ projectId, ...data });
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch (err) {
-    console.warn("IndexedDB save error:", err);
-  }
+  return saveProjectDataIDB(projectId, data?.files || [], data?.lessonsContent || {});
 }
 
 async function getProjectDataFromDB(projectId) {
-  try {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const req = tx.objectStore(STORE_NAME).get(projectId);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
-    });
-  } catch (err) {
-    console.warn("IndexedDB get error:", err);
-    return null;
-  }
+  return getProjectDataIDB(projectId);
 }
 
 // Estrazione testo client-side nel browser
@@ -628,18 +603,13 @@ function MainAppContent() {
   const [isSingleLessonQuiz, setIsSingleLessonQuiz] = useState(false);
 
   // Wizard State
-  // STATO AUTENTICAZIONE E CLOUD SYNC SUPABASE
-  const DEFAULT_GUEST_USER = {
-    id: 'guest_user_direct_ai',
-    email: 'utente@minerva.ai',
-    user_metadata: { full_name: 'Utente AI' }
-  };
-  const [user, setUser] = useState(DEFAULT_GUEST_USER);
-  const [userProfile, setUserProfile] = useState({
-    subscription_status: 'active',
-    is_premium: true,
-    full_name: 'Utente AI'
-  });
+  // STATO AUTENTICAZIONE, FREEMIUM, BILLING E CLOUD SYNC SUPABASE
+  const [user, setUser] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
+  const [showAuthScreen, setShowAuthScreen] = useState(false);
+  const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
+  const [billingReason, setBillingReason] = useState('');
+  const [usageInfo, setUsageInfo] = useState(null);
   const [isCheckingPayment, setIsCheckingPayment] = useState(false);
   const [isSubManageModalOpen, setIsSubManageModalOpen] = useState(false);
   const [isCropModalOpen, setIsCropModalOpen] = useState(false);
@@ -659,7 +629,7 @@ function MainAppContent() {
   const [localUnlocked, setLocalUnlocked] = useState(false);
   const [freeQuestionCount, setFreeQuestionCount] = useState(0);
   const [isCancelingSub, setIsCancelingSub] = useState(false);
-  const [isAuthInitializing, setIsAuthInitializing] = useState(false);
+  const [isAuthInitializing, setIsAuthInitializing] = useState(true);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState('login'); // 'login' | 'signup' | 'reset'
   const [authEmail, setAuthEmail] = useState('');
@@ -702,9 +672,10 @@ function MainAppContent() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         setUser(session.user);
+        setShowAuthScreen(false);
         loadCloudData(session.user.id);
       } else {
-        setUser(DEFAULT_GUEST_USER);
+        setUser(null);
       }
       setIsAuthInitializing(false);
     }).catch(err => {
@@ -715,9 +686,17 @@ function MainAppContent() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         setUser(session.user);
+        setShowAuthScreen(false);
         loadCloudData(session.user.id);
       } else {
-        setUser(DEFAULT_GUEST_USER);
+        setUser(null);
+        setUserProfile(null);
+        setUsageInfo(null);
+        setSavedProjects([]);
+        setConversations([]);
+        setActiveProject(null);
+        setCurrentChatId(null);
+        setMessages([]);
       }
     });
 
@@ -725,6 +704,21 @@ function MainAppContent() {
       subscription?.unsubscribe();
     };
   }, []);
+
+  const refreshUsageQuota = async () => {
+    try {
+      const info = await fetchUsageQuota();
+      setUsageInfo(info);
+    } catch (err) {
+      console.warn('Impossibile leggere quote mensili:', err.message);
+    }
+  };
+
+  const openBillingWithReason = (message = '') => {
+    setBillingReason(message);
+    setIsBillingModalOpen(true);
+    refreshUsageQuota();
+  };
 
   const loadCloudData = async (userId, userObj = null) => {
     if (!userId) return;
@@ -735,24 +729,13 @@ function MainAppContent() {
       const profile = await fetchUserProfile(userId, email, fullName);
       setUserProfile(profile);
 
-      const isLocallyUnlocked = typeof window !== 'undefined' && localStorage.getItem('minerva_unlocked_' + userId) === 'true';
-      if (isLocallyUnlocked) {
-        setLocalUnlocked(true);
-      }
-      const isTosAccepted = typeof window !== 'undefined' && Boolean(localStorage.getItem('minerva_tos_accepted_' + userId));
-      setHasAcceptedTos(isTosAccepted);
-      const freeCount = typeof window !== 'undefined' ? parseInt(localStorage.getItem('minerva_free_count_' + userId) || '0', 10) : 0;
-      setFreeQuestionCount(freeCount);
+      // Modello Freemium: anche gli utenti Free sincronizzano progetti e conversazioni nel cloud
+      const cloudProjects = await fetchProjectsFromCloud(userId);
+      setSavedProjects(cloudProjects || []);
+      const cloudChats = await fetchChatsFromCloud(userId);
+      setConversations(cloudChats || []);
 
-      if (profile?.subscription_status === 'active' || profile?.is_premium) {
-        const cloudProjects = await fetchProjectsFromCloud(userId);
-        setSavedProjects(cloudProjects || []);
-        const cloudChats = await fetchChatsFromCloud(userId);
-        setConversations(cloudChats || []);
-      } else {
-        setSavedProjects([]);
-        setConversations([]);
-      }
+      refreshUsageQuota();
     } catch (err) {
       console.warn('Errore sync dati cloud:', err);
     } finally {
@@ -1380,17 +1363,12 @@ function MainAppContent() {
             reader.onload = async () => {
               const base64Audio = reader.result;
 
-              const res = await fetch('/.netlify/functions/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  action: 'transcribe_audio',
-                  audioBase64: base64Audio,
-                  audioMimeType: mimeType
-                }),
+              const data = await callAiApi({
+                action: 'transcribe_audio',
+                audioBase64: base64Audio,
+                audioMimeType: mimeType
               });
 
-              const data = await res.json();
               if (data.text) {
                 setInputPrompt(prev => prev ? `${prev.trim()} ${data.text.trim()}` : data.text.trim());
               }
@@ -1661,33 +1639,29 @@ function MainAppContent() {
     try {
       const readyFiles = wizardUploadedFiles.filter(f => f.status === 'ready');
 
-      const response = await fetch('/.netlify/functions/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'generate_syllabus',
-          examDescription: examDescription,
-          daysTotal: daysTotal,
-          prepLevel: prepLevel,
-          examType: examType,
-          languageStyle: languageStyle,
-          sourceType: sourceType,
-          files: isOnlineSearch ? [] : readyFiles.map(f => ({
-            name: f.name,
-            size: f.size,
-            mimeType: f.mimeType,
-            text: f.extractedText,
-            wordsCount: f.wordsCount
-          })),
-        }),
+      const data = await callAiApi({
+        action: 'generate_syllabus',
+        examDescription: examDescription,
+        daysTotal: daysTotal,
+        prepLevel: prepLevel,
+        examType: examType,
+        languageStyle: languageStyle,
+        sourceType: sourceType,
+        files: isOnlineSearch ? [] : readyFiles.map(f => ({
+          name: f.name,
+          size: f.size,
+          mimeType: f.mimeType,
+          text: f.extractedText,
+          wordsCount: f.wordsCount
+        })),
       });
 
-      const data = await response.json();
       clearInterval(progressInterval);
 
-      if (!response.ok || !data.schedule || !Array.isArray(data.schedule) || data.schedule.length === 0) {
+      if (!data.schedule || !Array.isArray(data.schedule) || data.schedule.length === 0) {
         throw new Error(data.error || "Impossibile generare il piano di studio.");
       }
+      refreshUsageQuota();
 
       setLoadingProgress(100);
       setLoadingStatusText('Piano di studio creato con successo!');
@@ -1755,10 +1729,9 @@ function MainAppContent() {
       const dbData = await getProjectDataFromDB(activeProject.id);
       const fullFilesList = dbData?.files || activeProject.files || [];
 
-      const res = await fetch('/.netlify/functions/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      let lastRenderTs = 0;
+      const { reply: lessonContent } = await streamAiApi(
+        {
           isLessonGeneration: true,
           topicTitle: topic.title,
           sourceType: activeProject.sourceType,
@@ -1770,19 +1743,29 @@ function MainAppContent() {
           examDescription: activeProject.description,
           prepLevel: activeProject.prepLevel,
           languageStyle: activeProject.languageStyle
-        }),
-      });
+        },
+        {
+          onChunk: (_delta, fullText) => {
+            const now = Date.now();
+            if (wysiwygEditorRef.current && now - lastRenderTs > 140) {
+              lastRenderTs = now;
+              wysiwygEditorRef.current.innerHTML = renderMarkdownAndLatexToHtml(fullText);
+            }
+          }
+        }
+      );
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || (res.status === 504 ? 'Timeout serverless: la generazione ha richiesto troppo tempo. Riprova ora.' : `Errore server (${res.status}): generazione non riuscita.`));
-
-      const lessonContent = data.reply;
       updateTopicLessonContent(dayNum, topic.id, lessonContent);
       if (wysiwygEditorRef.current) {
         wysiwygEditorRef.current.innerHTML = renderMarkdownAndLatexToHtml(lessonContent);
       }
+      refreshUsageQuota();
     } catch (err) {
-      alert(`Errore nella generazione: ${err.message}`);
+      if (err instanceof QuotaExceededError) {
+        openBillingWithReason(err.message);
+      } else {
+        alert(`Errore nella generazione: ${err.message}`);
+      }
     } finally {
       setIsGeneratingLesson(false);
     }
@@ -1896,19 +1879,12 @@ function MainAppContent() {
     setIsRewriting(true);
 
     try {
-      const res = await fetch('/.netlify/functions/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'rewrite_selection',
-          selectedText: selectedText,
-          rewriteMode: mode,
-          fullContext: currentSelectedTopic?.title || '',
-        }),
+      const data = await callAiApi({
+        action: 'rewrite_selection',
+        selectedText: selectedText,
+        rewriteMode: mode,
+        fullContext: currentSelectedTopic?.title || '',
       });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Errore riscrittura.');
 
       const newRewrittenText = data.rewrittenText;
       const formattedHtmlReplacement = renderMarkdownAndLatexToHtml(newRewrittenText);
@@ -1926,8 +1902,13 @@ function MainAppContent() {
       }
 
       setFloatingPopup(null);
+      refreshUsageQuota();
     } catch (err) {
-      alert(`Errore: ${err.message}`);
+      if (err instanceof QuotaExceededError) {
+        openBillingWithReason(err.message);
+      } else {
+        alert(`Errore: ${err.message}`);
+      }
     } finally {
       setIsRewriting(false);
     }
@@ -1976,17 +1957,12 @@ function MainAppContent() {
             reader.onload = async () => {
               const base64Audio = reader.result;
 
-              const res = await fetch('/.netlify/functions/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  action: 'transcribe_audio',
-                  audioBase64: base64Audio,
-                  audioMimeType: mimeType
-                }),
+              const data = await callAiApi({
+                action: 'transcribe_audio',
+                audioBase64: base64Audio,
+                audioMimeType: mimeType
               });
 
-              const data = await res.json();
               if (data.text) {
                 setLessonChatInput(prev => prev ? `${prev.trim()} ${data.text.trim()}` : data.text.trim());
               }
@@ -2022,19 +1998,12 @@ function MainAppContent() {
     setIsLessonChatLoading(true);
 
     try {
-      const res = await fetch('/.netlify/functions/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'lesson_chat',
-          prompt: promptText,
-          lessonContent: currentDocText,
-          lessonChatHistory: updatedHistory,
-        }),
+      const data = await callAiApi({
+        action: 'lesson_chat',
+        prompt: promptText,
+        lessonContent: currentDocText,
+        lessonChatHistory: updatedHistory,
       });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Errore risposta tutor');
 
       if (data.hasUpdatedLesson && data.updatedLessonContent) {
         setPreviousLessonBackup(currentDocText);
@@ -2051,7 +2020,11 @@ function MainAppContent() {
       };
 
       setLessonChatMessages([...updatedHistory, aiMsg]);
+      refreshUsageQuota();
     } catch (err) {
+      if (err instanceof QuotaExceededError) {
+        openBillingWithReason(err.message);
+      }
       setLessonChatMessages([...updatedHistory, { role: 'assistant', text: `Si è verificato un errore: ${err.message}` }]);
     } finally {
       setIsLessonChatLoading(false);
@@ -2156,23 +2129,18 @@ function MainAppContent() {
       const dbData = await getProjectDataFromDB(activeProject.id);
       const files = dbData?.files || activeProject.files || [];
 
-      const res = await fetch('/.netlify/functions/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'generate_quiz',
-          topicsList: selectedTopicsForQuiz,
-          questionTypes: quizQuestionTypes,
-          numQuestions: quizNumQuestions,
-          difficulty: quizDifficulty,
-          examDescription: activeProject.description,
-          sourceType: activeProject.sourceType,
-          files: activeProject.sourceType === 'my_materials' ? files : [],
-        }),
+      const data = await callAiApi({
+        action: 'generate_quiz',
+        topicsList: selectedTopicsForQuiz,
+        questionTypes: quizQuestionTypes,
+        numQuestions: quizNumQuestions,
+        difficulty: quizDifficulty,
+        examDescription: activeProject.description,
+        sourceType: activeProject.sourceType,
+        files: activeProject.sourceType === 'my_materials' ? files : [],
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.questions || !Array.isArray(data.questions) || data.questions.length === 0) {
+      if (!data.questions || !Array.isArray(data.questions) || data.questions.length === 0) {
         throw new Error(data.error || "Impossibile generare le domande di verifica.");
       }
 
@@ -2182,8 +2150,13 @@ function MainAppContent() {
       setMatchingSelections({});
       setImmediateEvaluations({});
       setQuizStep(4);
+      refreshUsageQuota();
     } catch (err) {
-      alert(`Errore generazione verifica: ${err.message}`);
+      if (err instanceof QuotaExceededError) {
+        openBillingWithReason(err.message);
+      } else {
+        alert(`Errore generazione verifica: ${err.message}`);
+      }
       setQuizStep(2);
     }
   };
@@ -2244,27 +2217,25 @@ function MainAppContent() {
 
     setIsEvaluatingOpen(true);
     try {
-      const res = await fetch('/.netlify/functions/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'evaluate_open_answer',
-          question: q.question,
-          idealAnswerCriteria: q.idealAnswerCriteria,
-          studentAnswer: studentAnswer,
-          topicTitle: q.topicTitle,
-        }),
+      const data = await callAiApi({
+        action: 'evaluate_open_answer',
+        question: q.question,
+        idealAnswerCriteria: q.idealAnswerCriteria,
+        studentAnswer: studentAnswer,
+        topicTitle: q.topicTitle,
       });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Errore valutazione.");
 
       setImmediateEvaluations(prev => ({
         ...prev,
         [q.id]: data
       }));
+      refreshUsageQuota();
     } catch (err) {
-      alert(`Errore valutazione risposta: ${err.message}`);
+      if (err instanceof QuotaExceededError) {
+        openBillingWithReason(err.message);
+      } else {
+        alert(`Errore valutazione risposta: ${err.message}`);
+      }
     } finally {
       setIsEvaluatingOpen(false);
     }
@@ -2492,33 +2463,26 @@ function MainAppContent() {
     }
 
     try {
-      const res = await fetch('/.netlify/functions/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      // Streaming SSE in tempo reale (Gemini Flash)
+      setMessages([...newMessages, { role: 'assistant', text: '' }]);
+
+      const { reply } = await streamAiApi(
+        {
           prompt: prompt,
           history: messages,
           files: filesPayload,
-        }),
-      });
+        },
+        {
+          onChunk: (_delta, fullText) => {
+            setMessages([...newMessages, { role: 'assistant', text: fullText }]);
+          }
+        }
+      );
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Errore di risposta');
-
-      const aiMessage = { role: 'assistant', text: data.reply };
+      const aiMessage = { role: 'assistant', text: reply || 'Nessuna risposta generata.' };
       const updatedMessages = [...newMessages, aiMessage];
       setMessages(updatedMessages);
-
-      if (!isSubscribed) {
-        const nextCount = freeQuestionCount + 1;
-        setFreeQuestionCount(nextCount);
-        if (user?.id && typeof window !== 'undefined') {
-          localStorage.setItem('minerva_free_count_' + user.id, String(nextCount));
-        }
-        setTimeout(() => {
-          setIsPaywallModalOpen(true);
-        }, 1200);
-      }
+      refreshUsageQuota();
 
       let chatId = currentChatId;
       if (!chatId) {
@@ -2526,16 +2490,19 @@ function MainAppContent() {
         setCurrentChatId(chatId);
         const title = prompt ? (prompt.slice(0, 28) + (prompt.length > 28 ? '...' : '')) : (filesPayload[0]?.name || 'Nuova sessione');
         setConversations([{ id: chatId, title, messages: updatedMessages }, ...(conversations || [])]);
-      if (user) {
-        saveChatToCloud(user.id, { id: chatId, title, messages: updatedMessages });
-      }
+        if (user) {
+          saveChatToCloud(user.id, { id: chatId, title, messages: updatedMessages });
+        }
       } else {
         setConversations((conversations || []).map(c => c.id === chatId ? { ...c, messages: updatedMessages } : c));
-      if (user) {
-        saveChatToCloud(user.id, { id: chatId, title: conversations.find(c => c.id === chatId)?.title || 'Conversazione', messages: updatedMessages });
-      }
+        if (user) {
+          saveChatToCloud(user.id, { id: chatId, title: conversations.find(c => c.id === chatId)?.title || 'Conversazione', messages: updatedMessages });
+        }
       }
     } catch (err) {
+      if (err instanceof QuotaExceededError) {
+        openBillingWithReason(err.message);
+      }
       setMessages([...newMessages, { role: 'assistant', text: `Si è verificato un errore: ${err.message}` }]);
     } finally {
       setIsLoading(false);
@@ -2571,8 +2538,23 @@ function MainAppContent() {
   const currentQuizQ = quizQuestions[currentQuestionIndex];
   const readiness = calculateOverallReadiness();
 
-  // CONTROLLO ABBONAMENTO OBBLIGATORIO (PAYWALL STRIPE 14,99 €/MESE) - BYPASS DIRETTO AI
+  // STATO FREEMIUM / PRO (Le quote sono verificate lato server; il piano Free accede a tutta la piattaforma)
+  const isPro = Boolean(
+    userProfile?.subscription_status === 'active' ||
+    userProfile?.is_premium ||
+    usageInfo?.pro
+  );
   const isSubscribed = true;
+
+  const handleSaveConceptMaps = (nextMaps) => {
+    if (!activeProject) return;
+    const updatedProject = { ...activeProject, conceptMaps: nextMaps };
+    setActiveProject(updatedProject);
+    setSavedProjects(prev => (prev || []).map(p => p.id === activeProject.id ? updatedProject : p));
+    if (user?.id) {
+      saveProjectToCloud(user.id, updatedProject);
+    }
+  };
 
   const handleAcceptTos = async () => {
     if (!tosChecked || !recessoChecked) return;
@@ -2595,7 +2577,7 @@ function MainAppContent() {
     setSecretCodeSuccess('');
   };
 
-    const stripeCheckoutUrl = `${STRIPE_PAYMENT_URL}?prefilled_email=${encodeURIComponent(user?.email || '')}&client_reference_id=${user?.id || ''}`;
+  const stripeCheckoutUrl = '#billing';
 
   if (!isSubscribed && currentView !== 'chat') {
     return (
@@ -2784,10 +2766,37 @@ function MainAppContent() {
     );
   }
 
-  // Schermata di blocco login disattivata per accesso diretto all'AI
-  if (false && !user) {
+  // Landing Page pubblica commerciale per utenti non autenticati
+  if (!user && !showAuthScreen) {
+    return (
+      <LandingPage
+        theme={theme}
+        toggleTheme={toggleTheme}
+        onOpenAuth={(mode = 'login') => {
+          setAuthMode(mode);
+          setAuthError('');
+          setAuthSuccess('');
+          setShowAuthScreen(true);
+        }}
+        onOpenLegal={(tab = 'terms') => {
+          setLegalModalTab(tab);
+          setLegalModalOpen(true);
+        }}
+      />
+    );
+  }
+
+  // Schermata di Login / Registrazione Supabase
+  if (!user) {
     return (
       <div className="flex min-h-screen w-screen items-center justify-center bg-geminiDark text-gray-100 p-4 sm:p-6 selection:bg-blue-600 selection:text-white relative">
+        {/* Pulsante ritorno alla Landing Page */}
+        <button
+          onClick={() => setShowAuthScreen(false)}
+          className="absolute top-6 left-6 px-3.5 py-2 rounded-2xl bg-geminiDarkSecondary border border-geminiBorder text-xs font-semibold text-gray-300 hover:text-white hover:bg-geminiHover transition shadow-lg flex items-center gap-1.5"
+        >
+          <ArrowLeft size={14} /> Torna alla Home
+        </button>
         {/* Toggle Tema Notte / Giorno */}
         <button
           onClick={toggleTheme}
@@ -4508,13 +4517,46 @@ function MainAppContent() {
         )}
 
         {/* ------------------------------------------------------------- */}
+        {/* VISTA MAPPE CONCETTUALI INTERATTIVE (ALGOR+)                  */}
+        {/* ------------------------------------------------------------- */}
+        {currentView === 'concept_maps' && activeProject && (
+          <main className={`flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-6xl mx-auto w-full space-y-5 transition ${theme === 'light' ? 'text-slate-800' : 'text-gray-200'}`}>
+            <div className="flex items-center justify-between pb-2 border-b border-geminiBorder/40">
+              <button
+                onClick={() => setCurrentView('project')}
+                className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white transition"
+              >
+                <ArrowLeft size={14} />
+                <span>Torna al Progetto</span>
+              </button>
+              <button
+                onClick={() => openBillingWithReason('')}
+                className="text-xs bg-blue-600/15 hover:bg-blue-600/25 text-blue-400 border border-blue-500/30 px-3 py-1.5 rounded-full flex items-center gap-1.5 font-semibold transition"
+              >
+                <Zap size={13} />
+                <span>{isPro ? 'Piano Pro' : 'Piano Free · Upgrade'}</span>
+              </button>
+            </div>
+            <ConceptMapView
+              theme={theme}
+              activeProject={activeProject}
+              defaultTopicTitle={currentSelectedTopic?.title || activeProject?.description || ''}
+              defaultLessonContent={currentSelectedTopic?.lesson || ''}
+              maps={activeProject?.conceptMaps || []}
+              onSaveMaps={handleSaveConceptMaps}
+              onQuotaExceeded={(msg) => openBillingWithReason(msg)}
+            />
+          </main>
+        )}
+
+        {/* ------------------------------------------------------------- */}
         {/* VISTA 2: PAGINA PROGETTO CON "GRADO DI PREPARAZIONE GENERALE" */}
         {/* ------------------------------------------------------------- */}
         {currentView === 'project' && activeProject && (
           <main className={`flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-5xl mx-auto w-full space-y-6 transition ${theme === 'light' ? 'text-slate-800' : 'text-gray-200'}`}>
 
             
-            <div className="flex items-center justify-between pb-2 border-b border-geminiBorder/40">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-geminiBorder/40">
               <button 
                 onClick={() => setCurrentView('chat')}
                 className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white transition"
@@ -4522,10 +4564,22 @@ function MainAppContent() {
                 <ArrowLeft size={14} />
                 <span>Torna alla Chat</span>
               </button>
-              <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded-full flex items-center gap-1.5 font-medium">
-                <ShieldCheck size={13} />
-                <span>Guida attiva</span>
-              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentView('concept_maps')}
+                  className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-1.5 rounded-full flex items-center gap-1.5 font-semibold shadow-sm transition"
+                >
+                  <Network size={13} />
+                  <span>Mappe Concettuali ({(activeProject?.conceptMaps || []).length})</span>
+                </button>
+                <button
+                  onClick={() => openBillingWithReason('')}
+                  className="text-xs bg-blue-600/15 hover:bg-blue-600/25 text-blue-400 border border-blue-500/30 px-3 py-1.5 rounded-full flex items-center gap-1.5 font-semibold transition"
+                >
+                  <Zap size={13} />
+                  <span>{isPro ? 'Piano Pro' : 'Passa a Pro'}</span>
+                </button>
+              </div>
             </div>
 
             {/* CARD PRINCIPALE ESAME */}
@@ -6114,13 +6168,14 @@ function MainAppContent() {
                   )}
                 </button>
               ) : (
-                <a
-                  href={`${STRIPE_PAYMENT_URL}?prefilled_email=${encodeURIComponent(user?.email || '')}&client_reference_id=${user?.id || ''}`}
+                <button
+                  type="button"
+                  onClick={() => { setIsSubManageModalOpen(false); openBillingWithReason(''); }}
                   className="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-2xl text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30"
                 >
                   <Sparkles size={15} />
                   <span>Attiva o Rinnova Abbonamento (14,99 €/m)</span>
-                </a>
+                </button>
               )}
 
               <p className={`text-[10px] text-center ${theme === 'light' ? 'text-slate-400' : 'text-gray-500'}`}>
@@ -6317,6 +6372,14 @@ function MainAppContent() {
           </div>
         </div>
       )}
+
+      <BillingModal
+        isOpen={isBillingModalOpen}
+        onClose={() => { setIsBillingModalOpen(false); setBillingReason(''); }}
+        isPro={isPro}
+        usageInfo={usageInfo}
+        reasonMessage={billingReason}
+      />
 
       </div>
     </div>

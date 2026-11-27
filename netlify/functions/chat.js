@@ -1,200 +1,248 @@
-import OpenAI, { toFile } from 'openai';
+// Netlify Function v2 - Endpoint AI unificato con Auth JWT, Quote Freemium/Pro,
+// Routing Gemini Flash (leggero) / Gemini Pro (pesante), Chunking intelligente e Streaming SSE.
 
-// Helper per compattare i documenti ed evitare sforamenti di quota
-function createSmartFileDigest(rawText, maxChars) {
-  if (!rawText) return '';
-  const clean = rawText.replace(/\r\n/g, '\n').replace(/\s+/g, ' ').trim();
-  if (clean.length <= maxChars) return clean;
+import {
+  verifySupabaseUser,
+  getOrCreateProfile,
+  getQuotaBucketForAction,
+  checkQuota,
+  incrementUsage,
+} from './_lib/authAndQuota.js';
+import {
+  generateAI,
+  streamAIResponse,
+  transcribeAudio,
+  extractRelevantChunks,
+  createSmartFileDigest,
+} from './_lib/aiProvider.js';
 
-  const headBudget = Math.floor(maxChars * 0.7);
-  const tailBudget = Math.floor(maxChars * 0.3);
-  const head = clean.slice(0, headBudget);
-  const tail = clean.slice(-tailBudget);
-  return `${head}\n[... SEZIONI INTERMEDIE ...]\n${tail}`;
+function jsonResponse(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+  });
 }
 
-// Chiamata sicura con fallback automatico su gpt-4o-mini
-async function callOpenAIWithFallback(openai, primaryModel, params, customFallbacks = null) {
-  const modelsToTry = [primaryModel];
-  const fallbacks = customFallbacks || ['gpt-4o', 'gpt-4o-mini'];
-  for (const fb of fallbacks) {
-    if (!modelsToTry.includes(fb)) {
-      modelsToTry.push(fb);
-    }
+function safeParseJson(raw, fallback) {
+  if (!raw) return fallback;
+  try {
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    return JSON.parse(cleaned);
+  } catch {
+    return fallback;
   }
-
-  let lastError = null;
-  for (const modelName of modelsToTry) {
-    try {
-      const response = await openai.chat.completions.create({
-        ...params,
-        model: modelName,
-      });
-      return { response, modelUsed: modelName };
-    } catch (err) {
-      console.warn(`Tentativo con ${modelName} fallito (${err.status || err.message}), fallback...`);
-      lastError = err;
-    }
-  }
-  throw lastError;
 }
 
-export const handler = async (event) => {
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: 'Method Not Allowed' };
+export default async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204 });
+  }
+
+  if (req.method !== 'POST') {
+    return jsonResponse({ error: 'Method Not Allowed' }, 405);
+  }
+
+  // 1. Verifica autenticazione Supabase JWT
+  const auth = await verifySupabaseUser(req);
+  if (auth.error) {
+    return jsonResponse({ error: auth.error, code: 'UNAUTHORIZED' }, auth.status || 401);
   }
 
   let payload;
   try {
-    payload = JSON.parse(event.body || '{}');
-  } catch (parseErr) {
-    return {
-      statusCode: 400,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error: 'Payload JSON non valido.' }),
-    };
+    payload = await req.json();
+  } catch {
+    return jsonResponse({ error: 'Payload JSON non valido.' }, 400);
   }
 
+  const {
+    action,
+    stream = false,
+    prompt,
+    history,
+    file,
+    files,
+    sourceType,
+    isLessonGeneration,
+    topicTitle,
+    examDescription,
+    daysTotal,
+    prepLevel,
+    languageStyle,
+    selectedText,
+    rewriteMode,
+    fullContext,
+    lessonContent,
+    lessonChatHistory,
+    topicsList,
+    questionTypes,
+    numQuestions,
+    difficulty,
+    question,
+    idealAnswerCriteria,
+    studentAnswer,
+    audioBase64,
+    audioMimeType,
+    mapStyle,
+  } = payload;
+
   try {
-    const { 
-      action,
-      prompt, 
-      history, 
-      file,
-      files, 
-      sourceType, 
-      isLessonGeneration, 
-      topicTitle,
-      examDescription,
-      daysTotal,
-      prepLevel,
-      languageStyle,
-      // Parametri per riscrittura selezione
-      selectedText,
-      rewriteMode,
-      fullContext,
-      // Parametri per chatbot dedicato con modifica diretta
-      lessonContent,
-      lessonChatHistory,
-      // Parametri per generazione quiz / verifica competenze
-      topicsList,
-      questionTypes,
-      numQuestions,
-      difficulty,
-      // Parametri per valutazione risposte aperte
-      question,
-      idealAnswerCriteria,
-      studentAnswer,
-      lessonContext,
-      // Parametri per trascrizione vocale con OpenAI Whisper
-      audioBase64,
-      audioMimeType
-    } = payload;
+    // 2. Carica profilo e verifica quote mensili
+    const profile = await getOrCreateProfile(auth.user);
 
-    const apiKey = process.env.OPENAI_API_KEY;
-
-    if (!apiKey) {
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ error: 'Chiave OPENAI_API_KEY non configurata su Netlify.' }),
-      };
+    if (action === 'get_usage') {
+      const status = checkQuota(profile, null);
+      return jsonResponse({
+        pro: status.pro,
+        usage: status.usage,
+        limits: status.limits,
+        planType: profile.plan_type || (status.pro ? 'pro_monthly_14.99' : 'free'),
+        subscriptionStatus: profile.subscription_status || (status.pro ? 'active' : 'free'),
+      });
     }
 
-    const openai = new OpenAI({ apiKey });
-    const allFiles = Array.isArray(files) ? files : (file ? [file] : []);
+    const bucket = getQuotaBucketForAction(action, isLessonGeneration);
+    const quota = checkQuota(profile, bucket);
+    if (!quota.allowed) {
+      return jsonResponse(
+        {
+          error: quota.error,
+          code: 'QUOTA_EXCEEDED',
+          bucket: quota.bucket,
+          pro: quota.pro,
+          usage: quota.usage,
+          limits: quota.limits,
+        },
+        402
+      );
+    }
+
+    const allFiles = Array.isArray(files) ? files : file ? [file] : [];
 
     // -------------------------------------------------------------
-    // AZIONE 1: TRASCRIZIONE VOCALE AVANZATA CON OPENAI WHISPER
+    // AZIONE 1: TRASCRIZIONE VOCALE (GEMINI FLASH -> FALLBACK WHISPER)
     // -------------------------------------------------------------
     if (action === 'transcribe_audio') {
       if (!audioBase64) {
-        return {
-          statusCode: 400,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ error: 'Nessun file audio ricevuto.' }),
-        };
+        return jsonResponse({ error: 'Nessun file audio ricevuto.' }, 400);
       }
-
-      try {
-        const rawBase64 = audioBase64.includes('base64,') 
-          ? audioBase64.split('base64,')[1] 
-          : audioBase64;
-        const buffer = Buffer.from(rawBase64, 'base64');
-        const mime = (audioMimeType || 'audio/webm').toLowerCase();
-        const ext = mime.includes('mp4') || mime.includes('m4a')
-          ? 'mp4'
-          : mime.includes('mpeg') || mime.includes('mp3')
-            ? 'mp3'
-            : mime.includes('ogg')
-              ? 'ogg'
-              : mime.includes('wav')
-                ? 'wav'
-                : 'webm';
-        const audioFilename = `audio.${ext}`;
-        
-        let audioFileObj;
-        if (typeof toFile === 'function') {
-          audioFileObj = await toFile(buffer, audioFilename, { type: mime });
-        } else if (OpenAI.toFile) {
-          audioFileObj = await OpenAI.toFile(buffer, audioFilename, { type: mime });
-        } else {
-          // Fallback con buffer nominato
-          audioFileObj = {
-            buffer,
-            name: audioFilename,
-            type: mime
-          };
-        }
-
-        const transcription = await openai.audio.transcriptions.create({
-          file: audioFileObj,
-          model: 'whisper-1',
-          language: 'it',
-          temperature: 0.2
-        });
-
-        return {
-          statusCode: 200,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: transcription.text || '' }),
-        };
-      } catch (err) {
-        console.error("Errore trascrizione Whisper:", err);
-        return {
-          statusCode: 500,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ error: `Errore nella dettatura vocale Whisper: ${err.message}` }),
-        };
-      }
+      const result = await transcribeAudio({ audioBase64, audioMimeType });
+      return jsonResponse({ text: result.text || '', modelUsed: result.modelUsed });
     }
 
     // -------------------------------------------------------------
-    // AZIONE 2: GENERAZIONE VERIFICA COMPETENZE (QUIZ MULTI-TIPOLOGIA)
+    // AZIONE 2: GENERAZIONE MAPPA CONCETTUALE INTERATTIVA (ALGOR+ - GEMINI FLASH)
     // -------------------------------------------------------------
-    if (action === 'generate_quiz') {
-      const targetCount = Math.max(3, Math.min(Number(numQuestions) || 10, 80));
-      const types = Array.isArray(questionTypes) && questionTypes.length > 0 
-        ? questionTypes 
-        : ['scelta_multipla', 'completamento', 'accoppiamento', 'aperta'];
-      
-      const topics = Array.isArray(topicsList) && topicsList.length > 0
-        ? topicsList
-        : ['Argomenti Generali'];
+    if (action === 'generate_concept_map') {
+      const focusTitle = (topicTitle || prompt || examDescription || 'Mappa Concettuale').trim();
+      const sourceText = (lessonContent || '').trim() ||
+        extractRelevantChunks(allFiles, `${focusTitle} ${examDescription || ''}`, 28000);
 
-      let sourcesContext = '';
-      allFiles.forEach((f, idx) => {
-        const text = (f.text || f.extractedText || '').trim();
-        if (text) {
-          sourcesContext += `\n[Doc ${idx + 1}: ${f.name}]: ${text.slice(0, 8000)}\n`;
-        }
+      const mapSystemPrompt = `Sei un esperto di didattica visuale e mappe concettuali (stile Algor Education) per studenti delle scuole superiori e dell'università.
+Crea una mappa concettuale gerarchica, chiara, sintetica e logicamente strutturata sull'argomento richiesto.
+
+REGOLE DI STRUTTURA JSON OBBLIGATORIE:
+Restituisci ESCLUSIVAMENTE un JSON valido con questa struttura esatta:
+{
+  "title": "Titolo della mappa",
+  "layout": "${mapStyle || 'tree'}",
+  "nodes": [
+    {
+      "id": "root",
+      "label": "Concetto Centrale (max 5-6 parole)",
+      "summary": "Definizione chiara e completa in 1-2 frasi (max 220 caratteri)",
+      "level": 0,
+      "parentId": null,
+      "color": "blue"
+    },
+    {
+      "id": "n1",
+      "label": "Ramo Principale 1",
+      "summary": "Spiegazione sintetica ma precisa del sottotema",
+      "level": 1,
+      "parentId": "root",
+      "color": "emerald",
+      "edgeLabel": "si divide in / comprende"
+    }
+  ]
+}
+
+VINCOLI DIDATTICI:
+1. Genera tra 10 e 18 nodi totali distribuiti su 3 livelli (level 0 = 1 nodo centrale "root", level 1 = 3-5 rami principali, level 2 = 2-3 sotto-nodi per ogni ramo principale).
+2. Ogni nodo figlio DEVE avere "parentId" uguale all'"id" del nodo genitore esistente.
+3. Usa etichette ("label") brevi, memorabili e scansionabili (max 45 caratteri); metti i dettagli, date, formule o definizioni nel campo "summary".
+4. Usa "color" scegliendo tra: "blue", "emerald", "violet", "amber", "rose", "cyan" (un colore coerente per ciascun ramo principale e i suoi figli).
+5. Usa "edgeLabel" breve (1-3 parole) per descrivere il nesso logico tra genitore e figlio (es. "causa", "include", "esempio", "fase 1", "porta a").`;
+
+      const mapUserPrompt = `ARGOMENTO DELLA MAPPA: "${focusTitle}"
+MATERIA/CONTESTO: "${examDescription || 'Studio generale'}"
+${sourceText ? `\nMATERIALE DI RIFERIMENTO:\n${sourceText.slice(0, 26000)}` : '\nGenera la mappa concettuale completa attingendo alle conoscenze accademiche consolidate.'}
+
+Restituisci SOLO il JSON valido della mappa concettuale.`;
+
+      const { text, modelUsed } = await generateAI({
+        tier: 'light',
+        systemPrompt: mapSystemPrompt,
+        messages: [{ role: 'user', content: mapUserPrompt }],
+        temperature: 0.25,
+        maxTokens: 3200,
+        jsonMode: true,
       });
 
-      const quizSystemPrompt = `Sei un professore universitario e tutor accademico esperto ed empatico.
+      const parsed = safeParseJson(text, null);
+      if (!parsed || !Array.isArray(parsed.nodes) || parsed.nodes.length === 0) {
+        return jsonResponse({ error: 'Impossibile generare la mappa concettuale. Riprova.' }, 500);
+      }
+
+      // Normalizza nodi garantendo sempre un nodo root valido
+      const nodes = parsed.nodes.map((n, idx) => ({
+        id: String(n.id || `n_${idx}`),
+        label: String(n.label || 'Concetto').slice(0, 80),
+        summary: String(n.summary || '').slice(0, 400),
+        level: Number.isFinite(Number(n.level)) ? Number(n.level) : idx === 0 ? 0 : 1,
+        parentId: idx === 0 ? null : n.parentId ? String(n.parentId) : 'root',
+        color: ['blue', 'emerald', 'violet', 'amber', 'rose', 'cyan'].includes(n.color) ? n.color : 'blue',
+        edgeLabel: n.edgeLabel ? String(n.edgeLabel).slice(0, 35) : '',
+      }));
+
+      await incrementUsage(profile, bucket);
+      return jsonResponse({
+        map: {
+          id: `map_${Date.now()}`,
+          title: parsed.title || focusTitle,
+          layout: parsed.layout || mapStyle || 'tree',
+          nodes,
+          createdAt: new Date().toISOString(),
+        },
+        modelUsed,
+      });
+    }
+
+    // -------------------------------------------------------------
+    // AZIONE 3: GENERAZIONE VERIFICA COMPETENZE / QUIZ (GEMINI PRO)
+    // -------------------------------------------------------------
+    if (action === 'generate_quiz') {
+      const targetCount = Math.max(3, Math.min(Number(numQuestions) || 10, 50));
+      const types =
+        Array.isArray(questionTypes) && questionTypes.length > 0
+          ? questionTypes
+          : ['scelta_multipla', 'completamento', 'accoppiamento', 'aperta'];
+
+      const topics =
+        Array.isArray(topicsList) && topicsList.length > 0 ? topicsList : ['Argomenti Generali'];
+
+      const sourcesContext = extractRelevantChunks(
+        allFiles,
+        `${examDescription || ''} ${topics.join(' ')}`,
+        28000
+      );
+
+      const quizSystemPrompt = `Sei un docente esperto (scuola superiore e università) ed empatico.
 Il tuo compito è formulare una prova di verifica delle competenze composta da esattamente ${targetCount} domande.
 
 TIPOLOGIE RICHIESTE: ${types.join(', ')}
 LIVELLO DI DIFFICOLTÀ: ${difficulty || 'automatico'}
-MATERIA: "${examDescription || 'Esame Universitario'}"
+MATERIA: "${examDescription || 'Esame / Verifica'}"
 ARGOMENTI DA COPRIRE: ${topics.join('; ')}
 
 FORMATO DI RISPOSTA OBBLIGATORIO (JSON con chiave "questions"):
@@ -203,263 +251,214 @@ FORMATO DI RISPOSTA OBBLIGATORIO (JSON con chiave "questions"):
     {
       "id": "q1",
       "type": "scelta_multipla" | "completamento" | "accoppiamento" | "aperta",
-      "question": "Testo chiaro, specifico e accademico della domanda...",
-      "options": ["Opzione A...", "Opzione B...", "Opzione C...", "Opzione D..."], // Solo se type === 'scelta_multipla'
-      "correctAnswer": "Termine o risposta corretta sintetica", // Per completamento o scelta multipla
-      "alternativeAnswers": ["bicarbonato", "HCO3-", "concentrazione bicarbonato"], // Varianti sinonime accettate per completamento
+      "question": "Testo chiaro e specifico della domanda...",
+      "options": ["Opzione A...", "Opzione B...", "Opzione C...", "Opzione D..."],
+      "correctAnswer": "Risposta corretta",
+      "alternativeAnswers": ["sinonimo 1", "variante 2"],
       "matchingPairs": [
-        { "left": "Concetto 1", "right": "Definizione/Associazione 1" },
-        { "left": "Concetto 2", "right": "Definizione/Associazione 2" },
-        { "left": "Concetto 3", "right": "Definizione/Associazione 3" }
-      ], // Solo se type === 'accoppiamento'
-      "idealAnswerCriteria": "Punti chiave che una risposta aperta deve argomentare", // Solo se type === 'aperta'
-      "explanation": "Spiegazione didattica, chiara e incoraggiante",
+        { "left": "Concetto 1", "right": "Definizione 1" },
+        { "left": "Concetto 2", "right": "Definizione 2" },
+        { "left": "Concetto 3", "right": "Definizione 3" }
+      ],
+      "idealAnswerCriteria": "Punti chiave che una risposta aperta deve argomentare",
+      "explanation": "Spiegazione didattica chiara e incoraggiante",
       "topicTitle": "Titolo argomento specifico",
       "difficulty": "Facile" | "Intermedia" | "Difficile"
     }
   ]
 }
 
-REGOLE ESSENZIALI:
-1. Per i completamenti, formula la domanda con una frase dove la parola mancante sia un termine chiave preciso (es. "bicarbonato", "insulina", "mitocondrio"). Includi sempre varianti e sinonimi in "alternativeAnswers".
+REGOLE:
+1. Per i completamenti, formula una frase dove manca un termine chiave preciso e includi sinonimi in "alternativeAnswers".
 2. Distribuisci le domande equamente tra gli argomenti indicati.
-3. Restituisci ESCLUSIVAMENTE il JSON valido.`;
+3. Restituisci ESCLUSIVAMENTE JSON valido.`;
 
-      const quizUserPrompt = `Genera la prova di verifica di ${targetCount} domande per gli argomenti selezionati:
+      const quizUserPrompt = `Genera la prova di verifica di ${targetCount} domande per gli argomenti:
 ${topics.map((t, i) => `${i + 1}. ${t}`).join('\n')}
+${sourcesContext ? `\nFONTI DELLO STUDENTE:\n${sourcesContext}` : ''}`;
 
-${sourcesContext ? `FONTI DELLO STUDENTE:\n${sourcesContext.slice(0, 25000)}` : ''}`;
-
-      const { response: completion } = await callOpenAIWithFallback(openai, 'gpt-4o', {
-        messages: [
-          { role: 'system', content: quizSystemPrompt },
-          { role: 'user', content: quizUserPrompt }
-        ],
+      const { text, modelUsed } = await generateAI({
+        tier: targetCount >= 12 ? 'heavy' : 'light',
+        systemPrompt: quizSystemPrompt,
+        messages: [{ role: 'user', content: quizUserPrompt }],
         temperature: 0.3,
-        response_format: { type: 'json_object' }
+        maxTokens: 6000,
+        jsonMode: true,
       });
 
-      let parsed = { questions: [] };
-      try {
-        parsed = JSON.parse(completion.choices[0]?.message?.content || '{}');
-        if (parsed && Array.isArray(parsed.questions)) {
-          parsed.questions = parsed.questions.map((q, idx) => ({
-            ...q,
-            id: q.id || `q_${idx + 1}`,
-          }));
-        }
-      } catch (err) {
-        console.error("Errore parsing JSON quiz:", err);
-      }
+      const parsed = safeParseJson(text, { questions: [] });
+      const questions = Array.isArray(parsed?.questions)
+        ? parsed.questions.map((q, idx) => ({ ...q, id: q.id || `q_${idx + 1}` }))
+        : [];
 
-      return {
-        statusCode: 200,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          questions: Array.isArray(parsed.questions) ? parsed.questions : []
-        }),
-      };
+      await incrementUsage(profile, bucket);
+      return jsonResponse({ questions, modelUsed });
     }
 
     // -------------------------------------------------------------
-    // AZIONE 3: VALUTAZIONE MODULARE E COSTRUTTIVA DI UNA RISPOSTA APERTA
+    // AZIONE 4: VALUTAZIONE RISPOSTA APERTA IN TRENTESIMI (GEMINI PRO)
     // -------------------------------------------------------------
     if (action === 'evaluate_open_answer') {
-      const evaluationSystemPrompt = `Sei un tutor accademico e mentore didattico empatico, costruttivo e incoraggiante.
-Il tuo obiettivo è aiutare lo studente a consolidare la sua preparazione universitaria, valorizzando ciò che ha compreso e spiegando con gentilezza e chiarezza cosa andrebbe integrato o corretto.
+      const evaluationSystemPrompt = `Sei un tutor accademico empatico, costruttivo e rigoroso.
+Valuta la risposta aperta dello studente in trentesimi (0-30), valorizzando i concetti compresi e indicando con chiarezza cosa integrare.
 
-REGOLE FONDAMENTALI DI TONO E VALUTAZIONE:
-1. TONO: Gentile, costruttivo, motivante e pedagogico. Non usare MAI toni duri, offensivi, svalutanti o severi. Lo studente sta imparando!
-2. VALUTAZIONE MODULARE IN TRENTESIMI (da 0 a 30):
-   - 28-30: Risposta eccellente, ricca e ben argomentata.
-   - 24-27: Risposta molto buona (i concetti principali ci sono, manca solo qualche dettaglio o approfondimento).
-   - 18-23: Risposta sufficiente (ha centrato l'argomento di base o parte dei meccanismi, con alcune lacune).
-   - 10-17: Risposta parziale (ha toccato concetti correlati o parziali, utile come punto di partenza ma incompleta per la domanda).
-   - 0-9: Risposta non attinente o lasciata vuota.
-3. VALORIZZA I CONCETTI CHIAVE: Se lo studente menziona termini o principi giusti, assegna un punteggio parziale adeguato senza bocciare a 0/30.
-4. "isCorrect": imposta su true se score >= 18, altrimenti false.
+SCALA DI VALUTAZIONE:
+- 28-30: Risposta eccellente, completa e ben argomentata.
+- 24-27: Molto buona (concetti chiave presenti, mancano solo dettagli secondari).
+- 18-23: Sufficiente (concetti di base centrati, con alcune lacune).
+- 10-17: Parziale (spunti corretti ma incompleta).
+- 0-9: Non attinente o vuota.
+- "isCorrect": true se score >= 18, altrimenti false.
 
 FORMATO JSON OBBLIGATORIO:
 {
   "score": 24,
   "maxScore": 30,
-  "isCorrect": true | false,
-  "feedback": "Spiegazione chiara, incoraggiante e didattica sul perché della valutazione...",
-  "strengths": ["Cosa hai individuato correttamente o espresso bene"],
-  "missedPoints": ["Suggerimenti per completare o arricchire la risposta"]
+  "isCorrect": true,
+  "feedback": "Spiegazione chiara e incoraggiante...",
+  "strengths": ["Punti ben espressi"],
+  "missedPoints": ["Aspetti da integrare"]
 }`;
 
-      const evaluationUserPrompt = `DOMANDA D'ESAME: "${question}"
+      const evaluationUserPrompt = `DOMANDA: "${question}"
 ARGOMENTO: "${topicTitle || ''}"
-CRITERI DI CORRETTEZZA ATTESI: "${idealAnswerCriteria || ''}"
+CRITERI ATTESI: "${idealAnswerCriteria || ''}"
 
-RISPOSTA FORNITA DALLO STUDENTE:
+RISPOSTA DELLO STUDENTE:
 """
 ${studentAnswer || '[Nessuna risposta]'}
-"""
+"""`;
 
-Fornisci la valutazione didattica e incoraggiante nel formato JSON.`;
-
-      const { response: completion } = await callOpenAIWithFallback(openai, 'gpt-4o', {
-        messages: [
-          { role: 'system', content: evaluationSystemPrompt },
-          { role: 'user', content: evaluationUserPrompt }
-        ],
+      const { text, modelUsed } = await generateAI({
+        tier: 'heavy',
+        systemPrompt: evaluationSystemPrompt,
+        messages: [{ role: 'user', content: evaluationUserPrompt }],
         temperature: 0.2,
-        response_format: { type: 'json_object' }
+        maxTokens: 1500,
+        jsonMode: true,
       });
 
-      let evaluationResult = {
+      const evaluationResult = safeParseJson(text, {
         score: 18,
         maxScore: 30,
         isCorrect: true,
-        feedback: "Valutazione completata.",
+        feedback: 'Valutazione completata.',
         strengths: [],
-        missedPoints: []
-      };
+        missedPoints: [],
+      });
 
-      try {
-        evaluationResult = JSON.parse(completion.choices[0]?.message?.content || '{}');
-      } catch (e) {
-        console.error("Errore parsing evaluation:", e);
-      }
-
-      return {
-        statusCode: 200,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(evaluationResult),
-      };
+      await incrementUsage(profile, bucket);
+      return jsonResponse({ ...evaluationResult, modelUsed });
     }
 
     // -------------------------------------------------------------
-    // AZIONE 4: RISCRITTURA RAPIDA DI UNA PORZIONE DI TESTO SELEZIONATA
+    // AZIONE 5: RISCRITTURA RAPIDA SELEZIONE (GEMINI FLASH)
     // -------------------------------------------------------------
     if (action === 'rewrite_selection') {
       const textToRewrite = selectedText || '';
       if (!textToRewrite.trim()) {
-        return {
-          statusCode: 400,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ error: 'Nessun testo selezionato da riscrivere.' }),
-        };
+        return jsonResponse({ error: 'Nessun testo selezionato da riscrivere.' }, 400);
       }
 
-      let instruction = '';
+      let instruction =
+        'Riscrivi questo testo in modo molto più chiaro, scorrevole, immediato e logico, preservando il rigore concettuale.';
       if (rewriteMode === 'riassumi') {
-        instruction = 'Riassumi e sintetizza in modo conciso e schematico questo passaggio selezionato, mantenendo i concetti chiave evidenziati in grassetto (**termine**).';
+        instruction =
+          'Riassumi e sintetizza in modo conciso e schematico questo passaggio, evidenziando i concetti chiave in grassetto (**termine**).';
       } else if (rewriteMode === 'approfondisci') {
-        instruction = 'Approfondisci questo passaggio selezionato fornendo dettagli rigorosi, spiegazioni dei meccanismi, terminologia specialistica, definizioni ed eventuali formule LaTeX ($...$) o tabelle.';
-      } else {
-        instruction = 'Riscrivi questo testo in modo molto più chiaro, scorrevole, immediato e logico, eliminando complessità inutili ma preservando tutto il rigore concettuale.';
+        instruction =
+          'Approfondisci questo passaggio fornendo dettagli rigorosi, spiegazioni dei meccanismi, terminologia specialistica ed eventuali formule LaTeX ($...$) o tabelle.';
       }
 
       const rewritePrompt = `${instruction}
 
-TESTO SELEZIONATO DALLO STUDENTE:
+TESTO SELEZIONATO:
 """
 ${textToRewrite}
 """
+${fullContext ? `\nCONTESTO:\n${fullContext.slice(0, 3000)}` : ''}
 
-${fullContext ? `CONTESTO DELLA LEZIONE:\n${fullContext.slice(0, 3000)}` : ''}
+Restituisci ESCLUSIVAMENTE il testo riscritto, senza premesse.`;
 
-Restituisci ESCLUSIVAMENTE il testo riscritto. Non aggiungere frasi tipo "Ecco il testo riscritto:".`;
-
-      const { response: completion } = await callOpenAIWithFallback(openai, 'gpt-4o', {
-        messages: [
-          { role: 'system', content: 'Sei un editor e docente universitario esperto nel perfezionare testi accademici.' },
-          { role: 'user', content: rewritePrompt }
-        ],
+      const { text, modelUsed } = await generateAI({
+        tier: rewriteMode === 'approfondisci' ? 'heavy' : 'light',
+        systemPrompt: 'Sei un editor e docente esperto nel perfezionare testi di studio.',
+        messages: [{ role: 'user', content: rewritePrompt }],
         temperature: 0.3,
+        maxTokens: 2500,
       });
 
-      const rewrittenText = completion.choices[0]?.message?.content?.trim() || textToRewrite;
-
-      return {
-        statusCode: 200,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rewrittenText }),
-      };
+      await incrementUsage(profile, bucket);
+      return jsonResponse({ rewrittenText: text || textToRewrite, modelUsed });
     }
 
     // -------------------------------------------------------------
-    // AZIONE 5: CHATBOT DELLA LEZIONE CON MODIFICA DIRETTA DEL FILE
+    // AZIONE 6: CHATBOT DELLA LEZIONE CON MODIFICA DIRETTA (GEMINI FLASH)
     // -------------------------------------------------------------
     if (action === 'lesson_chat') {
       const currentLesson = lessonContent || '';
       const userQuestion = prompt || '';
 
-      const lessonChatSystemPrompt = `Sei il Tutor Accademico dedicato a QUESTA SPECIFICA LEZIONE.
+      const lessonChatSystemPrompt = `Sei il Tutor dedicato a QUESTA SPECIFICA LEZIONE.
 Hai accesso completo al testo attuale della lezione dello studente:
 
---- INIZIO TESTO ATTUALE DELLA LEZIONE ---
+--- INIZIO TESTO LEZIONE ---
 ${currentLesson.slice(0, 45000)}
---- FINE TESTO ATTUALE DELLA LEZIONE ---
+--- FINE TESTO LEZIONE ---
 
-ISTRUZIONI OPERATIVE:
-1. RISPOSTA DISCORSIVA: Rispondi con tono chiaro, accademico e utile per lo studio.
-2. MODIFICA DIRETTA DEL TESTO DELLA LEZIONE:
-   Se lo studente ti chiede di:
-   - "Aggiungere", "inserire" o "integrare" una nozione, formula, capitolo o tabella
-   - "Riscrivere", "correggere", "semplificare" o "espandere" una parte della lezione
-   - "Rimuovere" o "sostituire" qualcosa nel testo
-   ALLORA:
-   - Trova la posizione logica ottimale e applica la modifica direttamente su tutto il testo della lezione.
-   - Restituisci l'INTERO TESTO AGGIORNATO DELLA LEZIONE mantenendo la formattazione pulita (titoli, grassetti **...**, elenchi, tabelle e formule LaTeX $...$).
-   - Imposta "hasUpdatedLesson" su true e inserisci il testo aggiornato in "updatedLessonContent".
-   - Nel campo "reply", spiega brevemente che hai aggiornato il documento e cosa hai inserito/modificato.
-3. Se lo studente fa solo una domanda di chiarimento senza richiedere modifiche al testo, imposta "hasUpdatedLesson" su false e "updatedLessonContent" a null.
+ISTRUZIONI:
+1. Rispondi con tono chiaro, didattico e utile.
+2. Se lo studente chiede di aggiungere, integrare, riscrivere, semplificare, correggere o rimuovere parti della lezione:
+   - Applica la modifica direttamente su tutto il testo mantenendo formattazione Markdown, grassetti, elenchi, tabelle e formule LaTeX ($...$).
+   - Imposta "hasUpdatedLesson": true e inserisci l'INTERO testo aggiornato in "updatedLessonContent".
+3. Se fa solo una domanda di chiarimento, imposta "hasUpdatedLesson": false e "updatedLessonContent": null.
 
-FORMATO RISPOSTA OBBLIGATORIO JSON:
+FORMATO JSON OBBLIGATORIO:
 {
-  "reply": "Messaggio di risposta per la chat...",
+  "reply": "Risposta per la chat...",
   "hasUpdatedLesson": true | false,
-  "updatedLessonContent": "Testo completo della lezione con le modifiche apportate (oppure null)"
+  "updatedLessonContent": "Testo completo aggiornato oppure null"
 }`;
 
-      const messagesList = [
-        { role: 'system', content: lessonChatSystemPrompt }
-      ];
-
+      const messagesList = [];
       if (Array.isArray(lessonChatHistory)) {
-        lessonChatHistory.forEach(m => {
-          messagesList.push({
-            role: m.role === 'user' ? 'user' : 'assistant',
-            content: m.text || ''
-          });
+        lessonChatHistory.forEach((m) => {
+          if (m && typeof m.text === 'string') {
+            messagesList.push({
+              role: m.role === 'user' ? 'user' : 'assistant',
+              content: m.text,
+            });
+          }
         });
       }
+      messagesList.push({ role: 'user', content: userQuestion });
 
-      messagesList.push({
-        role: 'user',
-        content: userQuestion
-      });
-
-      const { response: completion } = await callOpenAIWithFallback(openai, 'gpt-4o', {
+      const { text, modelUsed } = await generateAI({
+        tier: 'light',
+        systemPrompt: lessonChatSystemPrompt,
         messages: messagesList,
         temperature: 0.3,
-        response_format: { type: 'json_object' }
+        maxTokens: 6000,
+        jsonMode: true,
       });
 
-      let parsed = { reply: "Risposta elaborata.", hasUpdatedLesson: false, updatedLessonContent: null };
-      try {
-        parsed = JSON.parse(completion.choices[0]?.message?.content || '{}');
-      } catch (err) {
-        console.error("Errore parse JSON lesson_chat:", err);
-      }
+      const parsed = safeParseJson(text, {
+        reply: 'Risposta elaborata.',
+        hasUpdatedLesson: false,
+        updatedLessonContent: null,
+      });
 
-      return {
-        statusCode: 200,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          reply: parsed.reply || 'Informazione elaborata.',
-          hasUpdatedLesson: Boolean(parsed.hasUpdatedLesson && parsed.updatedLessonContent),
-          updatedLessonContent: parsed.updatedLessonContent || null
-        }),
-      };
+      await incrementUsage(profile, bucket);
+      return jsonResponse({
+        reply: parsed.reply || 'Informazione elaborata.',
+        hasUpdatedLesson: Boolean(parsed.hasUpdatedLesson && parsed.updatedLessonContent),
+        updatedLessonContent: parsed.updatedLessonContent || null,
+        modelUsed,
+      });
     }
 
     // -------------------------------------------------------------
-    // AZIONE 6: GENERAZIONE SYLLABUS
+    // AZIONE 7: GENERAZIONE SYLLABUS / PIANO DI STUDIO (GEMINI FLASH)
     // -------------------------------------------------------------
     if (action === 'generate_syllabus') {
       const numDays = Math.max(3, Math.min(daysTotal || 30, 60));
@@ -469,196 +468,179 @@ FORMATO RISPOSTA OBBLIGATORIO JSON:
       let validFilesCount = 0;
 
       if (!isOnlineSearch) {
-        const TOTAL_CHAR_BUDGET = 36000;
-        const budgetPerFile = Math.max(1200, Math.floor(TOTAL_CHAR_BUDGET / Math.max(1, allFiles.length)));
+        const TOTAL_CHAR_BUDGET = 40000;
+        const budgetPerFile = Math.max(1500, Math.floor(TOTAL_CHAR_BUDGET / Math.max(1, allFiles.length)));
 
         allFiles.forEach((f, idx) => {
           const fileName = f.name || `Documento ${idx + 1}`;
           const rawText = (f.text || f.extractedText || '').trim();
-
           if (rawText && rawText.length > 5) {
             validFilesCount++;
-            const fileDigest = createSmartFileDigest(rawText, budgetPerFile);
-            perFileSummary += `\n\n--- [FILE ${idx + 1} di ${allFiles.length}]: "${fileName}" ---\n${fileDigest}\n--- [FINE FILE ${idx + 1}] ---\n`;
+            const digest = createSmartFileDigest(rawText, budgetPerFile);
+            perFileSummary += `\n\n--- [FILE ${idx + 1} di ${allFiles.length}]: "${fileName}" ---\n${digest}\n--- [FINE FILE ${idx + 1}] ---\n`;
           }
         });
 
         if (validFilesCount === 0) {
-          return {
-            statusCode: 400,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              error: 'Nessun testo estratto dai documenti caricati. Assicurati che i file contengano testo selezionabile.' 
-            }),
-          };
+          return jsonResponse(
+            {
+              error:
+                'Nessun testo estratto dai documenti caricati. Assicurati che i file contengano testo selezionabile.',
+            },
+            400
+          );
         }
       }
 
-      const syllabusSystemPrompt = `Sei un professore universitario e pianificatore didattico di altissimo livello.
-Il tuo compito è strutturare un piano di studio accademico completo, coerente e perfettamente bilanciato di esattamente ${numDays} giorni per la materia indicata.
+      const syllabusSystemPrompt = `Sei un pianificatore didattico esperto per scuole superiori e università.
+Struttura un piano di studio completo, progressivo e bilanciato di esattamente ${numDays} giorni.
 
-REGOLE DIDATTICHE:
-${isOnlineSearch 
-  ? `1. RICERCA E STRUTTURAZIONE ACCADEMICA: Attingi alle migliori nozioni universitarie e ai programmi di corso ufficiali per la materia "${examDescription}". Struttura gli argomenti dai fondamenti propedeutici fino ai concetti avanzati e alle simulazioni finali.`
-  : `1. COPERTURA TOTALE FONTI (100%): Includi obbligatoriamente argomenti e capitoli da TUTTI i ${validFilesCount} file caricati (dal File 1 all'ultimo).
-2. ESCLUSIVITÀ DELLE FONTI: Usa SOLO nozioni e temi presenti nei file allegati dello studente.`
+REGOLE:
+${
+  isOnlineSearch
+    ? `1. Copri il programma completo della materia "${examDescription}" dai fondamenti ai concetti avanzati e ripasso finale.`
+    : `1. Includi obbligatoriamente argomenti da TUTTI i ${validFilesCount} documenti caricati, basandoti esclusivamente sui contenuti forniti.`
 }
-2. PROGRESSIONE LOGICA: Ogni giornata ("dayTitle") deve avere da 1 a 3 argomenti specifici ("topics") con titoli chiari ed esaustivi.
-3. FORMATO RISPOSTA: Restituisci ESCLUSIVAMENTE un JSON valido con questa struttura esatta:
+2. Ogni giornata ("dayTitle") deve avere 1-3 argomenti specifici ("topics").
+3. Restituisci ESCLUSIVAMENTE JSON valido:
 {
   "schedule": [
     {
       "dayNumber": 1,
-      "dayTitle": "Giorno 1: Titolo modulo didattico",
-      "phase": "Fase 1: Studio e Comprensione",
+      "dayTitle": "Giorno 1: Titolo modulo",
+      "phase": "Fase 1: Comprensione",
       "topics": [
-        {
-          "id": "d1_t1",
-          "title": "Titolo specifico dell'argomento",
-          "difficulty": "Fondamentale"
-        }
+        { "id": "d1_t1", "title": "Titolo argomento", "difficulty": "Fondamentale" }
       ]
     }
   ]
 }`;
 
-      const syllabusUserPrompt = `Materia/Descrizione: "${examDescription || 'Programma di Studio Universitario'}".
-Giorni disponibili per lo studio: ${numDays}.
-Livello di preparazione desiderato: ${prepLevel || 80}%.
+      const syllabusUserPrompt = `Materia: "${examDescription || 'Programma di Studio'}".
+Giorni disponibili: ${numDays}.
+Livello preparazione: ${prepLevel || 80}%.
 Tipologia prova: ${payload.examType || 'orale'}.
-Stile espositivo: ${languageStyle || 'automatico'}.
-Modalità fonti: ${isOnlineSearch ? 'Ricerca e strutturazione accademica online' : `Materiali dello studente (${validFilesCount} file)`}.
+Stile: ${languageStyle || 'automatico'}.
+${isOnlineSearch ? 'Genera il programma completo.' : `DOCUMENTI:\n${perFileSummary}`}`;
 
-${isOnlineSearch ? 'Genera il programma universitario completo per questa materia.' : `TESTO ESTRATTO DAI DOCUMENTI:\n${perFileSummary}`}
-
-Genera il piano di studio JSON.`;
-
-      const targetModel = 'gpt-4o';
-
-      const { response: completion, modelUsed } = await callOpenAIWithFallback(openai, targetModel, {
-        messages: [
-          { role: 'system', content: syllabusSystemPrompt },
-          { role: 'user', content: syllabusUserPrompt }
-        ],
+      const { text, modelUsed } = await generateAI({
+        tier: 'light',
+        systemPrompt: syllabusSystemPrompt,
+        messages: [{ role: 'user', content: syllabusUserPrompt }],
         temperature: 0.2,
-        response_format: { type: 'json_object' }
+        maxTokens: 5000,
+        jsonMode: true,
       });
 
-      const rawResponse = completion.choices[0]?.message?.content || '{}';
-      let parsed = {};
-      try {
-        parsed = JSON.parse(rawResponse);
-        if (parsed.schedule && Array.isArray(parsed.schedule)) parsed = parsed.schedule;
-        else if (parsed.days && Array.isArray(parsed.days)) parsed = parsed.days;
-        else if (Array.isArray(parsed)) parsed = parsed;
-        else if (typeof parsed === 'object') {
-          const arr = Object.values(parsed).find(v => Array.isArray(v));
-          if (arr) parsed = arr;
-        }
-      } catch (err) {
-        console.error("Errore parsing JSON syllabus:", err);
+      let parsed = safeParseJson(text, {});
+      if (parsed.schedule && Array.isArray(parsed.schedule)) parsed = parsed.schedule;
+      else if (parsed.days && Array.isArray(parsed.days)) parsed = parsed.days;
+      else if (!Array.isArray(parsed) && typeof parsed === 'object') {
+        const arr = Object.values(parsed).find((v) => Array.isArray(v));
+        if (arr) parsed = arr;
       }
 
-      return {
-        statusCode: 200,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          schedule: Array.isArray(parsed) && parsed.length > 0 ? parsed : null,
-          filesCovered: validFilesCount,
-          modelUsed: modelUsed
-        }),
-      };
+      await incrementUsage(profile, bucket);
+      return jsonResponse({
+        schedule: Array.isArray(parsed) && parsed.length > 0 ? parsed : null,
+        filesCovered: validFilesCount,
+        modelUsed,
+      });
     }
 
-        // -------------------------------------------------------------
-    // AZIONE 7: GENERAZIONE LEZIONE DIDATTICA ACCADEMICA (COMPENDIO RAGIONATO)
     // -------------------------------------------------------------
-    if (isLessonGeneration) {
+    // AZIONE 8: GENERAZIONE LEZIONE / COMPENDIO APPROFONDITO (GEMINI PRO + STREAMING SSE)
+    // -------------------------------------------------------------
+    if (isLessonGeneration || action === 'generate_lesson') {
       const isStrict = sourceType === 'my_materials';
-      
-      let relevantSources = '';
-      let availableImagesList = [];
+      const availableImagesList = [];
       allFiles.forEach((f, idx) => {
         if (Array.isArray(f.images) && f.images.length > 0) {
-          f.images.forEach(img => {
+          f.images.forEach((img) => {
             availableImagesList.push({
               id: img.id,
               name: img.name || img.label || `Figura ${availableImagesList.length + 1}`,
-              fileName: f.name || `File ${idx + 1}`
+              fileName: f.name || `File ${idx + 1}`,
             });
           });
         }
-        const fileContent = (f.text || f.extractedText || '').trim();
-        if (fileContent) {
-          relevantSources += `\n\n=== DOCUMENTO: "${f.name || `File ${idx + 1}`}" ===\n${fileContent.slice(0, 30000)}\n=== FINE DOCUMENTO ===\n`;
-        }
       });
 
-      const lessonSystemPrompt = `Sei un professore universitario ordinario e autore di manuali e compendi accademici di riferimento (es. Medicina, Ingegneria, Scienze, Economia, Giurisprudenza, Discipline Umanistiche).
-Il tuo obiettivo è redigere un "COMPENDIO RAGIONATO E APPROFONDITO" sul tema richiesto, adattando linguaggio, metodologia e struttura alla specifica disciplina della materia ("${examDescription || 'Trattazione Universitaria'}").
-Il testo deve essere esaustivo, rigoroso e autosufficiente per consentire a uno studente di superare l'esame universitario con 30 e Lode.
+      const relevantSources = extractRelevantChunks(
+        allFiles,
+        `${topicTitle || ''} ${examDescription || ''}`,
+        42000
+      );
 
-LINEA GUIDA GENERALE DI REDAZIONE:
-1. DIVIETO ASSOLUTO DI BANALITÀ E RIEMPITIVI: Non usare mai frasi introduttive vuote (come "In questa lezione vedremo...", "Per comprendere questo tema è essenziale...", "È importante notare che..."). Inizia OGNI capitolo direttamente con la definizione formale, i fondamenti teorici o i meccanismi chiave.
-2. DENSITÀ CONCETTUALE CONTINUA: Ogni frase deve trasmettere dati, meccanismi, norme, dimostrazioni, correlazioni o parametri quantitativi pertinenti alla materia. Zero riassunti telegrafici.
-3. DATI QUANTITATIVI, PARAMETRI E RIFERIMENTI PRECISI: Includi sempre valori numerici, soglie, intervalli, date, articoli di legge, teoremi, dosaggi o standard di riferimento pertinenti alla disciplina.
-4. TABELLE COMPARATIVE OBBLIGATORIE: Inserisci SEMPRE almeno 1 o 2 TABELLE MARKDOWN dettagliate (es. classificazioni, confronti tra teorie/metodi, diagnosi differenziale, pro/contro, protocolli).
-5. FORMULE E NOTAZIONE SCIENTIFICA ($LaTeX$): Quando la materia prevede formule matematiche, fisiche, chimiche, statistiche o economiche, scrivile sempre in notazione LaTeX rigorosa ($...$ inline o $$...$$ a blocchi).
-6. FONTI, LINEE GUIDA E STANDARD DI SETTORE: Cita le società scientifiche, linee guida ufficiali, norme o autori di riferimento pertinenti alla materia (es. ESC/AHA/KDIGO in ambito medico, ISO/IEEE in ingegneria, codici e giurisprudenza in diritto, ecc.).
-7. GESTIONE FIGURE ED IMMAGINI:
-${availableImagesList.length > 0 ? `Sono disponibili le seguenti figure estratte direttamente dai documenti dello studente:
-${availableImagesList.map(img => `- ID: "${img.id}" -> Descrizione: "${img.name}" (da ${img.fileName})`).join('\n')}
-DEVI INSERIRE queste figure nei capitoli di pertinenza usando la sintassi:
-![Descrizione didattica dettagliata della figura](ID_FIGURA)` : `Non inventare URL di immagini esterne; se un concetto beneficia di uno schema visivo, rappresentalo con una tabella Markdown o un diagramma testuale chiaro.`}
-8. CALLOUT DI EVIDENZIAZIONE: Usa citazioni markdown con titolo in grassetto per le nozioni cruciali, ad esempio:
-> **Regola Cardine / Principio Chiave:** [Spiegazione dettagliata]
-> **Criteri e Standard di Riferimento:** [Elenco criteri]
-> **Attenzione / Eccezione Critica:** [Avvertenza]
+      const lessonSystemPrompt = `Sei un docente ordinario e autore di compendi e manuali didattici di eccellenza per scuole superiori e università.
+Redigi un "COMPENDIO RAGIONATO E APPROFONDITO" sul tema richiesto, adattando linguaggio, esempi e rigore alla materia ("${examDescription || 'Studio'}").
 
-${isStrict ? `FONTI DELLO STUDENTE (REGOLA DI FERRO):
-Basa la spiegazione sul materiale fornito dallo studente. Copri il 100% degli argomenti, dettagli e formule presenti nelle fonti, sviluppando e spiegando approfonditamente ogni concetto con massimo rigore enciclopedico senza omettere alcun capitolo o dettaglio.` : `Sviluppa l'argomento attingendo alle nozioni più avanzate della letteratura scientifica e accademica internazionale.`}
+LINEE GUIDA:
+1. ZERO FRASI RIEMPITIVE: inizia ogni capitolo direttamente con definizioni formali, principi, cause o meccanismi chiave.
+2. DENSITÀ CONCETTUALE: ogni paragrafo deve trasmettere nozioni concrete, dati quantitativi, date, norme, teoremi o correlazioni pratiche.
+3. TABELLE COMPARATIVE: inserisci almeno 1-2 tabelle Markdown dettagliate (classificazioni, confronti, pro/contro, schemi risolutivi).
+4. FORMULE LATEX: quando pertinenti alla materia, scrivi tutte le formule in LaTeX rigoroso ($...$ inline o $$...$$ a blocchi).
+5. CALLOUT DI EVIDENZIAZIONE: usa citazioni Markdown per i concetti da ricordare all'esame:
+   > **Regola Cardine:** [...]
+   > **Attenzione / Errore Frequente:** [...]
+6. FIGURE: ${
+        availableImagesList.length > 0
+          ? `Inserisci nei punti pertinenti le figure estratte dai documenti dello studente usando ![Descrizione](ID_FIGURA):\n${availableImagesList
+              .map((img) => `- ID: "${img.id}" -> "${img.name}" (${img.fileName})`)
+              .join('\n')}`
+          : 'Non inventare URL di immagini esterne; usa tabelle o schemi testuali chiari.'
+      }
+${
+  isStrict
+    ? '\nFONTI DELLO STUDENTE (OBBLIGATORIO): basa la lezione integralmente sui passaggi forniti dallo studente, spiegandoli con profondità senza omettere dettagli.'
+    : '\nSviluppa la trattazione attingendo ai migliori standard accademici e scolastici della disciplina.'
+}
 
-STRUTTURA DIDATTICA DELLA LEZIONE:
-- TITOLO DELLA LEZIONE IN MAIUSCOLO CON SOTTOTITOLO SINTETICO DEI TEMI
-- 📋 INDICE E SCALETTA ANALITICA DEI CAPITOLI (capitoli numerati 1, 2, 3... e sottoargomenti)
-- Capitoli numerati coerenti con la disciplina (es. per materie mediche: anatomia/fisiologia, eziopatogenesi, classificazioni, clinica, criteri diagnostici, biomarcatori, terapia e prognosi; per altre discipline: fondamenti teorici, struttura/meccanismi, classificazioni comparate, applicazioni pratiche/casi studio, criticità ed errori comuni d'esame).`;
+STRUTTURA:
+- Titolo in maiuscolo con sottotitolo
+- 📋 Indice analitico dei capitoli
+- Capitoli numerati coerenti con la disciplina fino ad applicazioni pratiche / sintesi finale per l'esame.`;
 
-      const lessonUserPrompt = `MATERIA: "${examDescription || 'Trattazione Universitaria'}"
-ARGOMENTO SPECIFICO: "${topicTitle}"
-LIVELLO PREPARAZIONE RICHIESTO: ${prepLevel || 80}%
-STILE: ${languageStyle || 'automatico'} (discorsivo accademico con punti analitici e tabelle)
+      const lessonUserPrompt = `MATERIA: "${examDescription || 'Trattazione di Studio'}"
+ARGOMENTO: "${topicTitle}"
+LIVELLO TARGET: ${prepLevel || 80}%
+STILE: ${languageStyle || 'automatico'}
+${relevantSources ? `\nESTRATTI RILEVANTI DAI DOCUMENTI CARICATI:\n${relevantSources}` : ''}
 
-${relevantSources ? `TESTO INTEGRALE DEI DOCUMENTI CARICATI DALLO STUDENTE:\n${relevantSources.slice(0, 45000)}` : 'Sviluppa la trattazione accademica completa per questo argomento.'}
+Redigi ora il compendio completo e approfondito.`;
 
-Redigi ora il COMPENDIO RAGIONATO COMPLETO. Rispetta tutti i vincoli: tabelle markdown, dati numerici precisi, formule LaTeX, farmaci con dosaggi, linee guida societarie e scaletta esaustiva. Non fare riassunti o sintesi brevi: redigi un testo esteso, profondo ed enciclopedico.`;
+      if (stream) {
+        return await streamAIResponse({
+          tier: 'heavy',
+          systemPrompt: lessonSystemPrompt,
+          messages: [{ role: 'user', content: lessonUserPrompt }],
+          temperature: 0.25,
+          maxTokens: 6144,
+          onComplete: () => incrementUsage(profile, bucket),
+        });
+      }
 
-      const { response: completion, modelUsed } = await callOpenAIWithFallback(openai, 'gpt-4o', {
-        messages: [
-          { role: 'system', content: lessonSystemPrompt },
-          { role: 'user', content: lessonUserPrompt }
-        ],
-        temperature: 0.2,
-        max_tokens: 3500,
-      }, ['gpt-4o-mini']);
+      const { text, modelUsed } = await generateAI({
+        tier: 'heavy',
+        systemPrompt: lessonSystemPrompt,
+        messages: [{ role: 'user', content: lessonUserPrompt }],
+        temperature: 0.25,
+        maxTokens: 6144,
+      });
 
-      const reply = completion.choices[0]?.message?.content || 'Nessuna lezione generata.';
-      return {
-        statusCode: 200,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reply, modelUsed }),
-      };
+      await incrementUsage(profile, bucket);
+      return jsonResponse({ reply: text || 'Nessuna lezione generata.', modelUsed });
     }
 
     // -------------------------------------------------------------
-    // AZIONE 8: CHAT HOMEPAGE STANDARD CON MULTI-FILE (FINO A 10 FILE)
+    // AZIONE 9: CHAT HOMEPAGE MULTI-FILE (GEMINI FLASH + STREAMING SSE)
     // -------------------------------------------------------------
-    let chatSourcesText = '';
     const imageParts = [];
+    const textFiles = [];
 
-    allFiles.slice(0, 10).forEach((f, idx) => {
+    allFiles.slice(0, 10).forEach((f) => {
       const mime = (f.mimeType || '').toLowerCase();
       const base64 = f.base64 || '';
-
       if (mime.startsWith('image/') && base64) {
         imageParts.push({
           type: 'image_url',
@@ -667,28 +649,24 @@ Redigi ora il COMPENDIO RAGIONATO COMPLETO. Rispetta tutti i vincoli: tabelle ma
           },
         });
       } else {
-        const text = (f.text || f.extractedText || '').trim();
-        if (text) {
-          chatSourcesText += `\n\n--- [FILE ALLEGATO ${idx + 1}: "${f.name}"] ---\n${text.slice(0, 10000)}\n--- [FINE FILE ${idx + 1}] ---\n`;
-        }
+        textFiles.push(f);
       }
     });
 
     const userPrompt = prompt || '';
-    const standardSystemInstruction = `Sei un tutor universitario e assistente allo studio avanzato.
-Rispondi in modo chiaro, approfondito, logico e pedagogico in formato Markdown con termini chiave in grassetto ed equazioni LaTeX in $ o $$ quando utili. Se l'utente allega file o immagini, analizzali attentamente per rispondere in modo preciso.`;
+    const chatSourcesText = extractRelevantChunks(textFiles, userPrompt, 30000);
 
-    let finalPromptText = userPrompt;
+    const standardSystemInstruction = `Sei MinervaAI, un tutor intelligente per studenti delle scuole superiori e dell'università.
+Rispondi in modo chiaro, logico e pedagogico in formato Markdown con termini chiave in grassetto, tabelle quando utili ed equazioni LaTeX in $ o $$. Se l'utente allega file o immagini, analizzali con precisione.`;
+
+    let finalPromptText = userPrompt || 'Analizza questi materiali di studio.';
     if (chatSourcesText) {
-      finalPromptText += `\n\n=== DOCUMENTI E FILE ALLEGATI DALL'UTENTE (${allFiles.length} file) ===${chatSourcesText.slice(0, 35000)}`;
+      finalPromptText += `\n\n=== ESTRATTI RILEVANTI DAI DOCUMENTI ALLEGATI ===${chatSourcesText}`;
     }
 
-    const messages = [
-      { role: 'system', content: standardSystemInstruction }
-    ];
-
+    const messages = [];
     if (Array.isArray(history) && history.length > 0) {
-      for (const msg of history) {
+      for (const msg of history.slice(-14)) {
         if (!msg || typeof msg.text !== 'string') continue;
         messages.push({
           role: msg.role === 'user' ? 'user' : 'assistant',
@@ -700,35 +678,38 @@ Rispondi in modo chiaro, approfondito, logico e pedagogico in formato Markdown c
     if (imageParts.length > 0) {
       messages.push({
         role: 'user',
-        content: [
-          { type: 'text', text: finalPromptText || 'Analizza questi file e immagini di studio.' },
-          ...imageParts
-        ]
+        content: [{ type: 'text', text: finalPromptText }, ...imageParts],
       });
     } else {
       messages.push({
         role: 'user',
-        content: finalPromptText || 'Ciao!',
+        content: finalPromptText,
       });
     }
 
-    const { response: completion, modelUsed } = await callOpenAIWithFallback(openai, 'gpt-4o', {
-      messages: messages,
-      temperature: 0.5,
+    if (stream) {
+      return await streamAIResponse({
+        tier: 'light',
+        systemPrompt: standardSystemInstruction,
+        messages,
+        temperature: 0.45,
+        maxTokens: 4096,
+        onComplete: () => incrementUsage(profile, bucket),
+      });
+    }
+
+    const { text, modelUsed } = await generateAI({
+      tier: 'light',
+      systemPrompt: standardSystemInstruction,
+      messages,
+      temperature: 0.45,
+      maxTokens: 4096,
     });
 
-    const reply = completion.choices[0]?.message?.content || 'Nessuna risposta generata.';
-
-    return {
-      statusCode: 200,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reply, modelUsed }),
-    };
+    await incrementUsage(profile, bucket);
+    return jsonResponse({ reply: text || 'Nessuna risposta generata.', modelUsed });
   } catch (error) {
-    console.error('Errore backend:', error);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: error.message || 'Errore durante la generazione.' }),
-    };
+    console.error('Errore backend chat.js:', error);
+    return jsonResponse({ error: error.message || 'Errore durante la generazione AI.' }, 500);
   }
 };

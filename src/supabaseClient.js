@@ -92,6 +92,17 @@ export async function getSessionUser() {
   }
 }
 
+export async function getAccessToken() {
+  if (!client) return null;
+  try {
+    const { data: { session } } = await client.auth.getSession();
+    return session?.access_token || null;
+  } catch (err) {
+    console.warn('Errore lettura access token Supabase:', err);
+    return null;
+  }
+}
+
 // -------------------------------------------------------------
 // HELPER SINCRONIZZAZIONE PROGETTI
 // -------------------------------------------------------------
@@ -120,6 +131,8 @@ export async function fetchProjectsFromCloud(userId) {
       sourceType: row.source_type,
       schedule: row.schedule || [],
       files: row.files || [],
+      lessonsContent: row.lessons_content || {},
+      conceptMaps: row.concept_maps || [],
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }));
@@ -150,6 +163,8 @@ export async function saveProjectToCloud(userId, project) {
         wordsCount: f.wordsCount || 0,
         pagesCount: f.pagesCount || 1,
       })),
+      lessons_content: project.lessonsContent || {},
+      concept_maps: project.conceptMaps || [],
       updated_at: new Date().toISOString(),
     };
 
