@@ -616,7 +616,7 @@ ${
 STRUTTURA OBBLIGATORIA DEL COMPENDIO:
 1. **# TITOLO COMPLETO DELLA LEZIONE** (in maiuscolo) con sottotitolo esplicativo
 2. **## 📋 Indice Analitico dei Capitoli** (almeno 6–8 capitoli numerati)
-3. **6–8 Capitoli Numerati (`## 1. ...`, `## 2. ...`)** con sotto-paragrafi (`### 1.1 ...`), spiegazioni discorsive approfondite, tabelle Markdown, formule LaTeX, callout e figure dai documenti
+3. **6–8 Capitoli Numerati (## 1. ..., ## 2. ...)** con sotto-paragrafi (### 1.1 ...), spiegazioni discorsive approfondite, tabelle Markdown, formule LaTeX, callout e figure dai documenti
 4. **## Domande Frequenti d'Esame e Collegamenti Trasversali** (3–5 snodi tipici richiesti dai docenti con risposta argomentata).`;
 
       const lessonUserPrompt = `MATERIA: "${examDescription || 'Trattazione di Studio'}"
