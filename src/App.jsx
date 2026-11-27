@@ -85,6 +85,7 @@ import {
 import LandingPage from './components/LandingPage.jsx';
 import ConceptMapView from './components/ConceptMapView.jsx';
 import BillingModal from './components/BillingModal.jsx';
+import QuickTrueFalseWidget, { splitLessonAndTrueFalse } from './components/QuickTrueFalseWidget.jsx';
 import {
   callAiApi,
   streamAiApi,
@@ -1103,7 +1104,8 @@ function MainAppContent() {
             if (dbData?.files?.length) filesForImgs = dbData.files;
           }
           const imgMap = buildImagesMapFromFiles(filesForImgs);
-          const html = renderMarkdownAndLatexToHtml(currentSelectedTopic.lesson || '', imgMap);
+          const { cleanLesson } = splitLessonAndTrueFalse(currentSelectedTopic.lesson || '');
+          const html = renderMarkdownAndLatexToHtml(cleanLesson, imgMap);
           if (wysiwygEditorRef.current) {
             wysiwygEditorRef.current.innerHTML = html;
           }
@@ -2020,7 +2022,8 @@ function MainAppContent() {
 
       updateTopicLessonContent(dayNum, topic.id, lessonContent);
       if (wysiwygEditorRef.current) {
-        wysiwygEditorRef.current.innerHTML = renderMarkdownAndLatexToHtml(lessonContent, lessonImagesMap);
+        const { cleanLesson } = splitLessonAndTrueFalse(lessonContent || '');
+        wysiwygEditorRef.current.innerHTML = renderMarkdownAndLatexToHtml(cleanLesson, lessonImagesMap);
       }
       refreshUsageQuota();
     } catch (err) {
@@ -5761,6 +5764,12 @@ function MainAppContent() {
                           onInput={handleEditorInput}
                           onPaste={handleEditorPaste}
                           className={`wysiwyg-editor focus:outline-none select-text transition ${readingComfortMode ? 'reading-comfort rounded-2xl p-5' : ''}`}
+                        />
+
+                        {/* CARD INTERATTIVE VERO O FALSO STILE ALGOR (VERDE SE GIUSTO, ROSSO SE SBAGLIATO) */}
+                        <QuickTrueFalseWidget
+                          questions={splitLessonAndTrueFalse(currentSelectedTopic?.lesson || '').questions}
+                          topicId={currentSelectedTopic?.id || ''}
                         />
                       </div>
 

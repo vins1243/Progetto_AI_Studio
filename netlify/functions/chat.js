@@ -4,6 +4,8 @@
 import {
   verifySupabaseUser,
   getOrCreateProfile,
+  getDeviceHash,
+  getOrCreateDeviceFreeUsage,
   getQuotaBucketForAction,
   checkQuota,
   incrementUsage,
@@ -96,22 +98,25 @@ export default async (req) => {
   } = payload;
 
   try {
-    // 2. Carica profilo e verifica quote mensili
+    // 2. Carica profilo + fingerprint dispositivo (anti-multi-account Free) e verifica quote
     const profile = await getOrCreateProfile(auth.user);
+    const deviceHash = getDeviceHash(req);
+    const deviceUsage = await getOrCreateDeviceFreeUsage(deviceHash, auth.user.id);
 
     if (action === 'get_usage') {
-      const status = checkQuota(profile, null);
+      const status = checkQuota(profile, null, deviceUsage);
       return jsonResponse({
         pro: status.pro,
+        tier: status.tier,
         usage: status.usage,
         limits: status.limits,
-        planType: profile.plan_type || (status.pro ? 'pro_monthly_14.99' : 'free'),
+        planType: status.tier || profile.plan_type || 'free',
         subscriptionStatus: profile.subscription_status || (status.pro ? 'active' : 'free'),
       });
     }
 
     const bucket = getQuotaBucketForAction(action, isLessonGeneration);
-    const quota = checkQuota(profile, bucket);
+    const quota = checkQuota(profile, bucket, deviceUsage);
     if (!quota.allowed) {
       return jsonResponse(
         {
@@ -119,12 +124,15 @@ export default async (req) => {
           code: 'QUOTA_EXCEEDED',
           bucket: quota.bucket,
           pro: quota.pro,
+          tier: quota.tier,
           usage: quota.usage,
           limits: quota.limits,
         },
         402
       );
     }
+
+    const recordUsage = () => incrementUsage(profile, bucket, deviceUsage);
 
     const allFiles = Array.isArray(files) ? files : file ? [file] : [];
 
@@ -214,7 +222,7 @@ Restituisci SOLO il JSON valido della mappa concettuale.`;
         edgeLabel: n.edgeLabel ? String(n.edgeLabel).slice(0, 35) : '',
       }));
 
-      await incrementUsage(profile, bucket);
+      await recordUsage();
       return jsonResponse({
         map: {
           id: `map_${Date.now()}`,
@@ -300,7 +308,7 @@ ${sourcesContext ? `\nFONTI DELLO STUDENTE:\n${sourcesContext}` : ''}`;
         ? parsed.questions.map((q, idx) => ({ ...q, id: q.id || `q_${idx + 1}` }))
         : [];
 
-      await incrementUsage(profile, bucket);
+      await recordUsage();
       return jsonResponse({ questions, modelUsed });
     }
 
@@ -356,7 +364,7 @@ ${studentAnswer || '[Nessuna risposta]'}
         missedPoints: [],
       });
 
-      await incrementUsage(profile, bucket);
+      await recordUsage();
       return jsonResponse({ ...evaluationResult, modelUsed });
     }
 
@@ -397,7 +405,7 @@ Restituisci ESCLUSIVAMENTE il testo riscritto, senza premesse.`;
         maxTokens: 2500,
       });
 
-      await incrementUsage(profile, bucket);
+      await recordUsage();
       return jsonResponse({ rewrittenText: text || textToRewrite, modelUsed });
     }
 
@@ -457,7 +465,7 @@ FORMATO JSON OBBLIGATORIO:
         updatedLessonContent: null,
       });
 
-      await incrementUsage(profile, bucket);
+      await recordUsage();
       return jsonResponse({
         reply: parsed.reply || 'Informazione elaborata.',
         hasUpdatedLesson: Boolean(parsed.hasUpdatedLesson && parsed.updatedLessonContent),
@@ -549,7 +557,7 @@ ${isOnlineSearch ? 'Genera il programma completo.' : `DOCUMENTI:\n${perFileSumma
         if (arr) parsed = arr;
       }
 
-      await incrementUsage(profile, bucket);
+      await recordUsage();
       return jsonResponse({
         schedule: Array.isArray(parsed) && parsed.length > 0 ? parsed : null,
         filesCovered: validFilesCount,
@@ -646,7 +654,7 @@ CHECKLIST OBBLIGATORIA PRIMA DI RISPONDERE:
           messages: [{ role: 'user', content: lessonUserPrompt }],
           temperature: 0.35,
           maxTokens: 16384,
-          onComplete: () => incrementUsage(profile, bucket),
+          onComplete: () => recordUsage(),
         });
       }
 
@@ -658,7 +666,7 @@ CHECKLIST OBBLIGATORIA PRIMA DI RISPONDERE:
         maxTokens: 16384,
       });
 
-      await incrementUsage(profile, bucket);
+      await recordUsage();
       return jsonResponse({ reply: text || 'Nessuna lezione generata.', modelUsed });
     }
 
@@ -724,7 +732,7 @@ Rispondi in modo chiaro, logico e pedagogico in formato Markdown con termini chi
         messages,
         temperature: 0.45,
         maxTokens: 4096,
-        onComplete: () => incrementUsage(profile, bucket),
+        onComplete: () => recordUsage(),
       });
     }
 
@@ -736,7 +744,7 @@ Rispondi in modo chiaro, logico e pedagogico in formato Markdown con termini chi
       maxTokens: 4096,
     });
 
-    await incrementUsage(profile, bucket);
+    await recordUsage();
     return jsonResponse({ reply: text || 'Nessuna risposta generata.', modelUsed });
   } catch (error) {
     console.error('Errore backend chat.js:', error);

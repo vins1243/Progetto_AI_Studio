@@ -1,4 +1,6 @@
-// Autenticazione JWT Supabase + Gestione Quote Mensili (Freemium / Pro) lato server
+// Autenticazione JWT Supabase + Gestione 4 Piani (Free / Plus / Pro / Ultra) + Anti-Multi-Account per dispositivo
+
+import crypto from 'node:crypto';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://qxjamqwbgeysnoipqnih.supabase.co';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_kCmRAz-yQsd4VCDvtmV98g_y5phq6wZ';
@@ -6,18 +8,40 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 export const PLAN_LIMITS = {
   free: {
+    label: 'Free',
+    price: 0,
     projects: 1,
-    lessons: 3,
+    lessons: 2,
     chat: 10,
     maps: 2,
-    quizzes: 2,
+    quizzes: 1,
+  },
+  plus: {
+    label: 'Plus',
+    price: 9.99,
+    projects: 5,
+    lessons: 25,
+    chat: 150,
+    maps: 25,
+    quizzes: 25,
   },
   pro: {
-    projects: 50,
-    lessons: 120,
-    chat: 600,
-    maps: 100,
-    quizzes: 100,
+    label: 'Pro',
+    price: 17.99,
+    projects: 25,
+    lessons: 90,
+    chat: 500,
+    maps: 80,
+    quizzes: 80,
+  },
+  ultra: {
+    label: 'Ultra',
+    price: 29.99,
+    projects: 100,
+    lessons: 250,
+    chat: 1500,
+    maps: 250,
+    quizzes: 250,
   },
 };
 
@@ -26,6 +50,18 @@ function currentMonthKey() {
   const y = now.getUTCFullYear();
   const m = String(now.getUTCMonth() + 1).padStart(2, '0');
   return `${y}-${m}`;
+}
+
+export function getDeviceHash(req) {
+  const clientDeviceId = (req.headers.get('x-device-id') || '').trim();
+  const clientIp =
+    (req.headers.get('x-nf-client-connection-ip') ||
+      req.headers.get('x-forwarded-for') ||
+      '').split(',')[0].trim();
+  const ua = (req.headers.get('user-agent') || '').slice(0, 120);
+  const raw = clientDeviceId ? `dev:${clientDeviceId}` : `ip:${clientIp}|ua:${ua}`;
+  if (!raw || raw === 'ip:|ua:') return null;
+  return crypto.createHash('sha256').update(raw).digest('hex');
 }
 
 export async function verifySupabaseUser(req) {
@@ -66,7 +102,6 @@ function getServiceHeaders() {
     apikey: key,
     'Content-Type': 'application/json',
   };
-  // Le nuove chiavi sb_secret_ / sb_publishable_ non sono JWT: inviarle solo in `apikey`
   if (!key.startsWith('sb_secret_') && !key.startsWith('sb_publishable_')) {
     headers.Authorization = `Bearer ${key}`;
   }
@@ -77,7 +112,6 @@ export async function getOrCreateProfile(user) {
   const period = currentMonthKey();
 
   if (!SUPABASE_SERVICE_ROLE_KEY) {
-    // Fallback degradato se la SERVICE_ROLE_KEY non è ancora configurata su Netlify
     return {
       id: user.id,
       email: user.email,
@@ -123,8 +157,9 @@ export async function getOrCreateProfile(user) {
     }
   }
 
-  // Reset automatico contatori al cambio mese
-  if (profile && profile.usage_period !== period) {
+  // Reset automatico contatori mensili SOLO per i piani a pagamento (il piano Free è una tantum anti-abuso!)
+  const tier = getUserPlanTier(profile);
+  if (profile && tier !== 'free' && profile.usage_period !== period) {
     const resetRes = await fetch(
       `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}`,
       {
@@ -151,6 +186,7 @@ export async function getOrCreateProfile(user) {
     email: user.email,
     subscription_status: 'free',
     is_premium: false,
+    plan_type: 'free',
     usage_period: period,
     usage_chat_count: 0,
     usage_lesson_count: 0,
@@ -159,11 +195,47 @@ export async function getOrCreateProfile(user) {
   };
 }
 
+export async function getOrCreateDeviceFreeUsage(deviceHash, userId) {
+  if (!deviceHash || !SUPABASE_SERVICE_ROLE_KEY) return null;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/device_free_usage?device_hash=eq.${encodeURIComponent(deviceHash)}&select=*`,
+      { headers: getServiceHeaders() }
+    );
+    if (res.ok) {
+      const rows = await res.json();
+      if (Array.isArray(rows) && rows.length > 0) return rows[0];
+    }
+    const createRes = await fetch(`${SUPABASE_URL}/rest/v1/device_free_usage`, {
+      method: 'POST',
+      headers: { ...getServiceHeaders(), Prefer: 'return=representation' },
+      body: JSON.stringify({
+        device_hash: deviceHash,
+        first_user_id: userId || null,
+      }),
+    });
+    if (createRes.ok) {
+      const created = await createRes.json();
+      return Array.isArray(created) ? created[0] : created;
+    }
+  } catch (err) {
+    console.warn('Errore lettura device_free_usage:', err.message);
+  }
+  return null;
+}
+
+export function getUserPlanTier(profile) {
+  if (!profile) return 'free';
+  const active = profile.is_premium === true || profile.subscription_status === 'active';
+  if (!active) return 'free';
+  const pt = String(profile.plan_type || '').toLowerCase();
+  if (pt.includes('ultra')) return 'ultra';
+  if (pt.includes('plus')) return 'plus';
+  return 'pro';
+}
+
 export function isUserPro(profile) {
-  return Boolean(
-    profile &&
-    (profile.is_premium === true || profile.subscription_status === 'active')
-  );
+  return getUserPlanTier(profile) !== 'free';
 }
 
 export function getQuotaBucketForAction(action, isLessonGeneration) {
@@ -174,21 +246,36 @@ export function getQuotaBucketForAction(action, isLessonGeneration) {
   return 'chat';
 }
 
-export function checkQuota(profile, bucket) {
-  const pro = isUserPro(profile);
-  const limits = pro ? PLAN_LIMITS.pro : PLAN_LIMITS.free;
+export function checkQuota(profile, bucket, deviceUsage = null) {
+  const tier = getUserPlanTier(profile);
+  const pro = tier !== 'free';
+  const limits = PLAN_LIMITS[tier] || PLAN_LIMITS.free;
+
+  // Per gli utenti Free prende il MASSIMO tra l'uso dell'account e l'uso del dispositivo (anti-multi-account!)
   const usage = {
-    lessons: Number(profile.usage_lesson_count || 0),
-    chat: Number(profile.usage_chat_count || 0),
-    maps: Number(profile.usage_map_count || 0),
-    quizzes: Number(profile.usage_quiz_count || 0),
+    lessons: Math.max(
+      Number(profile?.usage_lesson_count || 0),
+      !pro && deviceUsage ? Number(deviceUsage.usage_lesson_count || 0) : 0
+    ),
+    chat: Math.max(
+      Number(profile?.usage_chat_count || 0),
+      !pro && deviceUsage ? Number(deviceUsage.usage_chat_count || 0) : 0
+    ),
+    maps: Math.max(
+      Number(profile?.usage_map_count || 0),
+      !pro && deviceUsage ? Number(deviceUsage.usage_map_count || 0) : 0
+    ),
+    quizzes: Math.max(
+      Number(profile?.usage_quiz_count || 0),
+      !pro && deviceUsage ? Number(deviceUsage.usage_quiz_count || 0) : 0
+    ),
   };
 
   // Modalità test: blocco quote disattivato di default.
   // Per riattivarlo al lancio commerciale, imposta ENFORCE_QUOTAS=true su Netlify.
   const enforceQuotas = process.env.ENFORCE_QUOTAS === 'true';
   if (!enforceQuotas || !bucket) {
-    return { allowed: true, pro, limits, usage };
+    return { allowed: true, pro, tier, limits, usage };
   }
 
   const current = usage[bucket] || 0;
@@ -201,22 +288,26 @@ export function checkQuota(profile, bucket) {
       maps: 'mappe concettuali',
       quizzes: 'verifiche/quiz',
     };
+    const isDeviceLimit = !pro && deviceUsage && Number(deviceUsage[`usage_${bucket === 'lessons' ? 'lesson' : bucket === 'maps' ? 'map' : bucket === 'quizzes' ? 'quiz' : 'chat'}_count`] || 0) >= limit;
     return {
       allowed: false,
       pro,
+      tier,
       limits,
       usage,
       bucket,
       error: pro
-        ? `Hai raggiunto il tetto mensile anti-abuso di ${limit} ${labels[bucket]}. Il contatore si azzera il 1° del mese.`
-        : `Hai raggiunto il limite del piano Free (${limit} ${labels[bucket]}/mese). Passa a MinervaAI Pro per sbloccare l'accesso completo!`,
+        ? `Hai raggiunto il limite mensile del piano ${limits.label} (${limit} ${labels[bucket]}). Passa a un piano superiore o attendi il rinnovo.`
+        : isDeviceLimit
+          ? `Questo dispositivo ha già esaurito la prova gratuita (${limit} ${labels[bucket]}). Scegli un piano Plus, Pro o Ultra per continuare!`
+          : `Hai raggiunto il limite del piano Free (${limit} ${labels[bucket]}). Passa a Plus, Pro o Ultra per sbloccare MinervaAI!`,
     };
   }
 
-  return { allowed: true, pro, limits, usage };
+  return { allowed: true, pro, tier, limits, usage };
 }
 
-export async function incrementUsage(profile, bucket) {
+export async function incrementUsage(profile, bucket, deviceUsage = null) {
   if (!bucket || !SUPABASE_SERVICE_ROLE_KEY || !profile?.id) return;
 
   const colMap = {
@@ -242,6 +333,22 @@ export async function incrementUsage(profile, bucket) {
         }),
       }
     );
+
+    // Se l'utente è Free, incrementa anche il contatore legato al dispositivo fisico (anti-multi-account)
+    if (getUserPlanTier(profile) === 'free' && deviceUsage?.device_hash) {
+      const nextDevVal = Number(deviceUsage[col] || 0) + 1;
+      await fetch(
+        `${SUPABASE_URL}/rest/v1/device_free_usage?device_hash=eq.${encodeURIComponent(deviceUsage.device_hash)}`,
+        {
+          method: 'PATCH',
+          headers: getServiceHeaders(),
+          body: JSON.stringify({
+            [col]: nextDevVal,
+            updated_at: new Date().toISOString(),
+          }),
+        }
+      );
+    }
   } catch (err) {
     console.warn('Errore aggiornamento contatore uso:', err);
   }

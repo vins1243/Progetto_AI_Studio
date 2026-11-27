@@ -289,85 +289,124 @@ export default function LandingPage({ theme, toggleTheme, onOpenAuth, onOpenLega
         </div>
       </section>
 
-      {/* PRICING */}
-      <section id="pricing" className="py-16 sm:py-20 px-4 sm:px-6 border-t border-slate-200/70 dark:border-[#2a2f45]">
-        <div className="max-w-5xl mx-auto">
+      {/* PRICING 4 PIANI: FREE / PLUS / PRO / ULTRA */}
+      <section id="pricing" className="py-16 sm:py-20 px-4 sm:px-6 border-t border-slate-200/70 dark:border-[#3e2133]">
+        <div className="max-w-6xl mx-auto">
           <div className="text-center max-w-2xl mx-auto mb-12 space-y-3">
-            <h2 className="text-2xl sm:text-4xl font-extrabold">Piani semplici e trasparenti</h2>
+            <h2 className="text-2xl sm:text-4xl font-extrabold">Scegli il piano perfetto per il tuo studio</h2>
             <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400">
-              Inizia gratis per provare MinervaAI. Passa a Pro quando vuoi studiare senza limiti.
+              Inizia gratis per provare MinervaAI, poi scegli Plus, Pro o Ultra in base al tuo carico d&apos;esame.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
-            {/* FREE */}
-            <div className="p-7 rounded-3xl border border-slate-200 dark:border-[#2a2f45] bg-white dark:bg-[#171a26] flex flex-col justify-between shadow-sm">
-              <div>
-                <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Starter</div>
-                <h3 className="text-2xl font-extrabold mt-1">Piano Free</h3>
-                <div className="mt-4 flex items-baseline gap-1">
-                  <span className="text-4xl font-extrabold">0 €</span>
-                  <span className="text-sm text-slate-500 dark:text-slate-400">/mese</span>
-                </div>
-                <ul className="mt-6 space-y-3 text-sm text-slate-600 dark:text-slate-300">
-                  {[
-                    '1 progetto di studio attivo',
-                    '3 compendi approfonditi al mese',
-                    '2 mappe concettuali interattive al mese',
-                    '2 verifiche / quiz AI al mese',
-                    '10 messaggi di chat AI al mese',
-                    'Audio-lezioni TTS, export PDF e cloud sync',
-                  ].map((item, idx) => (
-                    <li key={idx} className="flex items-start gap-2.5">
-                      <Check size={16} className="text-teal-500 shrink-0 mt-0.5" />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <button
-                onClick={() => onOpenAuth('signup')}
-                className="mt-8 w-full py-3.5 rounded-2xl border border-slate-300 dark:border-[#2a2f45] hover:bg-slate-100 dark:hover:bg-[#222638] font-bold text-sm transition"
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+            {[
+              {
+                tag: 'Prova gratuita',
+                name: 'Free',
+                price: '0 €',
+                period: 'una tantum',
+                cta: 'Prova Gratis',
+                highlight: false,
+                features: [
+                  '1 progetto di studio',
+                  '2 lezioni AI complete',
+                  '2 mappe concettuali',
+                  '1 verifica / quiz AI',
+                  '10 messaggi Tutor Chat',
+                  'Export PDF vettoriale',
+                ],
+              },
+              {
+                tag: 'Superiori / 1–2 esami',
+                name: 'Plus',
+                price: '9,99 €',
+                period: '/mese',
+                cta: 'Scegli Plus',
+                highlight: false,
+                features: [
+                  '5 progetti di studio',
+                  '25 lezioni AI al mese',
+                  '25 mappe concettuali/mese',
+                  '25 quiz con voto 0–30',
+                  '150 messaggi Tutor Chat',
+                  'Audio-lezioni TTS & DSA',
+                ],
+              },
+              {
+                tag: 'Universitari in sessione',
+                name: 'Pro',
+                price: '17,99 €',
+                period: '/mese',
+                cta: 'Scegli Pro',
+                highlight: true,
+                features: [
+                  '25 progetti simultanei',
+                  '90 lezioni (Gemini 2.5 Pro)',
+                  '80 mappe concettuali/mese',
+                  '80 quiz & valutazioni AI',
+                  '500 messaggi Tutor Chat',
+                  'Immagini PDF ritagliate & cloud',
+                ],
+              },
+              {
+                tag: 'Medicina / Concorsi',
+                name: 'Ultra',
+                price: '29,99 €',
+                period: '/mese',
+                cta: 'Scegli Ultra',
+                highlight: false,
+                features: [
+                  '100 progetti simultanei',
+                  '250 lezioni (Gemini 2.5 Pro)',
+                  '250 mappe concettuali/mese',
+                  '250 quiz & valutazioni AI',
+                  '1.500 messaggi Tutor Chat',
+                  'Massima priorità & disdetta 1 clic',
+                ],
+              },
+            ].map((plan) => (
+              <div
+                key={plan.name}
+                className={`p-6 rounded-3xl flex flex-col justify-between relative transition ${
+                  plan.highlight
+                    ? 'border-2 border-indigo-500 bg-gradient-to-b from-indigo-600/15 to-white dark:from-indigo-600/20 dark:to-[#1c1018] shadow-2xl shadow-indigo-600/20 scale-[1.01]'
+                    : 'border border-rose-200/80 dark:border-[#3e2133] bg-white dark:bg-[#1c1018] shadow-sm'
+                }`}
               >
-                Registrati Gratis
-              </button>
-            </div>
-
-            {/* PRO */}
-            <div className="p-7 rounded-3xl border-2 border-indigo-500 bg-gradient-to-b from-indigo-600/10 to-white dark:from-indigo-600/15 dark:to-[#171a26] shadow-2xl shadow-indigo-600/15 flex flex-col justify-between relative">
-              <div className="absolute -top-3.5 right-6 px-3.5 py-1 rounded-full bg-gradient-to-r from-indigo-600 to-teal-500 text-white text-[11px] font-bold uppercase tracking-wider flex items-center gap-1 shadow-md">
-                <Zap size={12} /> Più scelto
-              </div>
-              <div>
-                <div className="text-xs font-bold uppercase tracking-wider text-indigo-500">Accesso Completo</div>
-                <h3 className="text-2xl font-extrabold mt-1">MinervaAI Pro</h3>
-                <div className="mt-4 flex items-baseline gap-1">
-                  <span className="text-4xl font-extrabold">14,99 €</span>
-                  <span className="text-sm text-slate-500 dark:text-slate-400">/mese</span>
+                {plan.highlight && (
+                  <div className="absolute -top-3.5 right-5 px-3 py-1 rounded-full bg-gradient-to-r from-indigo-600 to-blue-600 text-white text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1 shadow-md">
+                    <Zap size={11} /> Più scelto
+                  </div>
+                )}
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-500">{plan.tag}</div>
+                  <h3 className="text-2xl font-extrabold mt-1">{plan.name}</h3>
+                  <div className="mt-3 flex items-baseline gap-1">
+                    <span className="text-3xl font-extrabold">{plan.price}</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">{plan.period}</span>
+                  </div>
+                  <ul className="mt-5 space-y-2.5 text-xs text-slate-600 dark:text-slate-300">
+                    {plan.features.map((item, idx) => (
+                      <li key={idx} className="flex items-start gap-2">
+                        <Check size={14} className="text-indigo-500 shrink-0 mt-0.5" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <ul className="mt-6 space-y-3 text-sm text-slate-700 dark:text-slate-200">
-                  {[
-                    'Fino a 50 progetti di studio simultanei',
-                    'Fino a 120 compendi approfonditi (Gemini 2.5 Pro)',
-                    'Fino a 100 mappe concettuali interattive/mese',
-                    'Fino a 100 quiz e valutazioni in trentesimi/mese',
-                    'Fino a 600 messaggi Tutor Chat & riscritture/mese',
-                    'Streaming ultra-rapido, export PNG/PDF e disdetta in 1 clic',
-                  ].map((item, idx) => (
-                    <li key={idx} className="flex items-start gap-2.5">
-                      <Check size={16} className="text-indigo-500 shrink-0 mt-0.5" />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
+                <button
+                  onClick={() => onOpenAuth('signup')}
+                  className={`mt-7 w-full py-3 rounded-2xl font-extrabold text-xs transition ${
+                    plan.highlight
+                      ? 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white shadow-lg shadow-indigo-600/30'
+                      : 'border border-rose-200 dark:border-[#3e2133] hover:bg-rose-50 dark:hover:bg-[#2b1824]'
+                  }`}
+                >
+                  {plan.cta}
+                </button>
               </div>
-              <button
-                onClick={() => onOpenAuth('signup')}
-                className="mt-8 w-full py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-teal-500 hover:from-indigo-500 hover:to-teal-400 text-white font-extrabold text-sm shadow-lg shadow-indigo-600/30 transition"
-              >
-                Inizia e Passa a Pro
-              </button>
-            </div>
+            ))}
           </div>
         </div>
       </section>

@@ -1,4 +1,4 @@
-// Netlify Function v2 - Crea una Stripe Checkout Session reale per MinervaAI Pro
+// Netlify Function v2 - Crea una Stripe Checkout Session per i piani Plus (9,99€), Pro (17,99€) o Ultra (29,99€)
 
 import { verifySupabaseUser, getOrCreateProfile } from './_lib/authAndQuota.js';
 
@@ -15,14 +15,9 @@ export default async (req) => {
   }
 
   const stripeSecret = process.env.STRIPE_SECRET_KEY;
-  const stripePriceId = process.env.STRIPE_PRICE_ID;
-
-  if (!stripeSecret || !stripePriceId) {
+  if (!stripeSecret) {
     return jsonResponse(
-      {
-        error:
-          'Stripe non è ancora configurato sul server (mancano STRIPE_SECRET_KEY o STRIPE_PRICE_ID su Netlify).',
-      },
+      { error: 'STRIPE_SECRET_KEY non configurata su Netlify.' },
       503
     );
   }
@@ -30,6 +25,30 @@ export default async (req) => {
   const auth = await verifySupabaseUser(req);
   if (auth.error) {
     return jsonResponse({ error: auth.error }, auth.status || 401);
+  }
+
+  let body = {};
+  try {
+    body = await req.json();
+  } catch {
+    body = {};
+  }
+
+  const requestedPlan = ['plus', 'pro', 'ultra'].includes(body?.plan) ? body.plan : 'pro';
+  const priceMap = {
+    plus: process.env.STRIPE_PRICE_ID_PLUS || process.env.STRIPE_PRICE_ID,
+    pro: process.env.STRIPE_PRICE_ID_PRO || process.env.STRIPE_PRICE_ID,
+    ultra: process.env.STRIPE_PRICE_ID_ULTRA || process.env.STRIPE_PRICE_ID,
+  };
+  const stripePriceId = priceMap[requestedPlan];
+
+  if (!stripePriceId) {
+    return jsonResponse(
+      {
+        error: `Prezzo Stripe non configurato per il piano ${requestedPlan.toUpperCase()} (imposta STRIPE_PRICE_ID_${requestedPlan.toUpperCase()} su Netlify).`,
+      },
+      503
+    );
   }
 
   try {
@@ -43,11 +62,13 @@ export default async (req) => {
     params.append('mode', 'subscription');
     params.append('line_items[0][price]', stripePriceId);
     params.append('line_items[0][quantity]', '1');
-    params.append('success_url', `${origin}/?checkout=success`);
+    params.append('success_url', `${origin}/?checkout=success&plan=${requestedPlan}`);
     params.append('cancel_url', `${origin}/?checkout=canceled`);
     params.append('client_reference_id', auth.user.id);
     params.append('metadata[user_id]', auth.user.id);
+    params.append('metadata[plan_tier]', requestedPlan);
     params.append('subscription_data[metadata][user_id]', auth.user.id);
+    params.append('subscription_data[metadata][plan_tier]', requestedPlan);
     params.append('allow_promotion_codes', 'true');
 
     if (profile?.stripe_customer_id) {
@@ -70,7 +91,7 @@ export default async (req) => {
       return jsonResponse({ error: data?.error?.message || 'Errore creazione sessione Stripe.' }, 500);
     }
 
-    return jsonResponse({ url: data.url, sessionId: data.id });
+    return jsonResponse({ url: data.url, sessionId: data.id, plan: requestedPlan });
   } catch (err) {
     console.error('Errore create-checkout-session:', err);
     return jsonResponse({ error: err.message || 'Errore interno Stripe Checkout.' }, 500);

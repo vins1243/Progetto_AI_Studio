@@ -74,11 +74,14 @@ export default async (req) => {
 
     if (event.type === 'checkout.session.completed') {
       const userId = obj.client_reference_id || obj.metadata?.user_id;
+      const planTier = ['plus', 'pro', 'ultra'].includes(obj.metadata?.plan_tier)
+        ? obj.metadata.plan_tier
+        : 'pro';
       if (userId) {
         await updateProfileByServiceRole(`id=eq.${encodeURIComponent(userId)}`, {
           subscription_status: 'active',
           is_premium: true,
-          plan_type: 'pro_monthly_14.99',
+          plan_type: planTier,
           stripe_customer_id: obj.customer || null,
           stripe_subscription_id: obj.subscription || null,
         });
@@ -90,6 +93,9 @@ export default async (req) => {
       const status = obj.status; // 'active', 'trialing', 'past_due', 'canceled', 'unpaid'
       const isActive = status === 'active' || status === 'trialing';
       const userId = obj.metadata?.user_id;
+      const planTier = ['plus', 'pro', 'ultra'].includes(obj.metadata?.plan_tier)
+        ? obj.metadata.plan_tier
+        : 'pro';
       const customerId = obj.customer;
       const periodEnd = obj.current_period_end
         ? new Date(obj.current_period_end * 1000).toISOString()
@@ -105,7 +111,7 @@ export default async (req) => {
         await updateProfileByServiceRole(filter, {
           subscription_status: isActive ? 'active' : status || 'canceled',
           is_premium: isActive,
-          plan_type: isActive ? 'pro_monthly_14.99' : 'free',
+          plan_type: isActive ? planTier : 'free',
           stripe_subscription_id: obj.id || null,
           current_period_end: periodEnd,
         });

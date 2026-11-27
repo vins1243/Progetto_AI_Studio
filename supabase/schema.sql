@@ -163,3 +163,18 @@ create policy "Users can manage own conversations"
   on public.conversations for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+-- 7. TABELLA ANTI-MULTI-ACCOUNT FREE (Traccia utilizzo Free per dispositivo/computer)
+create table if not exists public.device_free_usage (
+  device_hash text primary key,
+  first_user_id uuid references auth.users(id) on delete set null,
+  usage_chat_count integer not null default 0,
+  usage_lesson_count integer not null default 0,
+  usage_quiz_count integer not null default 0,
+  usage_map_count integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.device_free_usage enable row level security;
+-- Nessuna policy client: accessibile SOLO dal backend tramite service_role key!

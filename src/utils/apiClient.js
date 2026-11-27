@@ -1,6 +1,7 @@
 // Client API autenticato con JWT Supabase, gestione Streaming SSE e Billing Stripe
 
 import { getAccessToken } from '../supabaseClient.js';
+import { getStableDeviceId } from './deviceFingerprint.js';
 
 export class QuotaExceededError extends Error {
   constructor(message, details = {}) {
@@ -12,10 +13,16 @@ export class QuotaExceededError extends Error {
 }
 
 async function getAuthHeaders() {
-  const token = await getAccessToken();
+  const [token, deviceId] = await Promise.all([
+    getAccessToken(),
+    getStableDeviceId(),
+  ]);
   const headers = { 'Content-Type': 'application/json' };
   if (token) {
     headers.Authorization = `Bearer ${token}`;
+  }
+  if (deviceId) {
+    headers['X-Device-Id'] = deviceId;
   }
   return headers;
 }
@@ -121,11 +128,12 @@ export async function fetchUsageQuota() {
   return callAiApi({ action: 'get_usage' });
 }
 
-export async function startStripeCheckout() {
+export async function startStripeCheckout(plan = 'pro') {
   const headers = await getAuthHeaders();
   const res = await fetch('/.netlify/functions/create-checkout-session', {
     method: 'POST',
     headers,
+    body: JSON.stringify({ plan }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.url) {
