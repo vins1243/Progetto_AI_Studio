@@ -665,6 +665,7 @@ function MainAppContent() {
   const [selectedDayNumber, setSelectedDayNumber] = useState(1);
   const [selectedTopicId, setSelectedTopicId] = useState(null);
   const [isGeneratingLesson, setIsGeneratingLesson] = useState(false);
+  const [lessonGenStatus, setLessonGenStatus] = useState({ stage: 0, text: '' });
   const [isExportingPDF, setIsExportingPDF] = useState(false);
 
   // POPUP FLUTTUANTE SU SELEZIONE TESTO
@@ -2024,21 +2025,33 @@ function MainAppContent() {
     }
   };
 
-  // Generazione Lezione
+  // Generazione Lezione Multi-Agente (Admin -> Teamwork 3 Sotto-Agenti -> Macro-Agente)
   const handleGenerateLesson = async (dayNum, topic) => {
     if (isGeneratingLesson || !activeProject) return;
     setIsGeneratingLesson(true);
+    setLessonGenStatus({ stage: 1, text: 'Admin AI: analisi del syllabus e pianificazione sezioni...' });
 
     try {
       const dbData = await getProjectDataFromDB(activeProject.id);
       const fullFilesList = dbData?.files || activeProject.files || [];
       const lessonImagesMap = buildImagesMapFromFiles(fullFilesList);
 
+      // Raccoglie TUTTE le altre lezioni del piano di studio per impedire ripetizioni tra lezioni
+      const otherLessonTopics = [];
+      (activeProject.schedule || []).forEach((d) => {
+        (d.topics || []).forEach((t) => {
+          if (t && t.id !== topic.id && t.title) {
+            otherLessonTopics.push(`Giorno ${d.dayNumber}: ${t.title}`);
+          }
+        });
+      });
+
       let lastRenderTs = 0;
       const { reply: lessonContent } = await streamAiApi(
         {
           isLessonGeneration: true,
           topicTitle: topic.title,
+          otherLessonTopics,
           sourceType: activeProject.sourceType,
           files: activeProject.sourceType === 'my_materials' ? fullFilesList.map(f => ({
             name: f.name,
@@ -2050,6 +2063,12 @@ function MainAppContent() {
           languageStyle: activeProject.languageStyle
         },
         {
+          onStatus: (evt) => {
+            setLessonGenStatus({
+              stage: evt.stage || 1,
+              text: evt.text || 'Elaborazione multi-agente in corso...',
+            });
+          },
           onChunk: (_delta, fullText) => {
             const now = Date.now();
             if (wysiwygEditorRef.current && now - lastRenderTs > 140) {
@@ -2074,6 +2093,7 @@ function MainAppContent() {
       }
     } finally {
       setIsGeneratingLesson(false);
+      setLessonGenStatus({ stage: 0, text: '' });
     }
   };
 
@@ -5608,10 +5628,43 @@ function MainAppContent() {
                 <div className="flex-1 overflow-y-auto p-4 md:p-6 relative">
                   
                   {isGeneratingLesson ? (
-                    <div className="h-full flex flex-col items-center justify-center text-center space-y-3 py-16">
-                      <Sparkles size={28} className="text-blue-400 animate-bounce" />
-                      <div className="text-sm font-semibold text-gray-200">Generazione della lezione in corso...</div>
-                      <div className="text-xs text-gray-400">Elaborazione con formule LaTeX e schemi didattici</div>
+                    <div className="h-full flex flex-col items-center justify-center text-center space-y-5 py-16 px-4 max-w-lg mx-auto">
+                      <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center">
+                        <Sparkles size={24} className="text-indigo-400 animate-pulse" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="text-sm font-extrabold text-slate-900 dark:text-gray-100">
+                          Teamwork Multi-Agente in corso...
+                        </div>
+                        <div className="text-xs text-indigo-600 dark:text-indigo-300 font-medium">
+                          {lessonGenStatus.text || 'Admin AI: analisi del syllabus e pianificazione sezioni...'}
+                        </div>
+                      </div>
+                      <div className="w-full grid grid-cols-3 gap-2 pt-1">
+                        {[
+                          { n: 1, title: '1. Admin', sub: 'Syllabus & Sezioni' },
+                          { n: 2, title: '2. Teamwork', sub: '3 Lezioni Parallele' },
+                          { n: 3, title: '3. Macro-Agente', sub: 'Sintesi Definitiva' },
+                        ].map((step) => {
+                          const active = (lessonGenStatus.stage || 1) === step.n;
+                          const done = (lessonGenStatus.stage || 1) > step.n;
+                          return (
+                            <div
+                              key={step.n}
+                              className={`p-2.5 rounded-xl border text-left transition ${
+                                done
+                                  ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-600 dark:text-emerald-300'
+                                  : active
+                                    ? 'bg-indigo-500/15 border-indigo-500/50 text-indigo-600 dark:text-indigo-200 shadow-sm'
+                                    : 'bg-slate-100/70 dark:bg-geminiDarkSecondary/60 border-slate-200 dark:border-geminiBorder text-slate-400 dark:text-gray-500'
+                              }`}
+                            >
+                              <div className="text-[11px] font-extrabold">{step.title}</div>
+                              <div className="text-[10px] opacity-80">{step.sub}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   ) : currentSelectedTopic?.lesson ? (
                     <div className="max-w-3xl mx-auto px-2 sm:px-6 py-4 space-y-4">

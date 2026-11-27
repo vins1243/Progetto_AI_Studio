@@ -13,6 +13,7 @@ import {
 import {
   generateAI,
   streamAIResponse,
+  streamAIToWriter,
   transcribeAudio,
   extractRelevantChunks,
   createSmartFileDigest,
@@ -76,6 +77,7 @@ export default async (req) => {
     sourceType,
     isLessonGeneration,
     topicTitle,
+    otherLessonTopics,
     examDescription,
     daysTotal,
     prepLevel,
@@ -584,10 +586,9 @@ ${isOnlineSearch ? 'Genera il programma completo.' : `DOCUMENTI:\n${perFileSumma
     }
 
     // -------------------------------------------------------------
-    // AZIONE 8: GENERAZIONE LEZIONE / COMPENDIO APPROFONDITO (GEMINI PRO + STREAMING SSE)
+    // AZIONE 8: GENERAZIONE LEZIONE MULTI-AGENTE (ADMIN + TEAMWORK 3 LEZIONI + MACRO-AGENTE)
     // -------------------------------------------------------------
     if (isLessonGeneration || action === 'generate_lesson') {
-      const isStrict = sourceType === 'my_materials';
       const availableImagesList = [];
       allFiles.forEach((f, idx) => {
         if (Array.isArray(f.images) && f.images.length > 0) {
@@ -615,72 +616,271 @@ ${isOnlineSearch ? 'Genera il programma completo.' : `DOCUMENTI:\n${perFileSumma
             ? 'LIVELLO ALTO (75-89%): trattazione completa e approfondita con tutti i concetti chiave, meccanismi, tabelle comparative, formule ed esempi.'
             : 'LIVELLO SOLIDO (fino a 74%): trattazione chiara, completa e lineare focalizzata sui pilastri fondamentali ben spiegati senza banalizzazioni.';
 
-      const lessonSystemPrompt = `Sei un professore universitario ordinario e autore di trattati universitari d'eccellenza.
-Il tuo compito è redigere una **LEZIONE COMPLETA, MONUMENTALE E OPERATIVA** sull'argomento specifico "${topicTitle}" per la materia "${examDescription || 'Studio'}".
+      // Confini rigorosi del syllabus: elenco di tutte le ALTRE lezioni del corso per evitare ripetizioni
+      const otherTopicsClean = Array.isArray(otherLessonTopics)
+        ? otherLessonTopics.filter(Boolean).slice(0, 60)
+        : [];
+      const syllabusBoundaryBlock =
+        otherTopicsClean.length > 0
+          ? `\nCONFINI TASSATIVI DEL SYLLABUS (ZERO RIPETIZIONI TRA LEZIONI):
+Questa lezione fa parte di un piano di studio strutturato e DEVE trattare ESCLUSIVAMENTE "${topicTitle}".
+Le seguenti ALTRE lezioni esistono gia separatamente nel piano di studio:
+${otherTopicsClean.map((t) => `- ${t}`).join('\n')}
+REGOLA DI NON-SOVRAPPOSIZIONE:
+- NON ripetere, NON rubare e NON rispiegare in profondita argomenti che appartengono chiaramente a una delle altre lezioni elencate sopra.
+- Se un concetto di un'altra lezione serve solo come raccordo logico, citalo in massimo 1 riga (es. "come approfondito nella lezione dedicata a ...") e investi il 100% dello spazio su "${topicTitle}".`
+          : '';
 
-${depthInstruction}
-
-REGOLE INDEROGABILI DI QUALITÀ E COMPLETEZZA:
-1. **FOCUS ASSOLUTO SULL'ARGOMENTO SPECIFICO ("${topicTitle}")**:
-   - Dedica il 90% del testo SPECIFICAMENTE a "${topicTitle}", senza sprecare spazio ripetendo introduzioni generiche di altri capitoli già studiati.
-   - **NON inserire l'Indice Analitico** e **NON scrivere frasi conclusive vuote** (tipo "Questa lezione ha fornito una panoramica..."). Parti subito con ## 1. ...
-2. **ESTRAZIONE FORENSE TOTALE DALLE DISPENSE DEL DOCENTE**:
-   - Riporta OGNI singolo dettaglio presente nei documenti caricati relativo a "${topicTitle}": nomi di professori/autori, studi (rivista, anno, campione N, percentuali esatte), geni/loci (es. FOXC2 16q24), meccanismi molecolari (es. MMP/TIMP, white cell trapping, emosiderina), segni clinici/ecografici eponimi, prove semeiologiche eseguite passo dopo passo (es. Trendelenburg, Perthes, Valsalva, Squeeze test con tempi e criteri di positività), e TUTTE le sottoclassi e i cut-off numerici (es. CEAP C0, C0s, C1 <1mm e 1-3mm, C2/C2r >=3mm, C3, C4a, C4b, C4c Corona phlebectatica, C5, C6/C6r + assi E, A, P).
-3. **REGOLA ANTI-COMPRESSIONE (MINIMO 1.800–3.000 PAROLE)**:
-   - **VIETATO fare paragrafi riassuntivi da 3–4 righe!** Ogni sezione (## e ###) DEVE contenere spiegazioni estese, discorsive, ricche di meccanismi passo-passo, razionale anatomo-fisiopatologico e correlazioni cliniche.
-   - Se nomini una manovra, un esame, un segno o una terapia, DEVI spiegare nel dettaglio **come si esegue, cosa si osserva, come si interpreta il risultato positivo/negativo e quali sono le indicazioni/controindicazioni**.
-4. **ELEMENTI OBBLIGATORI IN OGNI LEZIONE**:
-   - **Almeno 1–2 TABELLE MARKDOWN COMPLETE E DETTAGLIATE** (es. classificazione completa con sottoclassi e cut-off, oppure tabella comparativa di prove/manovre/terapie con meccanismo, indicazioni e risultati).
-   - **Almeno 2 BOX CALLOUT** ricchi di dati reali dalle dispense:
-     > **Esempio / Studio di Riferimento:** [Riporta numeri, autori, campione e risultati concreti delle dispense]
-     > **Attenzione / Distinzione Chiave d'Esame:** [Errore tipico d'esame o distinzione critica]
-   - **Formule LaTeX** ($...$ / $$...$$) quando pertinenti.
-5. **IMMAGINI REALI DAI DOCUMENTI**:
-${
-  availableImagesList.length > 0
-    ? `Sono disponibili queste ${availableImagesList.length} immagini REALI ritagliate dai documenti dello studente:
+      const imagesRuleBlock =
+        availableImagesList.length > 0
+          ? `Sono disponibili queste ${availableImagesList.length} immagini REALI ritagliate dai documenti dello studente:
 ${availableImagesList
   .map((img) => `- ID: "${img.id}" -> ${img.name} (${img.fileName})`)
   .join('\n')}
-Inserisci nei punti pertinenti 2–5 di queste immagini usando ESATTAMENTE questa sintassi su una riga dedicata:
+Inserisci nei punti pertinenti 2-5 di queste immagini usando ESATTAMENTE questa sintassi su una riga dedicata:
 ![Scrivi una didascalia clinica breve e precisa](ID_ESATTO)
 Regola didascalia: scrivi solo il titolo clinico pulito tra parentesi quadre (mai barre o segnaposto).`
-    : 'Usa tabelle Markdown dettagliate per schematizzare i concetti chiave.'
-}
-6. **CHIUSURA CON VERIFICA RAPIDA**:
-   - Chiudi con "## Verifica Rapida (Vero o Falso)" contenente **3 affermazioni trabocchetto d'esame** (ognuna su una riga numerata con risposta Vero/Falso + spiegazione concisa).`;
+          : 'Usa tabelle Markdown dettagliate per schematizzare i concetti chiave.';
 
-      const lessonUserPrompt = `MATERIA: "${examDescription || 'Trattazione di Studio'}"
-ARGOMENTO SPECIFICO DA SVILUPPARE A FONDO: "${topicTitle}"
+      const coreDidacticRules = `${depthInstruction}
+${syllabusBoundaryBlock}
+
+REGOLE INDEROGABILI DI QUALITA E COMPLETEZZA:
+1. FOCUS ASSOLUTO SU "${topicTitle}": parti subito con "## 1. ..." (NON inserire Indice Analitico e NON scrivere frasi conclusive vuote).
+2. ESTRAZIONE FORENSE TOTALE DALLE DISPENSE DEL DOCENTE: riporta OGNI singolo dettaglio presente nei documenti caricati relativo a "${topicTitle}" (nomi di autori/studi, anno, campione N, percentuali, geni/loci, meccanismi molecolari, segni clinici/ecografici eponimi, prove semeiologiche passo passo con tempi e criteri di positivita, TUTTE le classi/sottoclassi e i cut-off numerici).
+3. REGOLA ANTI-COMPRESSIONE (MINIMO 1.800-3.000 PAROLE): VIETATO fare paragrafi riassuntivi da 3-4 righe! Ogni sezione (## e ###) DEVE contenere spiegazioni estese, discorsive, meccanismi passo-passo e correlazioni pratiche/cliniche.
+4. ELEMENTI OBBLIGATORI:
+   - Almeno 1-2 TABELLE MARKDOWN COMPLETE E DETTAGLIATE.
+   - Almeno 2 BOX CALLOUT (> **Esempio / Studio di Riferimento:** ... e > **Attenzione / Distinzione Chiave d'Esame:** ...).
+   - Formule LaTeX ($...$ / $$...$$) quando pertinenti.
+5. IMMAGINI REALI DAI DOCUMENTI:
+${imagesRuleBlock}
+6. CHIUSURA CON VERIFICA RAPIDA: chiudi con "## Verifica Rapida (Vero o Falso)" contenente 3 affermazioni trabocchetto d'esame (ciascuna numerata con risposta **Vero** o **Falso**: spiegazione concisa).`;
+
+      // Helper per eseguire la pipeline Admin -> 3 Sotto-Agenti in parallelo -> Macro-Agente
+      const runMultiAgentPipeline = async (emitStatus) => {
+        // FASE 1: ADMIN PLANNER (analizza syllabus, divide il testo in parti esatte e definisce i confini)
+        emitStatus(1, 'Admin AI: analisi del syllabus, esclusione argomenti di altre lezioni e divisione in sezioni...');
+
+        const adminSystemPrompt = `Sei l'ADMIN DIDATTICO di MinervaAI. Il tuo compito e pianificare la scaletta esatta della lezione "${topicTitle}" (materia: "${examDescription || 'Studio'}") affinche i sotto-agenti la sviluppino in modo chirurgico, completo e SENZA ripetere argomenti delle altre lezioni del corso.
+
+Restituisci ESCLUSIVAMENTE un JSON valido:
+{
+  "sections": [
+    {
+      "number": 1,
+      "title": "Titolo preciso della sezione",
+      "mustInclude": ["dettaglio specifico 1 dalle fonti", "classificazione/tabella/valore numerico/manovra 2"]
+    }
+  ],
+  "outOfScope": ["argomenti di altre lezioni da NON trattare qui"],
+  "requiredTables": ["descrizione tabella 1 da includere"]
+}
+
+Scegli il numero ideale di sezioni (da 4 a 7 parti) in base alla densita reale dell'argomento "${topicTitle}" nelle fonti.`;
+
+        const adminUserPrompt = `ARGOMENTO TARGET: "${topicTitle}"
+MATERIA: "${examDescription || 'Studio'}"
+${syllabusBoundaryBlock}
+${relevantSources ? `\nFONTI DEL DOCENTE (estratto per pianificazione):\n${relevantSources.slice(0, 45000)}` : '\nNessun file allegato: pianifica in base allo standard universitario avanzato.'}`;
+
+        let blueprintText = '';
+        try {
+          const adminRes = await generateAI({
+            tier: 'light',
+            systemPrompt: adminSystemPrompt,
+            messages: [{ role: 'user', content: adminUserPrompt }],
+            temperature: 0.2,
+            maxTokens: 2048,
+            jsonMode: true,
+          });
+          const bp = safeParseJson(adminRes.text, null);
+          if (bp && Array.isArray(bp.sections) && bp.sections.length > 0) {
+            blueprintText = `PIANO SEZIONI DEFINITO DALL'ADMIN (${bp.sections.length} PARTI OBBLIGATORIE):
+${bp.sections
+  .map(
+    (s, i) =>
+      `${i + 1}. ## ${s.number || i + 1}. ${s.title}${
+        Array.isArray(s.mustInclude) && s.mustInclude.length > 0
+          ? `\n   Elementi obbligatori da sviluppare a fondo: ${s.mustInclude.join('; ')}`
+          : ''
+      }`
+  )
+  .join('\n')}
+${
+  Array.isArray(bp.requiredTables) && bp.requiredTables.length > 0
+    ? `\nTABELLE OBBLIGATORIE: ${bp.requiredTables.join(' | ')}`
+    : ''
+}
+${
+  Array.isArray(bp.outOfScope) && bp.outOfScope.length > 0
+    ? `\nFUORI PERIMETRO (NON TRATTARE QUI, APPARTIENE AD ALTRE LEZIONI): ${bp.outOfScope.join('; ')}`
+    : ''
+}`;
+          }
+        } catch (err) {
+          console.warn('Admin Planner fallback:', err.message);
+        }
+
+        // FASE 2: TEAMWORK — 3 SOTTO-AGENTI IN PARALLELO GENERANO 3 LEZIONI COMPLETE INDIPENDENTI
+        emitStatus(2, 'Teamwork AI: 3 sotto-agenti stanno sviluppando 3 versioni complete della lezione in parallelo...');
+
+        const subAgentProfiles = [
+          {
+            id: 1,
+            name: 'Agente Forense & Classificazioni',
+            focus:
+              'Massima fedelta forense alle fonti: non perdere NEMMENO UN numero, cut-off, percentuale, studio clinico/autore, gene/locus, sottoclasse o tabella comparativa.',
+            temp: 0.25,
+          },
+          {
+            id: 2,
+            name: 'Agente Fisiopatologo & Operativo',
+            focus:
+              'Massima profondita esplicativa e discorsiva: spiega ogni meccanismo causa-effetto passo dopo passo, il razionale teorico/clinico, come si esegue e si interpreta ogni prova/manovra/procedura, con box callout d esame potentissimi.',
+            temp: 0.35,
+          },
+          {
+            id: 3,
+            name: 'Agente Esaminatore & Schemi',
+            focus:
+              'Massima chiarezza strutturale e resa d esame: definizioni cristalline, distinzioni critiche tra concetti confondibili, posizionamento perfetto delle immagini ![didascalia](ID), formule LaTeX e 3 domande Vero/Falso davvero selettive.',
+            temp: 0.3,
+          },
+        ];
+
+        let completedDrafts = 0;
+        const draftPromises = subAgentProfiles.map(async (agent) => {
+          const subSys = `Sei il Sotto-Agente #${agent.id} (${agent.name}) del team MinervaAI.
+LA TUA SPECIALIZZAZIONE: ${agent.focus}
+
+${coreDidacticRules}`;
+
+          const subUser = `MATERIA: "${examDescription || 'Studio'}"
+ARGOMENTO ESCLUSIVO: "${topicTitle}"
 LIVELLO TARGET: ${prepTarget}%
+
+${blueprintText || 'Struttura la lezione in 4-6 sezioni numerate (## 1., ## 2., ...) focalizzate esclusivamente su questo argomento.'}
+
 ${
   relevantSources
-    ? `\nFONTI DEL DOCENTE (ESTRAI E SVILUPPA OGNI SINGOLO DETTAGLIO, NUMERO, STUDIO, SOTTOCLASSE E MANOVRA RELATIVA A "${topicTitle}"):\n${relevantSources}`
-    : '\n(Nessun file allegato: sviluppa la trattazione al massimo livello universitario con tabelle complete, sottoclassi, meccanismi e cut-off ufficiali).'
+    ? `FONTI DEL DOCENTE:\n${relevantSources}`
+    : '(Nessun file allegato: usa conoscenze universitarie approfondite e rigorose.)'
 }
 
-CHECKLIST OBBLIGATORIA PRIMA DI RISPONDERE:
-- Sviluppa SOLO "${topicTitle}" in profondità (almeno 1.800–2.500 parole reali, zero riassunti brevi).
-- Inserisci OBBLIGATORIAMENTE almeno 1 TABELLA MARKDOWN completa (con tutte le classi/sottoclassi o confronti) e 2 BOX CALLOUT (> **...**).
-- Spiega passo-passo ogni manovra, segno, meccanismo e studio citato nelle fonti.
-- Inizia subito con ## 1. ... (senza indice e senza frasi conclusive generiche).`;
+Redigi la TUA versione completa della lezione (minimo 1.800 parole, zero riassunti brevi, rispetta rigorosamente i confini del syllabus).`;
+
+          const res = await generateAI({
+            tier: 'light',
+            systemPrompt: subSys,
+            messages: [{ role: 'user', content: subUser }],
+            temperature: agent.temp,
+            maxTokens: 10000,
+          });
+          completedDrafts += 1;
+          emitStatus(
+            2,
+            `Teamwork AI: completate ${completedDrafts}/3 lezioni candidate dai sotto-agenti...`
+          );
+          return { agent: agent.name, text: res.text || '' };
+        });
+
+        const settled = await Promise.allSettled(draftPromises);
+        const validDrafts = settled
+          .filter((r) => r.status === 'fulfilled' && r.value?.text && r.value.text.length > 300)
+          .map((r) => r.value);
+
+        // FASE 3: MACRO-AGENTE SYNTHESIZER (confronta le 3 lezioni e fonde il meglio nella lezione definitiva)
+        emitStatus(
+          3,
+          `Macro-Agente AI: confronto delle ${validDrafts.length} lezioni generate e sintesi della versione definitiva...`
+        );
+
+        const macroSystemPrompt = `Sei il MACRO-AGENTE REDATTORE CAPO di MinervaAI (professore universitario ordinario).
+Hai ricevuto ${validDrafts.length} versioni complete e indipendenti della lezione "${topicTitle}" prodotte in parallelo da 3 sotto-agenti specializzati.
+
+IL TUO COMPITO SUPREMO:
+1. CONFRONTA attentamente tutte le versioni sezione per sezione.
+2. FONDI IL MEGLIO DI TUTTE E 3 in UNA SOLA LEZIONE DEFINITIVA, COESA E MONUMENTALE:
+   - Prendi TUTTI i numeri, cut-off, classificazioni complete, sottoclassi, studi, autori, geni e tabelle piu ricche tra le 3 bozze (se un dettaglio importante compare anche in una sola bozza, INCLUDILO!).
+   - Prendi le spiegazioni fisiopatologiche/meccanicistiche e operative piu chiare, estese e scorrevoli (ZERO compressione, minimo 2.000-3.200 parole).
+   - Mantieni le migliori tabelle Markdown, almeno 2 box callout (> **...**), le formule LaTeX corrette e i tag immagine ![didascalia](ID) piu pertinenti.
+   - Seleziona o perfeziona le 3 migliori domande per "## Verifica Rapida (Vero o Falso)".
+3. CONTROLLO CONFINI SYLLABUS: verifica che la lezione finale tratti ESCLUSIVAMENTE "${topicTitle}" e NON ripeta argomenti che spettano alle altre lezioni del piano di studio.
+4. STILE FINALE: restituisci SOLO la lezione finale pulita in Markdown partendo subito da "## 1. ..." (NON scrivere mai commenti del tipo "Ho confrontato le 3 bozze..." o meta-spiegazioni).
+
+${coreDidacticRules}`;
+
+        const macroUserPrompt =
+          validDrafts.length > 0
+            ? `MATERIA: "${examDescription || 'Studio'}"
+ARGOMENTO ESCLUSIVO: "${topicTitle}"
+${blueprintText ? `\n${blueprintText}\n` : ''}
+${validDrafts
+  .map(
+    (d, i) =>
+      `\n==================== LEZIONE CANDIDATA ${i + 1} (${d.agent}) ====================\n${d.text.slice(0, 26000)}`
+  )
+  .join('\n')}
+
+Ora confronta le ${validDrafts.length} lezioni candidate e scrivi la LEZIONE DEFINITIVA SUPERIORE che integra ogni singolo punto di forza di tutte le versioni, senza ripetere argomenti di altre lezioni del syllabus.`
+            : `MATERIA: "${examDescription || 'Studio'}"
+ARGOMENTO ESCLUSIVO: "${topicTitle}"
+${blueprintText ? `\n${blueprintText}\n` : ''}
+${relevantSources ? `\nFONTI DEL DOCENTE:\n${relevantSources}` : ''}
+Scrivi la lezione definitiva completa al massimo livello universitario.`;
+
+        return { macroSystemPrompt, macroUserPrompt };
+      };
 
       if (stream) {
-        return await streamAIResponse({
-          tier: 'heavy',
-          systemPrompt: lessonSystemPrompt,
-          messages: [{ role: 'user', content: lessonUserPrompt }],
-          temperature: 0.35,
-          maxTokens: 16384,
-          onComplete: () => recordUsage(),
+        const encoder = new TextEncoder();
+        const sseStream = new ReadableStream({
+          async start(controller) {
+            const sendEvent = (evt) => {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(evt)}\n\n`));
+            };
+
+            try {
+              const { macroSystemPrompt, macroUserPrompt } = await runMultiAgentPipeline((stage, text) => {
+                sendEvent({ type: 'status', stage, text });
+              });
+
+              const { modelUsed, provider } = await streamAIToWriter({
+                tier: 'heavy',
+                systemPrompt: macroSystemPrompt,
+                messages: [{ role: 'user', content: macroUserPrompt }],
+                temperature: 0.3,
+                maxTokens: 16384,
+                sendEvent,
+              });
+
+              await recordUsage();
+              sendEvent({ type: 'done', modelUsed, provider });
+            } catch (err) {
+              sendEvent({ type: 'error', error: err.message || 'Errore nella generazione multi-agente.' });
+            } finally {
+              controller.close();
+            }
+          },
+        });
+
+        return new Response(sseStream, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/event-stream; charset=utf-8',
+            'Cache-Control': 'no-cache, no-transform',
+            Connection: 'keep-alive',
+          },
         });
       }
 
+      const { macroSystemPrompt, macroUserPrompt } = await runMultiAgentPipeline(() => {});
       const { text, modelUsed } = await generateAI({
         tier: 'heavy',
-        systemPrompt: lessonSystemPrompt,
-        messages: [{ role: 'user', content: lessonUserPrompt }],
-        temperature: 0.35,
+        systemPrompt: macroSystemPrompt,
+        messages: [{ role: 'user', content: macroUserPrompt }],
+        temperature: 0.3,
         maxTokens: 16384,
       });
 

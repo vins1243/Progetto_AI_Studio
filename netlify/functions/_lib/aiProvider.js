@@ -491,6 +491,145 @@ export async function streamAIResponse({
 }
 
 // -------------------------------------------------------------
+// STREAMING VERSO WRITER SSE ESISTENTE (PER PIPELINE MULTI-AGENTE)
+// -------------------------------------------------------------
+export async function streamAIToWriter({
+  tier = 'heavy',
+  systemPrompt,
+  messages,
+  temperature = 0.35,
+  maxTokens = 16384,
+  sendEvent,
+}) {
+  const geminiKey = process.env.GEMINI_API_KEY;
+  const openaiKey = process.env.OPENAI_API_KEY;
+  const tierConfig = MODEL_TIERS[tier] || MODEL_TIERS.heavy;
+
+  let upstreamRes = null;
+  let provider = null;
+  let modelUsed = null;
+  let lastError = null;
+
+  if (geminiKey) {
+    for (const model of tierConfig.gemini) {
+      try {
+        const body = buildGeminiBody({
+          model,
+          systemPrompt,
+          messages,
+          temperature,
+          maxOutputTokens: maxTokens,
+        });
+        const res = await fetch(
+          `${GEMINI_BASE_URL}/${model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(geminiKey)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          }
+        );
+        if (res.ok && res.body) {
+          upstreamRes = res;
+          provider = 'gemini';
+          modelUsed = model;
+          break;
+        }
+        const errText = await res.text();
+        lastError = new Error(`Gemini stream ${model} HTTP ${res.status}: ${errText.slice(0, 200)}`);
+      } catch (err) {
+        lastError = err;
+      }
+    }
+  }
+
+  if (!upstreamRes && openaiKey) {
+    const openaiMessages = [];
+    if (systemPrompt) openaiMessages.push({ role: 'system', content: systemPrompt });
+    for (const m of messages) {
+      openaiMessages.push({
+        role: m.role === 'model' ? 'assistant' : m.role,
+        content: m.content || '',
+      });
+    }
+    for (const model of tierConfig.openai) {
+      try {
+        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${openaiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: openaiMessages,
+            temperature,
+            max_tokens: maxTokens,
+            stream: true,
+          }),
+        });
+        if (res.ok && res.body) {
+          upstreamRes = res;
+          provider = 'openai';
+          modelUsed = model;
+          break;
+        }
+        const errText = await res.text();
+        lastError = new Error(`OpenAI stream ${model} HTTP ${res.status}: ${errText.slice(0, 200)}`);
+      } catch (err) {
+        lastError = err;
+      }
+    }
+  }
+
+  if (!upstreamRes) {
+    throw lastError || new Error('Impossibile avviare lo streaming del Macro-Agente.');
+  }
+
+  sendEvent({ type: 'meta', modelUsed, provider });
+
+  const reader = upstreamRes.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let fullText = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line.startsWith('data:')) continue;
+      const jsonStr = line.slice(5).trim();
+      if (!jsonStr || jsonStr === '[DONE]') continue;
+
+      try {
+        const parsed = JSON.parse(jsonStr);
+        let delta = '';
+        if (provider === 'gemini') {
+          delta = parsed?.candidates?.[0]?.content?.parts
+            ?.map((p) => p.text || '')
+            .join('') || '';
+        } else {
+          delta = parsed?.choices?.[0]?.delta?.content || '';
+        }
+        if (delta) {
+          fullText += delta;
+          sendEvent({ type: 'chunk', text: delta });
+        }
+      } catch {
+        // Ignora chunk JSON parziali
+      }
+    }
+  }
+
+  return { fullText, modelUsed, provider };
+}
+
+// -------------------------------------------------------------
 // TRASCRIZIONE AUDIO MULTIMODALE (GEMINI FLASH -> FALLBACK WHISPER)
 // -------------------------------------------------------------
 export async function transcribeAudio({ audioBase64, audioMimeType }) {

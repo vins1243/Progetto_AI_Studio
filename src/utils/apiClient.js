@@ -51,7 +51,7 @@ export async function callAiApi(payload) {
   return data;
 }
 
-export async function streamAiApi(payload, { onChunk, onMeta } = {}) {
+export async function streamAiApi(payload, { onChunk, onMeta, onStatus } = {}) {
   const headers = await getAuthHeaders();
   const res = await fetch('/.netlify/functions/chat', {
     method: 'POST',
@@ -107,6 +107,8 @@ export async function streamAiApi(payload, { onChunk, onMeta } = {}) {
         if (evt.type === 'meta') {
           modelUsed = evt.modelUsed || modelUsed;
           if (onMeta) onMeta(evt);
+        } else if (evt.type === 'status') {
+          if (onStatus) onStatus(evt);
         } else if (evt.type === 'chunk' && evt.text) {
           fullText += evt.text;
           if (onChunk) onChunk(evt.text, fullText);
