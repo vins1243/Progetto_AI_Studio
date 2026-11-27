@@ -313,12 +313,13 @@ function renderMarkdownAndLatexToHtml(md, imagesMap = {}) {
     if (tableRows[1] && /^[|\s\-:]+$/.test(tableRows[1].replace(/\|/g, '').trim() || tableRows[1])) {
       startIdx = 2;
     }
-    let ths = headers.map(h => '<th class="py-3 px-4 text-left font-bold text-xs uppercase tracking-wider">' + h + '</th>').join('');
+    const formatCell = (txt) => txt.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>');
+    let ths = headers.map(h => '<th class="py-3 px-4 text-left font-bold text-xs uppercase tracking-wider">' + formatCell(h) + '</th>').join('');
     let trs = [];
     for (let j = startIdx; j < tableRows.length; j++) {
       let cells = tableRows[j].split('|').slice(1, -1).map(c => c.trim());
       if (cells.length === 0 || !cells.some(Boolean)) continue;
-      let tds = cells.map(c => '<td class="py-2.5 px-4 text-xs align-top">' + c + '</td>').join('');
+      let tds = cells.map(c => '<td class="py-2.5 px-4 text-xs align-top">' + formatCell(c) + '</td>').join('');
       trs.push('<tr class="border-b border-slate-200 dark:border-slate-800 transition">' + tds + '</tr>');
     }
     output.push('<div class="academic-table-container my-6 overflow-x-auto" contenteditable="false"><table class="academic-table w-full border-collapse rounded-2xl overflow-hidden border border-slate-300 dark:border-slate-700 shadow-sm"><thead><tr class="bg-slate-900 text-white dark:bg-slate-800 border-b border-slate-700">' + ths + '</tr></thead><tbody class="divide-y divide-slate-200 dark:divide-slate-800">' + trs.join('') + '</tbody></table></div>');
@@ -1222,18 +1223,19 @@ function MainAppContent() {
       const dayTitle = currentDayData?.dayTitle || '';
       const dayDate = currentDayData?.date || '';
 
-      // Contenitore detached (NON position:fixed!) così html2pdf lo monta nel proprio overlay e non genera pagine bianche
+      // Contenitore esatto per area stampabile A4 (190mm = ~700px a 96dpi) senza offset orizzontali
       const printContainer = document.createElement('div');
       printContainer.id = 'minerva-pdf-render-target';
-      printContainer.className = 'pdf-export-container';
-      printContainer.style.width = '750px';
+      printContainer.style.width = '700px';
+      printContainer.style.maxWidth = '700px';
+      printContainer.style.margin = '0';
+      printContainer.style.padding = '16px 20px';
       printContainer.style.backgroundColor = '#ffffff';
       printContainer.style.color = '#1e293b';
-      printContainer.style.padding = '28px 34px';
       printContainer.style.boxSizing = 'border-box';
       printContainer.style.fontFamily = '"Plus Jakarta Sans", Inter, -apple-system, BlinkMacSystemFont, sans-serif';
 
-      // Forza colori scuri su sfondo bianco indipendentemente dal tema Dark attivo su <html>
+      // Forza colori scuri su sfondo bianco e impaginazione pulita senza righe tagliate a metà
       const bodyHtml = wysiwygEditorRef.current.innerHTML;
       printContainer.innerHTML = `
         <style>
@@ -1241,33 +1243,49 @@ function MainAppContent() {
             color: #1e293b !important;
             background-color: transparent !important;
             border-color: #e2e8f0 !important;
+            box-sizing: border-box !important;
+            max-width: 100% !important;
           }
           #minerva-pdf-render-target {
             background-color: #ffffff !important;
+            margin: 0 !important;
+            text-align: left !important;
           }
           #minerva-pdf-render-target h1 {
             color: #881337 !important;
-            font-size: 22px !important;
+            font-size: 20px !important;
             font-weight: 800 !important;
-            margin: 16px 0 10px 0 !important;
+            margin: 14px 0 8px 0 !important;
+            page-break-after: avoid !important;
+            break-after: avoid !important;
           }
           #minerva-pdf-render-target h2 {
             color: #9f1239 !important;
-            font-size: 17px !important;
+            font-size: 16px !important;
             font-weight: 700 !important;
-            margin: 16px 0 8px 0 !important;
+            margin: 16px 0 6px 0 !important;
+            page-break-after: avoid !important;
+            break-after: avoid !important;
           }
           #minerva-pdf-render-target h3 {
             color: #a21caf !important;
-            font-size: 14.5px !important;
+            font-size: 14px !important;
             font-weight: 700 !important;
-            margin: 12px 0 6px 0 !important;
+            margin: 12px 0 5px 0 !important;
+            page-break-after: avoid !important;
+            break-after: avoid !important;
           }
           #minerva-pdf-render-target p, #minerva-pdf-render-target li {
             color: #1e293b !important;
-            font-size: 12.5px !important;
-            line-height: 1.7 !important;
-            margin-bottom: 8px !important;
+            font-size: 12px !important;
+            line-height: 1.65 !important;
+            margin-bottom: 7px !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          #minerva-pdf-render-target ul, #minerva-pdf-render-target ol {
+            margin-left: 18px !important;
+            margin-bottom: 10px !important;
           }
           #minerva-pdf-render-target strong, #minerva-pdf-render-target b {
             color: #0f172a !important;
@@ -1276,54 +1294,68 @@ function MainAppContent() {
           #minerva-pdf-render-target table {
             width: 100% !important;
             border-collapse: collapse !important;
-            margin: 14px 0 !important;
+            margin: 12px 0 !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          #minerva-pdf-render-target tr {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
           #minerva-pdf-render-target th {
             background-color: #fdf2f8 !important;
             color: #881337 !important;
             border: 1px solid #f3d5e0 !important;
-            padding: 7px 10px !important;
-            font-size: 11.5px !important;
+            padding: 6px 8px !important;
+            font-size: 11px !important;
             font-weight: 700 !important;
           }
           #minerva-pdf-render-target td {
             border: 1px solid #e2e8f0 !important;
-            padding: 7px 10px !important;
-            font-size: 11.5px !important;
+            padding: 6px 8px !important;
+            font-size: 11px !important;
           }
           #minerva-pdf-render-target .callout-box {
             background-color: #fff1f2 !important;
             border-left: 4px solid #be123c !important;
-            padding: 10px 14px !important;
-            border-radius: 8px !important;
+            padding: 10px 12px !important;
+            border-radius: 6px !important;
+            margin: 10px 0 !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          #minerva-pdf-render-target .lesson-image-wrapper {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            text-align: center !important;
             margin: 12px 0 !important;
           }
           #minerva-pdf-render-target img {
-            max-width: 100% !important;
+            max-width: 92% !important;
             height: auto !important;
             border-radius: 8px !important;
           }
         </style>
-        <div style="border-bottom: 2.5px solid #be123c; padding-bottom: 14px; margin-bottom: 22px;">
+        <div style="border-bottom: 2.5px solid #be123c; padding-bottom: 12px; margin-bottom: 18px;">
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-            <div style="font-size: 11px; color: #be123c !important; font-weight: 800; text-transform: uppercase; letter-spacing: 1.2px;">
+            <div style="font-size: 10.5px; color: #be123c !important; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;">
               MinervaAI • Compendio Didattico
             </div>
-            <div style="font-size: 11px; color: #64748b !important; font-weight: 600;">
+            <div style="font-size: 10.5px; color: #64748b !important; font-weight: 600;">
               ${dayTitle ? `${dayTitle} • ` : ''}${dayDate || new Date().toLocaleDateString('it-IT')}
             </div>
           </div>
-          <h1 style="margin: 6px 0 6px 0; font-size: 24px; color: #0f172a !important; font-weight: 800; line-height: 1.3;">
+          <h1 style="margin: 4px 0 4px 0; font-size: 21px; color: #0f172a !important; font-weight: 800; line-height: 1.3;">
             ${topicTitle}
           </h1>
-          <div style="font-size: 12px; color: #475569 !important; font-style: italic;">
+          <div style="font-size: 11.5px; color: #475569 !important; font-style: italic;">
             <strong>Materia:</strong> ${examName}
           </div>
         </div>
         <div class="pdf-body-content">
           ${bodyHtml}
         </div>
-        <div style="border-top: 1px solid #e2e8f0; margin-top: 32px; padding-top: 10px; font-size: 10px; color: #64748b !important; display: flex; justify-content: space-between; align-items: center;">
+        <div style="border-top: 1px solid #e2e8f0; margin-top: 24px; padding-top: 8px; font-size: 10px; color: #64748b !important; display: flex; justify-content: space-between; align-items: center;">
           <span>MinervaAI • Piattaforma di Studio AI</span>
           <span>Esportato il ${new Date().toLocaleDateString('it-IT')}</span>
         </div>
@@ -1338,7 +1370,12 @@ function MainAppContent() {
           useCORS: true,
           backgroundColor: '#ffffff',
           logging: false,
-          windowWidth: 794,
+          x: 0,
+          y: 0,
+          scrollX: 0,
+          scrollY: 0,
+          width: 700,
+          windowWidth: 700,
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: { mode: ['css', 'legacy'] },
