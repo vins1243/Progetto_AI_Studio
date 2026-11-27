@@ -1333,6 +1333,25 @@ function MainAppContent() {
     const dbData = await getProjectDataFromDB(proj.id);
     if (dbData && dbData.files) {
       setActiveProject(prev => prev && prev.id === proj.id ? { ...prev, files: dbData.files } : prev);
+
+      // Sync retroattivo automatico: se questo dispositivo ha immagini PDF in IndexedDB ma Supabase non ha ancora i loro URL cloud, le carica subito!
+      const hasLocalImgs = dbData.files.some(f => Array.isArray(f.images) && f.images.some(img => img?.dataUrl && !/^https?:\/\//i.test(img.dataUrl)));
+      const hasCloudImgs = (proj.files || []).some(f => Array.isArray(f.images) && f.images.some(img => img?.dataUrl && /^https?:\/\//i.test(img.dataUrl)));
+      if (user?.id && hasLocalImgs && !hasCloudImgs) {
+        uploadProjectImagesToCloud(user.id, proj.id, dbData.files)
+          .then((cloudFiles) => {
+            const mergedFiles = (proj.files?.length ? proj.files : dbData.files).map((f) => {
+              const match = cloudFiles.find((cf) => cf.id === f.id || cf.name === f.name);
+              return match?.images?.length ? { ...f, images: match.images } : f;
+            });
+            const anyUploaded = mergedFiles.some((f) => (f.images || []).length > 0);
+            if (!anyUploaded) return;
+            const syncedProj = { ...proj, files: mergedFiles };
+            setSavedProjects((prev) => (prev || []).map((p) => (p.id === proj.id ? { ...p, files: mergedFiles } : p)));
+            saveProjectToCloud(user.id, syncedProj);
+          })
+          .catch((e) => console.warn('Sync retroattivo immagini cloud:', e));
+      }
     }
   };
 
@@ -4511,33 +4530,33 @@ function MainAppContent() {
       <div className="flex-1 flex flex-col h-full w-full relative overflow-hidden">
         
         {/* HEADER FISSO */}
-        <header className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-geminiBorder/40 bg-geminiDark z-20 shrink-0">
-          <div className="flex items-center gap-3">
+        <header className="flex items-center justify-between gap-2 px-3 sm:px-6 py-2.5 sm:py-3 border-b border-geminiBorder/40 bg-geminiDark z-20 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button 
               onClick={() => setIsSidebarOpen(true)}
-              className="p-2 text-gray-300 hover:text-white hover:bg-geminiHover rounded-xl border border-geminiBorder/60 transition flex items-center justify-center shadow-sm"
+              className="p-2 text-gray-300 hover:text-white hover:bg-geminiHover rounded-xl border border-geminiBorder/60 transition flex items-center justify-center shadow-sm shrink-0"
               title="Apri menu laterale"
             >
-              <Menu size={20} />
+              <Menu size={19} />
             </button>
             
             <div 
               onClick={() => setCurrentView('chat')}
-              className="flex items-center gap-2.5 cursor-pointer select-none group"
+              className="flex items-center gap-2 cursor-pointer select-none group min-w-0"
               title="MinervaAI"
             >
               <img 
                 src={logoImg} 
                 alt="MinervaAI" 
-                className="w-8 h-8 object-contain rounded-lg shadow-sm" 
+                className="w-7 h-7 sm:w-8 sm:h-8 object-contain rounded-lg shadow-sm shrink-0" 
               />
-              <span className="font-bold text-lg tracking-tight bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 bg-clip-text text-transparent">
+              <span className="font-bold text-base sm:text-lg tracking-tight bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 bg-clip-text text-transparent truncate">
                 MinervaAI
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
           {/* USER PROFILE / AUTH BUTTON */}
           {user ? (
             <div className="relative">
@@ -4640,11 +4659,12 @@ function MainAppContent() {
 
           <button 
             onClick={handleStartWizard}
-              className="flex items-center gap-2 text-xs sm:text-sm font-semibold bg-gradient-to-r from-indigo-700 via-indigo-600 to-blue-600 hover:from-indigo-600 hover:to-blue-500 text-white px-4 py-2 rounded-full shadow-lg shadow-indigo-700/30 transition transform active:scale-95"
-            >
-              <Sparkles size={16} />
-              <span>Crea guida allo studio</span>
-            </button>
+            className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-semibold bg-gradient-to-r from-indigo-700 via-indigo-600 to-blue-600 hover:from-indigo-600 hover:to-blue-500 text-white px-3 sm:px-4 py-2 rounded-full shadow-lg shadow-indigo-700/30 transition transform active:scale-95 whitespace-nowrap shrink-0"
+          >
+            <Sparkles size={15} className="shrink-0" />
+            <span className="sm:hidden">Nuova</span>
+            <span className="hidden sm:inline">Crea guida allo studio</span>
+          </button>
           </div>
         </header>
 
@@ -5566,7 +5586,7 @@ function MainAppContent() {
                 </div>
               </div>
               
-              <div className="flex items-center gap-1.5 flex-wrap">
+              <div className="flex items-center gap-1.5 overflow-x-auto max-w-full pb-0.5 sm:pb-0 flex-nowrap sm:flex-wrap">
                 <PomodoroStreakBar />
                 {/* ESAME ORALE VOCALE */}
                 <button
@@ -5802,10 +5822,10 @@ function MainAppContent() {
               {/* AREA LETTURA CENTRALE PULITA STILE ALGOR */}
               <div className="flex-1 flex flex-col h-full overflow-hidden">
                 
-                <div className="px-4 sm:px-6 py-2 border-b border-geminiBorder/30 shrink-0 space-y-2">
+                <div className="px-3 sm:px-6 py-2 border-b border-geminiBorder/30 shrink-0 space-y-2">
                   
-                  <div className="flex items-center justify-between gap-2 overflow-x-auto">
-                    <div className="flex items-center gap-1.5 lg:hidden">
+                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:hidden">
                       {(currentDayData?.topics || []).map(topic => (
                         <button
                           key={topic.id}
@@ -5816,14 +5836,14 @@ function MainAppContent() {
                             setImageBoxRect(null);
                             lastLoadedTopicIdRef.current = null;
                           }}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 border ${
+                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 whitespace-nowrap transition flex items-center gap-1.5 border ${
                             currentSelectedTopic?.id === topic.id
                               ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
                               : 'bg-geminiDarkSecondary text-gray-400 border-geminiBorder hover:text-gray-200'
                           }`}
                         >
-                          <span>{topic.title}</span>
-                          {topic.lesson && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
+                          <span className="max-w-[180px] truncate">{topic.title}</span>
+                          {topic.lesson && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />}
                         </button>
                       ))}
                     </div>

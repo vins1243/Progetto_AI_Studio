@@ -97,7 +97,7 @@ export default function PomodoroStreakBar() {
   };
 
   return (
-    <div className="inline-flex items-center gap-1.5 flex-wrap">
+    <div className="inline-flex items-center gap-1.5 flex-nowrap shrink-0">
       {/* STREAK GIORNALIERA */}
       <div
         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-300 text-[11px] font-extrabold"
