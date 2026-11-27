@@ -334,19 +334,19 @@ function renderMarkdownAndLatexToHtml(md, imagesMap = {}) {
     }
 
     // Markdown Image (![alt](src))
-    let imgMatch = trimmed.match(/^!\[(.*?)\]\((.*?)\)$/);
+    let imgMatch = trimmed.match(/!\[(.*?)\]\((.*?)\)/);
     if (imgMatch) {
       if (inList) { output.push(inList === 'ul' ? '</ul>' : '</ol>'); inList = null; }
       let alt = (imgMatch[1] || 'Illustrazione').trim();
-      let src = (imgMatch[2] || '').trim();
-      let realSrc = imagesMap[src] || src;
+      let rawSrc = (imgMatch[2] || '').trim().replace(/^[`"'\s]+|[`"'\s]+$/g, '');
+      let realSrc = imagesMap[rawSrc] || imagesMap[rawSrc.toUpperCase()] || rawSrc;
 
       let isActualUrl = realSrc.startsWith('http') || realSrc.startsWith('data:');
       if (isActualUrl) {
         output.push('<div class="lesson-image-wrapper text-center my-6" contenteditable="false"><div class="inline-block relative group" style="width:72%;max-width:680px;"><img src="' + realSrc + '" alt="' + alt + '" class="lesson-img rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700 w-full object-contain cursor-pointer transition hover:shadow-xl" /></div><p class="text-xs text-slate-500 dark:text-slate-400 italic mt-2.5 text-center font-medium"><strong>Figura:</strong> ' + alt + '</p></div>');
       } else {
         // Schema didattico elegante se l'immagine non ha un file collegato
-        output.push('<div class="lesson-image-wrapper text-center my-6" contenteditable="false"><div class="inline-block p-5 rounded-2xl bg-blue-50/60 dark:bg-geminiDarkSecondary border border-blue-200 dark:border-blue-500/30 text-center shadow-sm" style="width:72%;max-width:680px;"><div class="w-10 h-10 mx-auto rounded-xl bg-blue-600/20 text-blue-500 flex items-center justify-center mb-2 font-bold">📊</div><div class="text-xs font-bold text-slate-800 dark:text-gray-100">' + alt + '</div><div class="text-[11px] text-slate-500 dark:text-gray-400 mt-1">Schema clinico di riferimento accademico</div></div><p class="text-xs text-slate-500 dark:text-slate-400 italic mt-2 text-center font-medium"><strong>Figura:</strong> ' + alt + '</p></div>');
+        output.push('<div class="lesson-image-wrapper text-center my-6" contenteditable="false"><div class="inline-block p-5 rounded-2xl bg-blue-50/60 dark:bg-geminiDarkSecondary border border-blue-200 dark:border-blue-500/30 text-center shadow-sm" style="width:72%;max-width:680px;"><div class="w-10 h-10 mx-auto rounded-xl bg-blue-600/20 text-blue-500 flex items-center justify-center mb-2 font-bold">📊</div><div class="text-xs font-bold text-slate-800 dark:text-gray-100">' + alt + '</div><div class="text-[11px] text-slate-500 dark:text-gray-400 mt-1">Schema didattico di riferimento</div></div><p class="text-xs text-slate-500 dark:text-slate-400 italic mt-2 text-center font-medium"><strong>Figura:</strong> ' + alt + '</p></div>');
       }
       continue;
     }
@@ -886,19 +886,48 @@ function MainAppContent() {
   const currentDayData = activeProject?.schedule?.find(d => d.dayNumber === selectedDayNumber) || activeProject?.schedule?.[0];
   const currentSelectedTopic = currentDayData?.topics?.find(t => t.id === selectedTopicId) || currentDayData?.topics?.[0];
 
-  // Inizializza il contenuto dell'editor WYSIWYG
+  // Costruisce la mappa ID -> dataUrl di tutte le immagini estratte dai file del progetto
+  const buildImagesMapFromFiles = (filesList = []) => {
+    const map = {};
+    (filesList || []).forEach(f => {
+      (f.images || []).forEach(img => {
+        if (img?.dataUrl) {
+          if (img.id) {
+            map[img.id] = img.dataUrl;
+            map[String(img.id).toUpperCase()] = img.dataUrl;
+          }
+          if (img.name) map[img.name] = img.dataUrl;
+          if (img.label) map[img.label] = img.dataUrl;
+        }
+      });
+    });
+    return map;
+  };
+
+  // Inizializza il contenuto dell'editor WYSIWYG (caricando anche le immagini reali da IndexedDB)
   useEffect(() => {
     if (currentView === 'day_detail' && currentSelectedTopic && wysiwygEditorRef.current) {
       const currentId = currentSelectedTopic.id;
       if (lastLoadedTopicIdRef.current !== currentId || !wysiwygEditorRef.current.innerHTML.trim()) {
         lastLoadedTopicIdRef.current = currentId;
-        const html = renderMarkdownAndLatexToHtml(currentSelectedTopic.lesson || '');
-        wysiwygEditorRef.current.innerHTML = html;
-        setSelectedImageEl(null);
-        setImageBoxRect(null);
+        const loadAndRender = async () => {
+          let filesForImgs = activeProject?.files || [];
+          if (activeProject?.id) {
+            const dbData = await getProjectDataFromDB(activeProject.id);
+            if (dbData?.files?.length) filesForImgs = dbData.files;
+          }
+          const imgMap = buildImagesMapFromFiles(filesForImgs);
+          const html = renderMarkdownAndLatexToHtml(currentSelectedTopic.lesson || '', imgMap);
+          if (wysiwygEditorRef.current) {
+            wysiwygEditorRef.current.innerHTML = html;
+          }
+          setSelectedImageEl(null);
+          setImageBoxRect(null);
+        };
+        loadAndRender();
       }
     }
-  }, [currentView, currentSelectedTopic?.id, currentSelectedTopic?.lesson]);
+  }, [currentView, currentSelectedTopic?.id, currentSelectedTopic?.lesson, activeProject?.id]);
 
   // Aggiorna posizione rettangolo di selezione immagine
   const updateImageBoxPosition = (img) => {
@@ -1728,6 +1757,7 @@ function MainAppContent() {
     try {
       const dbData = await getProjectDataFromDB(activeProject.id);
       const fullFilesList = dbData?.files || activeProject.files || [];
+      const lessonImagesMap = buildImagesMapFromFiles(fullFilesList);
 
       let lastRenderTs = 0;
       const { reply: lessonContent } = await streamAiApi(
@@ -1749,7 +1779,7 @@ function MainAppContent() {
             const now = Date.now();
             if (wysiwygEditorRef.current && now - lastRenderTs > 140) {
               lastRenderTs = now;
-              wysiwygEditorRef.current.innerHTML = renderMarkdownAndLatexToHtml(fullText);
+              wysiwygEditorRef.current.innerHTML = renderMarkdownAndLatexToHtml(fullText, lessonImagesMap);
             }
           }
         }
@@ -1757,7 +1787,7 @@ function MainAppContent() {
 
       updateTopicLessonContent(dayNum, topic.id, lessonContent);
       if (wysiwygEditorRef.current) {
-        wysiwygEditorRef.current.innerHTML = renderMarkdownAndLatexToHtml(lessonContent);
+        wysiwygEditorRef.current.innerHTML = renderMarkdownAndLatexToHtml(lessonContent, lessonImagesMap);
       }
       refreshUsageQuota();
     } catch (err) {
@@ -2009,7 +2039,9 @@ function MainAppContent() {
         setPreviousLessonBackup(currentDocText);
         updateTopicLessonContent(currentDayData.dayNumber, currentSelectedTopic.id, data.updatedLessonContent);
         if (wysiwygEditorRef.current) {
-          wysiwygEditorRef.current.innerHTML = renderMarkdownAndLatexToHtml(data.updatedLessonContent);
+          const dbData = activeProject?.id ? await getProjectDataFromDB(activeProject.id) : null;
+          const imgMap = buildImagesMapFromFiles(dbData?.files || activeProject?.files || []);
+          wysiwygEditorRef.current.innerHTML = renderMarkdownAndLatexToHtml(data.updatedLessonContent, imgMap);
         }
       }
 
@@ -4887,13 +4919,22 @@ function MainAppContent() {
                 <span>Torna al Piano Giornaliero</span>
               </button>
               
-              <div className={`flex items-center gap-2 text-xs font-medium px-3 py-1 rounded-xl border ${
-                theme === 'light'
-                  ? 'bg-blue-50/70 border-blue-100 text-blue-900'
-                  : 'bg-blue-950/40 border-blue-900/50 text-blue-200'
-              }`}>
-                <CalendarIcon size={14} className="text-blue-500 shrink-0" />
-                <span>{currentDayData?.date} • {currentDayData?.dayTitle}</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentView('concept_maps')}
+                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition"
+                >
+                  <Network size={14} />
+                  <span>Mappa Concettuale</span>
+                </button>
+                <div className={`flex items-center gap-2 text-xs font-medium px-3 py-1 rounded-xl border ${
+                  theme === 'light'
+                    ? 'bg-blue-50/70 border-blue-100 text-blue-900'
+                    : 'bg-blue-950/40 border-blue-900/50 text-blue-200'
+                }`}>
+                  <CalendarIcon size={14} className="text-blue-500 shrink-0" />
+                  <span>{currentDayData?.date} • {currentDayData?.dayTitle}</span>
+                </div>
               </div>
             </div>
 

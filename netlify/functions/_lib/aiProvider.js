@@ -142,7 +142,14 @@ export function createSmartFileDigest(rawText, maxChars) {
 // -------------------------------------------------------------
 // CONVERSIONE MESSAGGI -> FORMATO GEMINI
 // -------------------------------------------------------------
-function buildGeminiBody({ systemPrompt, messages, temperature = 0.3, maxOutputTokens = 4096, jsonMode = false }) {
+function buildGeminiBody({
+  model = '',
+  systemPrompt,
+  messages,
+  temperature = 0.3,
+  maxOutputTokens = 8192,
+  jsonMode = false,
+}) {
   const contents = [];
 
   for (const msg of messages) {
@@ -179,6 +186,12 @@ function buildGeminiBody({ systemPrompt, messages, temperature = 0.3, maxOutputT
   if (jsonMode) {
     generationConfig.responseMimeType = 'application/json';
   }
+  // Gestione thinkingBudget su Gemini 2.5 per evitare troncamenti JSON o lezioni brevi
+  if (model.includes('gemini-2.5-flash')) {
+    generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  } else if (model.includes('gemini-2.5-pro')) {
+    generationConfig.thinkingConfig = { thinkingBudget: 1024 };
+  }
 
   const body = {
     contents,
@@ -213,16 +226,16 @@ export async function generateAI({
 
   // 1. Tentativo primario con Google Gemini (Flash o Pro in base al tier)
   if (geminiKey) {
-    const body = buildGeminiBody({
-      systemPrompt,
-      messages,
-      temperature,
-      maxOutputTokens: maxTokens,
-      jsonMode,
-    });
-
     for (const model of tierConfig.gemini) {
       try {
+        const body = buildGeminiBody({
+          model,
+          systemPrompt,
+          messages,
+          temperature,
+          maxOutputTokens: maxTokens,
+          jsonMode,
+        });
         const res = await fetch(`${GEMINI_BASE_URL}/${model}:generateContent?key=${encodeURIComponent(geminiKey)}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -326,16 +339,16 @@ export async function streamAIResponse({
   let lastError = null;
 
   if (geminiKey) {
-    const body = buildGeminiBody({
-      systemPrompt,
-      messages,
-      temperature,
-      maxOutputTokens: maxTokens,
-      jsonMode: false,
-    });
-
     for (const model of tierConfig.gemini) {
       try {
+        const body = buildGeminiBody({
+          model,
+          systemPrompt,
+          messages,
+          temperature,
+          maxOutputTokens: maxTokens,
+          jsonMode: false,
+        });
         const res = await fetch(
           `${GEMINI_BASE_URL}/${model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(geminiKey)}`,
           {

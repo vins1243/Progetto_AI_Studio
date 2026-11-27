@@ -29,6 +29,15 @@ function safeParseJson(raw, fallback) {
     const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
     return JSON.parse(cleaned);
   } catch {
+    try {
+      const firstBrace = raw.indexOf('{');
+      const lastBrace = raw.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace > firstBrace) {
+        return JSON.parse(raw.slice(firstBrace, lastBrace + 1));
+      }
+    } catch {
+      // ignore
+    }
     return fallback;
   }
 }
@@ -185,7 +194,7 @@ Restituisci SOLO il JSON valido della mappa concettuale.`;
         systemPrompt: mapSystemPrompt,
         messages: [{ role: 'user', content: mapUserPrompt }],
         temperature: 0.25,
-        maxTokens: 3200,
+        maxTokens: 6000,
         jsonMode: true,
       });
 
@@ -569,45 +578,54 @@ ${isOnlineSearch ? 'Genera il programma completo.' : `DOCUMENTI:\n${perFileSumma
       const relevantSources = extractRelevantChunks(
         allFiles,
         `${topicTitle || ''} ${examDescription || ''}`,
-        42000
+        65000
       );
 
-      const lessonSystemPrompt = `Sei un docente ordinario e autore di compendi e manuali didattici di eccellenza per scuole superiori e università.
-Redigi un "COMPENDIO RAGIONATO E APPROFONDITO" sul tema richiesto, adattando linguaggio, esempi e rigore alla materia ("${examDescription || 'Studio'}").
+      const lessonSystemPrompt = `Sei un professore universitario ordinario e autore di manuali e trattati didattici di riferimento per scuole superiori e università.
+Il tuo compito è redigere un **COMPENDIO MONUMENTALE, DISCORSIVO, RAGIONATO ED ESAUSTIVO** sull'argomento richiesto, calibrato sulla materia ("${examDescription || 'Studio'}").
 
-LINEE GUIDA:
-1. ZERO FRASI RIEMPITIVE: inizia ogni capitolo direttamente con definizioni formali, principi, cause o meccanismi chiave.
-2. DENSITÀ CONCETTUALE: ogni paragrafo deve trasmettere nozioni concrete, dati quantitativi, date, norme, teoremi o correlazioni pratiche.
-3. TABELLE COMPARATIVE: inserisci almeno 1-2 tabelle Markdown dettagliate (classificazioni, confronti, pro/contro, schemi risolutivi).
-4. FORMULE LATEX: quando pertinenti alla materia, scrivi tutte le formule in LaTeX rigoroso ($...$ inline o $$...$$ a blocchi).
-5. CALLOUT DI EVIDENZIAZIONE: usa citazioni Markdown per i concetti da ricordare all'esame:
-   > **Regola Cardine:** [...]
-   > **Attenzione / Errore Frequente:** [...]
-6. FIGURE: ${
-        availableImagesList.length > 0
-          ? `Inserisci nei punti pertinenti le figure estratte dai documenti dello studente usando ![Descrizione](ID_FIGURA):\n${availableImagesList
-              .map((img) => `- ID: "${img.id}" -> "${img.name}" (${img.fileName})`)
-              .join('\n')}`
-          : 'Non inventare URL di immagini esterne; usa tabelle o schemi testuali chiari.'
-      }
+REGOLA D'ORO SULLA PROFONDITÀ (FONDAMENTALE):
+- **DIVIETO ASSOLUTO DI RIASSUNTI BREVI O SCHEMI TELEGRAFICI**: lo studente deve poter studiare SOLO da questo testo e superare l'esame con il massimo dei voti (30 e Lode / 10).
+- **LUNGHEZZA E RICCHEZZA**: scrivi un trattato esteso e completo (almeno 2.000–3.500 parole). Per ogni capitolo sviluppa paragrafi discorsivi ampi e ragionati spiegando sempre il *perché*, il *come*, le cause, i meccanismi sequenziali, le eccezioni e le applicazioni pratiche/cliniche/d'esame.
+- **ZERO FRASI RIEMPITIVE**: non scrivere mai "In questa lezione vedremo..." o "È importante notare che...". Parti subito con definizioni formali e contenuti densi.
+- **DATI QUANTITATIVI E TERMINOLOGIA PRECISA**: inserisci sempre tutti i valori numerici, soglie, date, articoli, teoremi, dosaggi, unità di misura e termini tecnici presenti nelle fonti o nella letteratura di riferimento.
+- **TABELLE COMPARATIVE OBBLIGATORIE**: inserisci almeno 2 TABELLE MARKDOWN ricche e complete (classificazioni, diagnosi differenziali, confronti tra teorie/metodi, protocolli o schemi risolutivi).
+- **FORMULE LATEX**: scrivi qualsiasi formula matematica, fisica, chimica, statistica o economica in LaTeX rigoroso ($...$ inline o $$...$$ a blocchi).
+- **CALLOUT DI EVIDENZIAZIONE**: inserisci 3–5 box di evidenziazione usando citazioni Markdown:
+  > **Regola Cardine:** [Spiegazione dettagliata]
+  > **Criteri e Standard di Riferimento:** [Dettagli e soglie]
+  > **Attenzione / Errore Frequente d'Esame:** [Avvertenza]
+- **GESTIONE OBBLIGATORIA DELLE FIGURE ED IMMAGINI**:
+${
+  availableImagesList.length > 0
+    ? `Sono state estratte dai documenti dello studente le seguenti ${availableImagesList.length} immagini REALI:
+${availableImagesList
+  .map((img) => `- ID ESATTO: "${img.id}" -> "${img.name}" (da ${img.fileName})`)
+  .join('\n')}
+DEVI OBBLIGATORIAMENTE inserire nel testo le immagini pertinenti usando ESATTAMENTE questa sintassi su una riga dedicata (senza backtick e senza modificare l'ID):
+![Descrizione didattica approfondita della figura](ID_ESATTO)
+Inserisci almeno 2–5 figure tra quelle elencate nei capitoli corrispondenti, commentandole nel testo.`
+    : 'Se un concetto richiede uno schema visivo, inserisci una tabella Markdown dettagliata o un box riassuntivo strutturato (non inventare URL esterni inesistenti).'
+}
 ${
   isStrict
-    ? '\nFONTI DELLO STUDENTE (OBBLIGATORIO): basa la lezione integralmente sui passaggi forniti dallo studente, spiegandoli con profondità senza omettere dettagli.'
-    : '\nSviluppa la trattazione attingendo ai migliori standard accademici e scolastici della disciplina.'
+    ? '\nFONTI DELLO STUDENTE (REGOLA DI FERRO): copri il 100% degli argomenti, sottocapitoli, definizioni, numeri e dettagli presenti nei documenti caricati dallo studente, sviluppando ogni punto in modo esteso, chiaro ed enciclopedico senza tagliare nulla.'
+    : '\nSviluppa l’intera trattazione con rigore accademico completo, coprendo ogni aspetto teorico e applicativo dell’argomento.'
 }
 
-STRUTTURA:
-- Titolo in maiuscolo con sottotitolo
-- 📋 Indice analitico dei capitoli
-- Capitoli numerati coerenti con la disciplina fino ad applicazioni pratiche / sintesi finale per l'esame.`;
+STRUTTURA OBBLIGATORIA DEL COMPENDIO:
+1. **# TITOLO COMPLETO DELLA LEZIONE** (in maiuscolo) con sottotitolo esplicativo
+2. **## 📋 Indice Analitico dei Capitoli** (almeno 6–8 capitoli numerati)
+3. **6–8 Capitoli Numerati (`## 1. ...`, `## 2. ...`)** con sotto-paragrafi (`### 1.1 ...`), spiegazioni discorsive approfondite, tabelle Markdown, formule LaTeX, callout e figure dai documenti
+4. **## Domande Frequenti d'Esame e Collegamenti Trasversali** (3–5 snodi tipici richiesti dai docenti con risposta argomentata).`;
 
       const lessonUserPrompt = `MATERIA: "${examDescription || 'Trattazione di Studio'}"
-ARGOMENTO: "${topicTitle}"
+ARGOMENTO SPECIFICO: "${topicTitle}"
 LIVELLO TARGET: ${prepLevel || 80}%
-STILE: ${languageStyle || 'automatico'}
-${relevantSources ? `\nESTRATTI RILEVANTI DAI DOCUMENTI CARICATI:\n${relevantSources}` : ''}
+STILE ESPOSITIVO: ${languageStyle || 'automatico'} (trattato accademico esteso, discorsivo e completo)
+${relevantSources ? `\nDOCUMENTI DI RIFERIMENTO DELLO STUDENTE:\n${relevantSources}` : ''}
 
-Redigi ora il compendio completo e approfondito.`;
+Redigi ora il COMPENDIO COMPLETO ED ESAUSTIVO. NON sintetizzare, NON abbreviare e NON saltare sotto-argomenti: sviluppa ogni capitolo in profondità come un vero capitolo di manuale universitario.`;
 
       if (stream) {
         return await streamAIResponse({
@@ -615,7 +633,7 @@ Redigi ora il compendio completo e approfondito.`;
           systemPrompt: lessonSystemPrompt,
           messages: [{ role: 'user', content: lessonUserPrompt }],
           temperature: 0.25,
-          maxTokens: 6144,
+          maxTokens: 16384,
           onComplete: () => incrementUsage(profile, bucket),
         });
       }
@@ -625,7 +643,7 @@ Redigi ora il compendio completo e approfondito.`;
         systemPrompt: lessonSystemPrompt,
         messages: [{ role: 'user', content: lessonUserPrompt }],
         temperature: 0.25,
-        maxTokens: 6144,
+        maxTokens: 16384,
       });
 
       await incrementUsage(profile, bucket);

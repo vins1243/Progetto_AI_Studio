@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Network,
   Sparkles,
@@ -15,6 +15,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { callAiApi, QuotaExceededError } from '../utils/apiClient.js';
+import { getProjectDataIDB } from '../utils/indexedDb.js';
 
 const COLOR_STYLES = {
   blue: {
@@ -182,6 +183,18 @@ export default function ConceptMapView({
   const [undoStack, setUndoStack] = useState([]);
   const svgRef = useRef(null);
 
+  useEffect(() => {
+    if (defaultTopicTitle) {
+      setCustomPrompt(defaultTopicTitle);
+    }
+  }, [defaultTopicTitle]);
+
+  useEffect(() => {
+    if (!selectedMapId && maps.length > 0) {
+      setSelectedMapId(maps[0].id);
+    }
+  }, [maps, selectedMapId]);
+
   const activeMap = useMemo(
     () => maps.find((m) => m.id === selectedMapId) || maps[0] || null,
     [maps, selectedMapId]
@@ -207,12 +220,21 @@ export default function ConceptMapView({
     setErrorMsg('');
     setIsGenerating(true);
     try {
+      let fullFiles = activeProject?.files || [];
+      if (activeProject?.id) {
+        const dbData = await getProjectDataIDB(activeProject.id);
+        if (dbData?.files?.length) fullFiles = dbData.files;
+      }
+
       const data = await callAiApi({
         action: 'generate_concept_map',
         topicTitle: customPrompt.trim() || defaultTopicTitle || activeProject?.description || 'Mappa Concettuale',
         examDescription: activeProject?.description || '',
         lessonContent: defaultLessonContent || '',
-        files: activeProject?.files || [],
+        files: fullFiles.map((f) => ({
+          name: f.name,
+          text: f.extractedText || f.text || '',
+        })),
       });
 
       if (data?.map) {
