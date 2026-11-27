@@ -74,7 +74,10 @@ import {
   Crop,
   Maximize2,
   Network,
-  Zap
+  Zap,
+  Volume2,
+  VolumeX,
+  Eye
 } from 'lucide-react';
 
 import LandingPage from './components/LandingPage.jsx';
@@ -610,6 +613,10 @@ function MainAppContent() {
   const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
   const [billingReason, setBillingReason] = useState('');
   const [usageInfo, setUsageInfo] = useState(null);
+  const [lessonStudyTab, setLessonStudyTab] = useState('compendio'); // 'compendio' | 'mappa'
+  const [readingComfortMode, setReadingComfortMode] = useState(false);
+  const [isSpeakingLesson, setIsSpeakingLesson] = useState(false);
+  const [speechRate, setSpeechRate] = useState(1);
   const [isCheckingPayment, setIsCheckingPayment] = useState(false);
   const [isSubManageModalOpen, setIsSubManageModalOpen] = useState(false);
   const [isCropModalOpen, setIsCropModalOpen] = useState(false);
@@ -2587,6 +2594,49 @@ function MainAppContent() {
       saveProjectToCloud(user.id, updatedProject);
     }
   };
+
+  // Lettore vocale integrato (Audio-Lezione TTS stile Algor Education)
+  const handleStopSpeaking = () => {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    setIsSpeakingLesson(false);
+  };
+
+  const handleToggleSpeakLesson = () => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) {
+      alert('Il tuo browser non supporta la sintesi vocale.');
+      return;
+    }
+    if (isSpeakingLesson) {
+      handleStopSpeaking();
+      return;
+    }
+    const rawText = (wysiwygEditorRef.current?.innerText || currentSelectedTopic?.lesson || '')
+      .replace(/[#*_`>$]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!rawText) {
+      alert('Genera prima la lezione per ascoltarla.');
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(rawText.slice(0, 12000));
+    utterance.lang = 'it-IT';
+    utterance.rate = speechRate;
+    utterance.onend = () => setIsSpeakingLesson(false);
+    utterance.onerror = () => setIsSpeakingLesson(false);
+    setIsSpeakingLesson(true);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, [selectedTopicId, currentView]);
 
   const handleAcceptTos = async () => {
     if (!tosChecked || !recessoChecked) return;
@@ -4902,43 +4952,110 @@ function MainAppContent() {
           <main className={`flex-1 flex flex-col h-full w-full overflow-hidden ${theme === 'light' ? 'bg-white text-slate-800' : 'bg-geminiDark text-gray-200'}`}>
 
             
-            <div className={`flex items-center justify-between px-4 sm:px-6 py-2.5 border-b shrink-0 transition ${
+            <div className={`flex flex-wrap items-center justify-between gap-2 px-4 sm:px-6 py-2.5 border-b shrink-0 transition ${
               theme === 'light' 
-                ? 'bg-white border-slate-200 shadow-sm text-slate-800' 
-                : 'bg-geminiDarkSecondary border-geminiBorder/60 text-gray-200'
+                ? 'bg-white/95 border-slate-200 shadow-sm text-slate-800' 
+                : 'bg-geminiDarkSecondary/95 border-geminiBorder/60 text-gray-200'
             }`}>
-              <button 
-                onClick={() => setCurrentView('study_plan')}
-                className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border transition ${
-                  theme === 'light'
-                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
-                    : 'bg-geminiDark hover:bg-geminiHover text-gray-300 border-geminiBorder'
-                }`}
-              >
-                <ArrowLeft size={14} />
-                <span>Torna al Piano Giornaliero</span>
-              </button>
-              
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setCurrentView('concept_maps')}
-                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition"
+                <button 
+                  onClick={() => { handleStopSpeaking(); setCurrentView('study_plan'); }}
+                  className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border transition ${
+                    theme === 'light'
+                      ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+                      : 'bg-geminiDark hover:bg-geminiHover text-gray-300 border-geminiBorder'
+                  }`}
                 >
-                  <Network size={14} />
-                  <span>Mappa Concettuale</span>
+                  <ArrowLeft size={14} />
+                  <span className="hidden sm:inline">Piano</span>
                 </button>
-                <div className={`flex items-center gap-2 text-xs font-medium px-3 py-1 rounded-xl border ${
-                  theme === 'light'
-                    ? 'bg-blue-50/70 border-blue-100 text-blue-900'
-                    : 'bg-blue-950/40 border-blue-900/50 text-blue-200'
+
+                {/* SWITCHER STILE ALGOR: COMPENDIO | MAPPA INTERATTIVA */}
+                <div className={`flex items-center p-1 rounded-2xl border ${
+                  theme === 'light' ? 'bg-slate-100 border-slate-200' : 'bg-geminiDark border-geminiBorder'
                 }`}>
-                  <CalendarIcon size={14} className="text-blue-500 shrink-0" />
-                  <span>{currentDayData?.date} • {currentDayData?.dayTitle}</span>
+                  <button
+                    onClick={() => setLessonStudyTab('compendio')}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
+                      lessonStudyTab === 'compendio'
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <BookOpen size={13} />
+                    <span>Compendio</span>
+                  </button>
+                  <button
+                    onClick={() => { handleStopSpeaking(); setLessonStudyTab('mappa'); }}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
+                      lessonStudyTab === 'mappa'
+                        ? 'bg-gradient-to-r from-indigo-600 to-teal-500 text-white shadow-sm'
+                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Network size={13} />
+                    <span>Mappa Interattiva</span>
+                  </button>
                 </div>
+              </div>
+              
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {/* AUDIO-LEZIONE TTS */}
+                <button
+                  onClick={handleToggleSpeakLesson}
+                  className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border transition ${
+                    isSpeakingLesson
+                      ? 'bg-rose-500 text-white border-rose-500 shadow-sm'
+                      : 'bg-teal-500/10 hover:bg-teal-500/20 text-teal-600 dark:text-teal-300 border-teal-500/30'
+                  }`}
+                  title="Ascolta la lezione con sintesi vocale"
+                >
+                  {isSpeakingLesson ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                  <span>{isSpeakingLesson ? 'Stop Audio' : 'Ascolta'}</span>
+                </button>
+                <button
+                  onClick={() => {
+                    const speeds = [0.85, 1, 1.25, 1.5];
+                    const next = speeds[(speeds.indexOf(speechRate) + 1) % speeds.length];
+                    setSpeechRate(next);
+                  }}
+                  className="px-2 py-1.5 rounded-xl text-[11px] font-bold font-mono bg-slate-100 dark:bg-geminiDark border border-slate-200 dark:border-geminiBorder hover:border-indigo-400 transition"
+                  title="Cambia velocità voce"
+                >
+                  {speechRate}x
+                </button>
+                {/* MODALITÀ LETTURA FACILITATA (DSA) */}
+                <button
+                  onClick={() => setReadingComfortMode((v) => !v)}
+                  className={`flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-xl border transition ${
+                    readingComfortMode
+                      ? 'bg-amber-500/20 text-amber-600 dark:text-amber-300 border-amber-500/40'
+                      : 'bg-slate-100 dark:bg-geminiDark border-slate-200 dark:border-geminiBorder text-slate-500 dark:text-slate-400'
+                  }`}
+                  title="Modalità alta leggibilità (spaziatura DSA)"
+                >
+                  <Eye size={14} />
+                  <span className="hidden md:inline">Lettura Facile</span>
+                </button>
               </div>
             </div>
 
-            <div className="flex-1 flex flex-col md:flex-row h-full w-full overflow-hidden">
+            {lessonStudyTab === 'mappa' && (
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-6xl mx-auto w-full">
+                <ConceptMapView
+                  compact
+                  theme={theme}
+                  activeProject={activeProject}
+                  defaultTopicTitle={currentSelectedTopic?.title || activeProject?.description || ''}
+                  defaultLessonContent={currentSelectedTopic?.lesson || ''}
+                  maps={activeProject?.conceptMaps || []}
+                  onSaveMaps={handleSaveConceptMaps}
+                  onQuotaExceeded={(msg) => openBillingWithReason(msg)}
+                />
+              </div>
+            )}
+
+            <div className={`flex-1 flex flex-col md:flex-row h-full w-full overflow-hidden ${lessonStudyTab === 'mappa' ? 'hidden' : ''}`}>
               
               {/* COLONNA SINISTRA: FOGLIO WYSIWYG CON EXPORT PDF E IMMAGINI */}
               <div className="flex-1 flex flex-col h-full overflow-hidden border-r border-geminiBorder/40">
@@ -5179,7 +5296,7 @@ function MainAppContent() {
                           suppressContentEditableWarning={true}
                           onInput={handleEditorInput}
                           onPaste={handleEditorPaste}
-                          className="wysiwyg-editor focus:outline-none select-text"
+                          className={`wysiwyg-editor focus:outline-none select-text transition ${readingComfortMode ? 'reading-comfort rounded-2xl p-4' : ''}`}
                         />
                       </div>
 

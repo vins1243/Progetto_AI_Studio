@@ -13,132 +13,186 @@ import {
   Check,
   X,
   RefreshCw,
+  GitBranch,
+  Rows3,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { callAiApi, QuotaExceededError } from '../utils/apiClient.js';
 import { getProjectDataIDB } from '../utils/indexedDb.js';
 
 const COLOR_STYLES = {
   blue: {
-    bg: '#eff6ff',
-    darkBg: '#1e3a8a',
-    border: '#3b82f6',
-    text: '#1e3a8a',
-    darkText: '#dbeafe',
-    dot: '#3b82f6',
+    bg: '#ffffff',
+    darkBg: '#171f36',
+    border: '#5b5bf7',
+    accent: '#5b5bf7',
+    text: '#1e1b4b',
+    darkText: '#e0e7ff',
+    dot: '#5b5bf7',
   },
   emerald: {
-    bg: '#ecfdf5',
-    darkBg: '#064e3b',
+    bg: '#ffffff',
+    darkBg: '#0f2924',
     border: '#10b981',
-    text: '#065f46',
+    accent: '#10b981',
+    text: '#064e3b',
     darkText: '#d1fae5',
     dot: '#10b981',
   },
   violet: {
-    bg: '#f5f3ff',
-    darkBg: '#4c1d95',
+    bg: '#ffffff',
+    darkBg: '#23163c',
     border: '#8b5cf6',
-    text: '#4c1d95',
+    accent: '#8b5cf6',
+    text: '#3b0764',
     darkText: '#ede9fe',
     dot: '#8b5cf6',
   },
   amber: {
-    bg: '#fffbeb',
-    darkBg: '#78350f',
+    bg: '#ffffff',
+    darkBg: '#2c1f0e',
     border: '#f59e0b',
+    accent: '#f59e0b',
     text: '#78350f',
     darkText: '#fef3c7',
     dot: '#f59e0b',
   },
   rose: {
-    bg: '#fff1f2',
-    darkBg: '#881337',
+    bg: '#ffffff',
+    darkBg: '#311322',
     border: '#f43f5e',
+    accent: '#f43f5e',
     text: '#881337',
     darkText: '#ffe4e6',
     dot: '#f43f5e',
   },
   cyan: {
-    bg: '#ecfeff',
-    darkBg: '#164e63',
+    bg: '#ffffff',
+    darkBg: '#102833',
     border: '#06b6d4',
+    accent: '#06b6d4',
     text: '#164e63',
     darkText: '#cffafe',
     dot: '#06b6d4',
   },
 };
 
-const NODE_W = 210;
-const NODE_H = 82;
+const NODE_W = 224;
+const NODE_H = 88;
 const H_GAP = 42;
 const V_GAP = 86;
 
-// Calcola layout gerarchico ad albero pulito (senza sovrapposizioni)
-function computeTreeLayout(nodes) {
+// Calcola layout Albero Verticale oppure Mappa Mentale Orizzontale (stile Algor Education)
+function computeMapLayout(nodes, orientation = 'tree', collapsedIds = new Set()) {
   if (!Array.isArray(nodes) || nodes.length === 0) {
-    return { positioned: [], edges: [], width: 900, height: 500 };
+    return { positioned: [], edges: [], width: 920, height: 520, childCounts: new Map() };
   }
 
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const root = nodes.find((n) => !n.parentId || !byId.has(n.parentId)) || nodes[0];
 
-  const childrenMap = new Map();
+  const allChildrenMap = new Map();
   nodes.forEach((n) => {
     if (n.id === root.id) return;
     const pid = n.parentId && byId.has(n.parentId) ? n.parentId : root.id;
-    if (!childrenMap.has(pid)) childrenMap.set(pid, []);
-    childrenMap.get(pid).push(n);
+    if (!allChildrenMap.has(pid)) allChildrenMap.set(pid, []);
+    allChildrenMap.get(pid).push(n);
   });
 
-  const subtreeWidth = new Map();
-  const visited = new Set();
+  const childCounts = new Map();
+  allChildrenMap.forEach((kids, pid) => childCounts.set(pid, kids.length));
 
-  function measure(nodeId) {
-    if (visited.has(nodeId)) return NODE_W;
-    visited.add(nodeId);
-    const kids = childrenMap.get(nodeId) || [];
-    if (kids.length === 0) {
-      subtreeWidth.set(nodeId, NODE_W);
-      return NODE_W;
-    }
-    const total = kids.reduce((acc, k) => acc + measure(k.id), 0) + H_GAP * (kids.length - 1);
-    const w = Math.max(NODE_W, total);
-    subtreeWidth.set(nodeId, w);
-    return w;
-  }
-
-  measure(root.id);
+  const getVisibleKids = (id) => (collapsedIds.has(id) ? [] : allChildrenMap.get(id) || []);
 
   const positioned = [];
   const posById = new Map();
-  const placed = new Set();
 
-  function place(nodeId, leftX, depth) {
-    if (placed.has(nodeId)) return;
-    placed.add(nodeId);
-    const node = byId.get(nodeId);
-    const myWidth = subtreeWidth.get(nodeId) || NODE_W;
-    const x = leftX + myWidth / 2 - NODE_W / 2;
-    const y = 40 + depth * (NODE_H + V_GAP);
-    const item = { ...node, x, y, depth };
-    positioned.push(item);
-    posById.set(nodeId, item);
-
-    const kids = childrenMap.get(nodeId) || [];
-    if (kids.length > 0) {
-      const kidsTotalW =
-        kids.reduce((acc, k) => acc + (subtreeWidth.get(k.id) || NODE_W), 0) +
-        H_GAP * (kids.length - 1);
-      let cursor = leftX + (myWidth - kidsTotalW) / 2;
-      for (const k of kids) {
-        const kw = subtreeWidth.get(k.id) || NODE_W;
-        place(k.id, cursor, depth + 1);
-        cursor += kw + H_GAP;
+  if (orientation === 'horizontal') {
+    const subtreeH = new Map();
+    const visited = new Set();
+    const measureH = (id) => {
+      if (visited.has(id)) return NODE_H;
+      visited.add(id);
+      const kids = getVisibleKids(id);
+      if (kids.length === 0) {
+        subtreeH.set(id, NODE_H);
+        return NODE_H;
       }
-    }
-  }
+      const total = kids.reduce((acc, k) => acc + measureH(k.id), 0) + 28 * (kids.length - 1);
+      const h = Math.max(NODE_H, total);
+      subtreeH.set(id, h);
+      return h;
+    };
+    measureH(root.id);
 
-  place(root.id, 40, 0);
+    const placed = new Set();
+    const placeH = (id, topY, depth) => {
+      if (placed.has(id)) return;
+      placed.add(id);
+      const node = byId.get(id);
+      const myH = subtreeH.get(id) || NODE_H;
+      const x = 48 + depth * (NODE_W + 96);
+      const y = topY + myH / 2 - NODE_H / 2;
+      const item = { ...node, x, y, depth };
+      positioned.push(item);
+      posById.set(id, item);
+
+      const kids = getVisibleKids(id);
+      if (kids.length > 0) {
+        const kidsTotal = kids.reduce((acc, k) => acc + (subtreeH.get(k.id) || NODE_H), 0) + 28 * (kids.length - 1);
+        let cursor = topY + (myH - kidsTotal) / 2;
+        for (const k of kids) {
+          const kh = subtreeH.get(k.id) || NODE_H;
+          placeH(k.id, cursor, depth + 1);
+          cursor += kh + 28;
+        }
+      }
+    };
+    placeH(root.id, 48, 0);
+  } else {
+    const subtreeW = new Map();
+    const visited = new Set();
+    const measureW = (id) => {
+      if (visited.has(id)) return NODE_W;
+      visited.add(id);
+      const kids = getVisibleKids(id);
+      if (kids.length === 0) {
+        subtreeW.set(id, NODE_W);
+        return NODE_W;
+      }
+      const total = kids.reduce((acc, k) => acc + measureW(k.id), 0) + H_GAP * (kids.length - 1);
+      const w = Math.max(NODE_W, total);
+      subtreeW.set(id, w);
+      return w;
+    };
+    measureW(root.id);
+
+    const placed = new Set();
+    const placeW = (id, leftX, depth) => {
+      if (placed.has(id)) return;
+      placed.add(id);
+      const node = byId.get(id);
+      const myW = subtreeW.get(id) || NODE_W;
+      const x = leftX + myW / 2 - NODE_W / 2;
+      const y = 48 + depth * (NODE_H + V_GAP);
+      const item = { ...node, x, y, depth };
+      positioned.push(item);
+      posById.set(id, item);
+
+      const kids = getVisibleKids(id);
+      if (kids.length > 0) {
+        const kidsTotal = kids.reduce((acc, k) => acc + (subtreeW.get(k.id) || NODE_W), 0) + H_GAP * (kids.length - 1);
+        let cursor = leftX + (myW - kidsTotal) / 2;
+        for (const k of kids) {
+          const kw = subtreeW.get(k.id) || NODE_W;
+          placeW(k.id, cursor, depth + 1);
+          cursor += kw + H_GAP;
+        }
+      }
+    };
+    placeW(root.id, 48, 0);
+  }
 
   const edges = [];
   for (const p of positioned) {
@@ -154,10 +208,10 @@ function computeTreeLayout(nodes) {
     }
   }
 
-  const maxX = Math.max(...positioned.map((p) => p.x + NODE_W), 860) + 60;
-  const maxY = Math.max(...positioned.map((p) => p.y + NODE_H), 460) + 60;
+  const maxX = Math.max(...positioned.map((p) => p.x + NODE_W), 900) + 80;
+  const maxY = Math.max(...positioned.map((p) => p.y + NODE_H), 500) + 80;
 
-  return { positioned, edges, width: maxX, height: maxY };
+  return { positioned, edges, width: maxX, height: maxY, childCounts };
 }
 
 export default function ConceptMapView({
@@ -168,13 +222,16 @@ export default function ConceptMapView({
   maps = [],
   onSaveMaps,
   onQuotaExceeded,
+  compact = false,
 }) {
   const [selectedMapId, setSelectedMapId] = useState(maps[0]?.id || null);
   const [customPrompt, setCustomPrompt] = useState(defaultTopicTitle || '');
+  const [orientation, setOrientation] = useState('tree'); // 'tree' | 'horizontal'
+  const [collapsedIds, setCollapsedIds] = useState(() => new Set());
   const [isGenerating, setIsGenerating] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const [zoom, setZoom] = useState(0.95);
+  const [zoom, setZoom] = useState(0.9);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
@@ -200,11 +257,25 @@ export default function ConceptMapView({
     [maps, selectedMapId]
   );
 
-  const layout = useMemo(() => computeTreeLayout(activeMap?.nodes || []), [activeMap]);
+  const layout = useMemo(
+    () => computeMapLayout(activeMap?.nodes || [], orientation, collapsedIds),
+    [activeMap, orientation, collapsedIds]
+  );
+
   const selectedNode = useMemo(
     () => activeMap?.nodes?.find((n) => n.id === selectedNodeId) || null,
     [activeMap, selectedNodeId]
   );
+
+  const toggleCollapseNode = (e, nodeId) => {
+    e.stopPropagation();
+    setCollapsedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
+      return next;
+    });
+  };
 
   const commitMapUpdate = (updatedMap, pushUndo = true) => {
     if (pushUndo && activeMap) {
@@ -242,7 +313,8 @@ export default function ConceptMapView({
         onSaveMaps?.(nextMaps);
         setSelectedMapId(data.map.id);
         setSelectedNodeId(data.map.nodes?.[0]?.id || null);
-        setZoom(0.9);
+        setCollapsedIds(new Set());
+        setZoom(0.88);
         setPan({ x: 0, y: 0 });
       }
     } catch (err) {
@@ -274,6 +346,11 @@ export default function ConceptMapView({
       color: parent?.color || 'blue',
       edgeLabel: 'collega',
     };
+    setCollapsedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(parentId);
+      return next;
+    });
     commitMapUpdate({ ...activeMap, nodes: [...activeMap.nodes, newNode] });
     setSelectedNodeId(newNode.id);
   };
@@ -283,7 +360,6 @@ export default function ConceptMapView({
     const root = activeMap.nodes.find((n) => !n.parentId) || activeMap.nodes[0];
     if (nodeId === root.id) return;
 
-    // Rimuove il nodo e tutti i discendenti
     const toRemove = new Set([nodeId]);
     let changed = true;
     while (changed) {
@@ -320,7 +396,7 @@ export default function ConceptMapView({
       canvas.width = layout.width * scale;
       canvas.height = layout.height * scale;
       const ctx = canvas.getContext('2d');
-      ctx.fillStyle = theme === 'dark' ? '#131314' : '#ffffff';
+      ctx.fillStyle = theme === 'dark' ? '#0f111a' : '#f5f7fc';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.scale(scale, scale);
       ctx.drawImage(img, 0, 0);
@@ -350,38 +426,50 @@ export default function ConceptMapView({
 
   const onMouseUpCanvas = () => setIsPanning(false);
 
+  const onWheelCanvas = (e) => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.08 : 0.08;
+    setZoom((z) => Math.max(0.35, Math.min(1.8, Number((z + delta).toFixed(2)))));
+  };
+
   return (
     <div className="space-y-4">
-      {/* BARRA GENERAZIONE MAPPA */}
-      <div className="p-4 rounded-2xl border border-slate-200 dark:border-[#2a2b2f] bg-white dark:bg-[#1e1f20] flex flex-col md:flex-row gap-3 items-stretch md:items-center">
-        <div className="flex items-center gap-2 text-emerald-500 font-bold text-sm shrink-0">
-          <Network size={18} />
-          <span>Mappe Concettuali AI</span>
+      {/* HEADER GENERATOR BAR STILE ALGOR */}
+      <div className="p-3.5 sm:p-4 rounded-3xl border border-indigo-500/20 bg-white dark:bg-[#171a26] shadow-lg shadow-indigo-500/5 flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+        <div className="flex items-center gap-2.5 shrink-0">
+          <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-indigo-500 to-teal-400 text-white flex items-center justify-center shadow-md shadow-indigo-500/25">
+            <Network size={18} />
+          </div>
+          <div>
+            <div className="font-extrabold text-sm leading-tight">Algor-Style Map Studio</div>
+            <div className="text-[11px] text-slate-500 dark:text-slate-400">Genera, modifica, esplora e memorizza</div>
+          </div>
         </div>
         <input
           type="text"
           value={customPrompt}
           onChange={(e) => setCustomPrompt(e.target.value)}
-          placeholder="Argomento della mappa (es. Rivoluzione Francese, Ciclo di Krebs, Diritto Privato...)"
-          className="flex-1 px-3.5 py-2 rounded-xl text-sm bg-slate-100 dark:bg-[#131314] border border-slate-200 dark:border-[#2a2b2f] outline-none focus:border-blue-500"
+          placeholder="Scrivi l'argomento da mappare (es. Chirurgia Vascolare, Rivoluzione Francese...)"
+          className="flex-1 px-4 py-2.5 rounded-2xl text-sm bg-slate-100 dark:bg-[#0f111a] border border-slate-200 dark:border-[#2a2f45] outline-none focus:border-indigo-500 transition"
         />
         <button
           onClick={handleGenerateMap}
           disabled={isGenerating}
-          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-semibold text-xs flex items-center justify-center gap-2 transition shrink-0"
+          className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-teal-500 hover:from-indigo-500 hover:to-teal-400 disabled:opacity-60 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25 transition shrink-0"
         >
           {isGenerating ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
-          {isGenerating ? 'Generazione mappa...' : 'Genera Mappa AI'}
+          {isGenerating ? 'Creazione Mappa AI...' : 'Genera Mappa AI'}
         </button>
       </div>
 
       {errorMsg && (
-        <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-500 text-xs font-medium">
+        <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-500 text-xs font-semibold">
           {errorMsg}
         </div>
       )}
 
-      {/* SELETTORE MAPPE SALVATE */}
+      {/* PILL SELECTOR MAPPE SALVATE */}
       {maps.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
           {maps.map((m) => (
@@ -390,11 +478,12 @@ export default function ConceptMapView({
               onClick={() => {
                 setSelectedMapId(m.id);
                 setSelectedNodeId(null);
+                setCollapsedIds(new Set());
               }}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold border transition ${
                 activeMap?.id === m.id
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-white dark:bg-[#1e1f20] border-slate-200 dark:border-[#2a2b2f] hover:border-blue-500'
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/25'
+                  : 'bg-white dark:bg-[#171a26] border-slate-200 dark:border-[#2a2f45] hover:border-indigo-400'
               }`}
             >
               {m.title}
@@ -403,63 +492,55 @@ export default function ConceptMapView({
         </div>
       )}
 
-      {/* AREA CANVAS + PANNELLO MODIFICA NODO */}
+      {/* CANVAS INTERATTIVO + SIDEBAR NODO */}
       {activeMap ? (
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-          <div className="lg:col-span-3 rounded-2xl border border-slate-200 dark:border-[#2a2b2f] bg-slate-50 dark:bg-[#131314] overflow-hidden flex flex-col">
-            {/* TOOLBAR CANVAS */}
-            <div className="px-3.5 py-2.5 border-b border-slate-200 dark:border-[#2a2b2f] bg-white dark:bg-[#1e1f20] flex flex-wrap items-center justify-between gap-2">
-              <div className="font-bold text-xs sm:text-sm truncate">{activeMap.title}</div>
+          <div className="lg:col-span-3 rounded-3xl border border-slate-200 dark:border-[#2a2f45] bg-[#f5f7fc] dark:bg-[#0f111a] overflow-hidden relative shadow-xl">
+            {/* TOP BAR LEGGERA */}
+            <div className="px-4 py-2.5 border-b border-slate-200/80 dark:border-[#2a2f45] bg-white/90 dark:bg-[#171a26]/90 backdrop-blur-md flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-2.5 h-2.5 rounded-full bg-teal-400 shrink-0" />
+                <span className="font-bold text-xs sm:text-sm truncate">{activeMap.title}</span>
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-500 font-semibold shrink-0">
+                  {activeMap.nodes?.length || 0} nodi
+                </span>
+              </div>
+
               <div className="flex items-center gap-1.5">
                 <button
-                  onClick={() => setZoom((z) => Math.max(0.4, Number((z - 0.1).toFixed(2))))}
-                  className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-[#282a2c]"
-                  title="Riduci zoom"
+                  onClick={() => setOrientation((o) => (o === 'tree' ? 'horizontal' : 'tree'))}
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-[#222638] hover:bg-indigo-500/15 text-xs font-semibold flex items-center gap-1.5 transition"
+                  title="Cambia layout Albero / Mappa Mentale"
                 >
-                  <ZoomOut size={15} />
-                </button>
-                <span className="text-[11px] font-mono w-10 text-center">{Math.round(zoom * 100)}%</span>
-                <button
-                  onClick={() => setZoom((z) => Math.min(1.8, Number((z + 0.1).toFixed(2))))}
-                  className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-[#282a2c]"
-                  title="Aumenta zoom"
-                >
-                  <ZoomIn size={15} />
+                  {orientation === 'tree' ? <GitBranch size={13} className="text-indigo-500" /> : <Rows3 size={13} className="text-teal-500" />}
+                  <span>{orientation === 'tree' ? 'Albero' : 'Orizzontale'}</span>
                 </button>
                 <button
                   onClick={() => {
-                    setZoom(0.9);
-                    setPan({ x: 0, y: 0 });
+                    if (collapsedIds.size > 0) {
+                      setCollapsedIds(new Set());
+                    } else {
+                      const level1 = (activeMap.nodes || []).filter((n) => n.level === 1).map((n) => n.id);
+                      setCollapsedIds(new Set(level1));
+                    }
                   }}
-                  className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-[#282a2c]"
-                  title="Centra mappa"
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-[#222638] hover:bg-indigo-500/15 text-xs font-semibold flex items-center gap-1.5 transition"
+                  title="Modalità Ripasso Attivo: nascondi o mostra i sotto-rami"
                 >
-                  <Maximize2 size={15} />
-                </button>
-                <button
-                  onClick={handleUndo}
-                  disabled={undoStack.length === 0}
-                  className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-[#282a2c] disabled:opacity-30"
-                  title="Annulla ultima modifica"
-                >
-                  <Undo2 size={15} />
-                </button>
-                <button
-                  onClick={handleExportPng}
-                  className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold flex items-center gap-1.5"
-                >
-                  <Download size={13} /> PNG
+                  {collapsedIds.size > 0 ? <Eye size={13} className="text-teal-500" /> : <EyeOff size={13} className="text-amber-500" />}
+                  <span className="hidden sm:inline">{collapsedIds.size > 0 ? 'Mostra tutto' : 'Ripasso attivo'}</span>
                 </button>
               </div>
             </div>
 
-            {/* CANVAS INTERATTIVO SVG */}
+            {/* LAVAGNA A PUNTINI */}
             <div
               onMouseDown={onMouseDownCanvas}
               onMouseMove={onMouseMoveCanvas}
               onMouseUp={onMouseUpCanvas}
               onMouseLeave={onMouseUpCanvas}
-              className={`relative h-[520px] overflow-hidden select-none ${
+              onWheel={onWheelCanvas}
+              className={`algor-dot-grid relative ${compact ? 'h-[470px]' : 'h-[560px]'} overflow-hidden select-none ${
                 isPanning ? 'cursor-grabbing' : 'cursor-grab'
               }`}
             >
@@ -476,43 +557,56 @@ export default function ConceptMapView({
                   height={layout.height}
                   viewBox={`0 0 ${layout.width} ${layout.height}`}
                 >
-                  {/* Connettori curvi */}
+                  <defs>
+                    <filter id="algorCardShadow" x="-10%" y="-10%" width="125%" height="130%">
+                      <feDropShadow dx="0" dy="6" stdDeviation="6" floodColor="#1e1b4b" floodOpacity={theme === 'dark' ? '0.45' : '0.10'} />
+                    </filter>
+                  </defs>
+
+                  {/* CONNETTORI CURVI FLUIDI */}
                   {layout.edges.map((e) => {
-                    const x1 = e.from.x + NODE_W / 2;
-                    const y1 = e.from.y + NODE_H;
-                    const x2 = e.to.x + NODE_W / 2;
-                    const y2 = e.to.y;
+                    const isHoriz = orientation === 'horizontal';
+                    const x1 = isHoriz ? e.from.x + NODE_W : e.from.x + NODE_W / 2;
+                    const y1 = isHoriz ? e.from.y + NODE_H / 2 : e.from.y + NODE_H;
+                    const x2 = isHoriz ? e.to.x : e.to.x + NODE_W / 2;
+                    const y2 = isHoriz ? e.to.y + NODE_H / 2 : e.to.y;
+                    const midX = (x1 + x2) / 2;
                     const midY = (y1 + y2) / 2;
+                    const d = isHoriz
+                      ? `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`
+                      : `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
                     const style = COLOR_STYLES[e.to.color] || COLOR_STYLES.blue;
+
                     return (
                       <g key={e.id}>
                         <path
-                          d={`M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`}
+                          d={d}
                           fill="none"
                           stroke={style.border}
-                          strokeWidth="2.2"
+                          strokeWidth="2.5"
                           strokeOpacity="0.65"
                         />
                         {e.label && (
-                          <g transform={`translate(${(x1 + x2) / 2}, ${midY})`}>
+                          <g transform={`translate(${midX}, ${midY})`}>
                             <rect
-                              x="-48"
-                              y="-10"
-                              width="96"
-                              height="20"
-                              rx="10"
-                              fill={theme === 'dark' ? '#1e1f20' : '#ffffff'}
+                              x="-52"
+                              y="-11"
+                              width="104"
+                              height="22"
+                              rx="11"
+                              fill={theme === 'dark' ? '#171a26' : '#ffffff'}
                               stroke={style.border}
-                              strokeOpacity="0.4"
+                              strokeWidth="1.2"
+                              strokeOpacity="0.55"
                             />
                             <text
                               textAnchor="middle"
                               dominantBaseline="middle"
                               fontSize="10"
-                              fontWeight="600"
-                              fill={theme === 'dark' ? '#cbd5e1' : '#334155'}
+                              fontWeight="700"
+                              fill={theme === 'dark' ? '#e2e8f0' : '#334155'}
                             >
-                              {e.label.slice(0, 16)}
+                              {e.label.slice(0, 17)}
                             </text>
                           </g>
                         )}
@@ -520,12 +614,14 @@ export default function ConceptMapView({
                     );
                   })}
 
-                  {/* Nodi */}
+                  {/* NODI CARD STILE ALGOR */}
                   {layout.positioned.map((node) => {
                     const st = COLOR_STYLES[node.color] || COLOR_STYLES.blue;
                     const isSelected = selectedNodeId === node.id;
                     const fill = theme === 'dark' ? st.darkBg : st.bg;
                     const textColor = theme === 'dark' ? st.darkText : st.text;
+                    const kidsCount = layout.childCounts.get(node.id) || 0;
+                    const isCollapsed = collapsedIds.has(node.id);
 
                     return (
                       <g
@@ -534,21 +630,31 @@ export default function ConceptMapView({
                         transform={`translate(${node.x}, ${node.y})`}
                         onClick={() => setSelectedNodeId(node.id)}
                         style={{ cursor: 'pointer' }}
+                        filter="url(#algorCardShadow)"
                       >
                         <rect
                           width={NODE_W}
                           height={NODE_H}
-                          rx="16"
+                          rx="18"
                           fill={fill}
                           stroke={isSelected ? '#ffffff' : st.border}
-                          strokeWidth={isSelected ? '3' : '2'}
+                          strokeWidth={isSelected ? '3.2' : node.depth === 0 ? '2.8' : '1.8'}
                         />
-                        <foreignObject x="10" y="8" width={NODE_W - 20} height={NODE_H - 16}>
+                        {/* Barra accento colorata in alto */}
+                        <rect
+                          x="14"
+                          y="0"
+                          width={NODE_W - 28}
+                          height="5"
+                          rx="2.5"
+                          fill={st.accent}
+                        />
+                        <foreignObject x="12" y="10" width={NODE_W - 24} height={NODE_H - 18}>
                           <div
                             xmlns="http://www.w3.org/1999/xhtml"
                             style={{
                               color: textColor,
-                              fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
+                              fontFamily: '"Plus Jakarta Sans", Inter, sans-serif',
                               display: 'flex',
                               flexDirection: 'column',
                               justifyContent: 'center',
@@ -557,16 +663,16 @@ export default function ConceptMapView({
                               overflow: 'hidden',
                             }}
                           >
-                            <div style={{ fontSize: node.depth === 0 ? '13px' : '12px', fontWeight: 700, lineHeight: 1.25 }}>
+                            <div style={{ fontSize: node.depth === 0 ? '13.5px' : '12px', fontWeight: 800, lineHeight: 1.25 }}>
                               {node.label}
                             </div>
                             {node.summary && (
                               <div
                                 style={{
                                   fontSize: '10px',
-                                  opacity: 0.82,
-                                  marginTop: '3px',
-                                  lineHeight: 1.2,
+                                  opacity: 0.78,
+                                  marginTop: '4px',
+                                  lineHeight: 1.25,
                                   display: '-webkit-box',
                                   WebkitLineClamp: 2,
                                   WebkitBoxOrient: 'vertical',
@@ -578,20 +684,89 @@ export default function ConceptMapView({
                             )}
                           </div>
                         </foreignObject>
+
+                        {/* Badge espandi / comprimi ramo */}
+                        {kidsCount > 0 && (
+                          <g
+                            transform={
+                              orientation === 'horizontal'
+                                ? `translate(${NODE_W}, ${NODE_H / 2})`
+                                : `translate(${NODE_W / 2}, ${NODE_H})`
+                            }
+                            onClick={(e) => toggleCollapseNode(e, node.id)}
+                            style={{ cursor: 'pointer' }}
+                          >
+                            <circle r="11" fill={st.accent} stroke={fill} strokeWidth="2" />
+                            <text
+                              textAnchor="middle"
+                              dominantBaseline="central"
+                              fontSize="11"
+                              fontWeight="800"
+                              fill="#ffffff"
+                            >
+                              {isCollapsed ? `+${kidsCount}` : '−'}
+                            </text>
+                          </g>
+                        )}
                       </g>
                     );
                   })}
                 </svg>
               </div>
+
+              {/* DOCK FLUTTUANTE IN BASSO (STILE ALGOR / FIGJAM) */}
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 px-2.5 py-1.5 rounded-2xl bg-white/95 dark:bg-[#171a26]/95 backdrop-blur-md border border-slate-200 dark:border-[#2a2f45] shadow-xl">
+                <button
+                  onClick={() => setZoom((z) => Math.max(0.35, Number((z - 0.1).toFixed(2))))}
+                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-[#222638] transition"
+                  title="Zoom indietro"
+                >
+                  <ZoomOut size={15} />
+                </button>
+                <span className="text-[11px] font-bold font-mono w-10 text-center">{Math.round(zoom * 100)}%</span>
+                <button
+                  onClick={() => setZoom((z) => Math.min(1.8, Number((z + 0.1).toFixed(2))))}
+                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-[#222638] transition"
+                  title="Zoom avanti"
+                >
+                  <ZoomIn size={15} />
+                </button>
+                <div className="w-px h-4 bg-slate-200 dark:bg-[#2a2f45] mx-0.5" />
+                <button
+                  onClick={() => {
+                    setZoom(0.88);
+                    setPan({ x: 0, y: 0 });
+                  }}
+                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-[#222638] transition"
+                  title="Centra lavagna"
+                >
+                  <Maximize2 size={15} />
+                </button>
+                <button
+                  onClick={handleUndo}
+                  disabled={undoStack.length === 0}
+                  className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-[#222638] disabled:opacity-30 transition"
+                  title="Annulla"
+                >
+                  <Undo2 size={15} />
+                </button>
+                <div className="w-px h-4 bg-slate-200 dark:bg-[#2a2f45] mx-0.5" />
+                <button
+                  onClick={handleExportPng}
+                  className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 transition"
+                >
+                  <Download size={13} /> PNG
+                </button>
+              </div>
             </div>
           </div>
 
           {/* PANNELLO ISPEZIONE / MODIFICA NODO */}
-          <div className="rounded-2xl border border-slate-200 dark:border-[#2a2b2f] bg-white dark:bg-[#1e1f20] p-4 space-y-4">
+          <div className="rounded-3xl border border-slate-200 dark:border-[#2a2f45] bg-white dark:bg-[#171a26] p-5 space-y-4 shadow-lg">
             <div className="flex items-center justify-between">
-              <h4 className="font-bold text-sm flex items-center gap-1.5">
-                <Edit3 size={15} className="text-blue-500" />
-                Dettaglio Nodo
+              <h4 className="font-extrabold text-sm flex items-center gap-2">
+                <Edit3 size={15} className="text-indigo-500" />
+                Editor Nodo
               </h4>
               {selectedNode && (
                 <button onClick={() => setSelectedNodeId(null)} className="text-slate-400 hover:text-slate-600">
@@ -601,49 +776,49 @@ export default function ConceptMapView({
             </div>
 
             {selectedNode ? (
-              <div className="space-y-3 text-xs">
+              <div className="space-y-3.5 text-xs">
                 <div>
-                  <label className="block font-semibold mb-1 text-slate-500 dark:text-gray-400">Titolo concetto</label>
+                  <label className="block font-bold mb-1 text-slate-500 dark:text-slate-400">Concetto</label>
                   <input
                     type="text"
                     value={selectedNode.label}
                     onChange={(e) => handleUpdateNode(selectedNode.id, { label: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-[#131314] border border-slate-200 dark:border-[#2a2b2f] outline-none focus:border-blue-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-[#0f111a] border border-slate-200 dark:border-[#2a2f45] outline-none focus:border-indigo-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-semibold mb-1 text-slate-500 dark:text-gray-400">Spiegazione sintetica</label>
+                  <label className="block font-bold mb-1 text-slate-500 dark:text-slate-400">Spiegazione completa</label>
                   <textarea
                     rows={4}
                     value={selectedNode.summary || ''}
                     onChange={(e) => handleUpdateNode(selectedNode.id, { summary: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-[#131314] border border-slate-200 dark:border-[#2a2b2f] outline-none focus:border-blue-500 resize-none"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-[#0f111a] border border-slate-200 dark:border-[#2a2f45] outline-none focus:border-indigo-500 resize-none"
                   />
                 </div>
 
                 {selectedNode.parentId && (
                   <div>
-                    <label className="block font-semibold mb-1 text-slate-500 dark:text-gray-400">Nesso logico (freccia)</label>
+                    <label className="block font-bold mb-1 text-slate-500 dark:text-slate-400">Nesso sulla freccia</label>
                     <input
                       type="text"
                       value={selectedNode.edgeLabel || ''}
                       onChange={(e) => handleUpdateNode(selectedNode.id, { edgeLabel: e.target.value })}
                       placeholder="es. causa, include, porta a..."
-                      className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-[#131314] border border-slate-200 dark:border-[#2a2b2f] outline-none focus:border-blue-500"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-[#0f111a] border border-slate-200 dark:border-[#2a2f45] outline-none focus:border-indigo-500"
                     />
                   </div>
                 )}
 
                 <div>
-                  <label className="block font-semibold mb-1.5 text-slate-500 dark:text-gray-400">Colore ramo</label>
+                  <label className="block font-bold mb-1.5 text-slate-500 dark:text-slate-400">Colore ramo</label>
                   <div className="flex items-center gap-2">
                     {Object.entries(COLOR_STYLES).map(([name, st]) => (
                       <button
                         key={name}
                         onClick={() => handleUpdateNode(selectedNode.id, { color: name })}
                         className={`w-6 h-6 rounded-full flex items-center justify-center transition ${
-                          selectedNode.color === name ? 'ring-2 ring-offset-2 ring-blue-500' : ''
+                          selectedNode.color === name ? 'ring-2 ring-offset-2 ring-indigo-500 scale-110' : ''
                         }`}
                         style={{ backgroundColor: st.dot }}
                       >
@@ -656,14 +831,14 @@ export default function ConceptMapView({
                 <div className="pt-2 flex flex-col gap-2">
                   <button
                     onClick={() => handleAddChildNode(selectedNode.id)}
-                    className="w-full py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold flex items-center justify-center gap-1.5"
+                    className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold flex items-center justify-center gap-1.5 shadow-md shadow-indigo-600/20 transition"
                   >
                     <Plus size={14} /> Aggiungi sotto-nodo
                   </button>
                   {selectedNode.parentId && (
                     <button
                       onClick={() => handleDeleteNode(selectedNode.id)}
-                      className="w-full py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-500 font-semibold flex items-center justify-center gap-1.5"
+                      className="w-full py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 font-bold flex items-center justify-center gap-1.5 transition"
                     >
                       <Trash2 size={14} /> Elimina ramo
                     </button>
@@ -671,19 +846,34 @@ export default function ConceptMapView({
                 </div>
               </div>
             ) : (
-              <p className="text-xs text-slate-500 dark:text-gray-400 leading-relaxed">
-                Clicca su un nodo nella mappa per visualizzare la definizione completa, modificarne testo e colore oppure aggiungere nuovi sotto-concetti. Trascina lo sfondo per spostare la mappa.
-              </p>
+              <div className="space-y-3 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                <p>
+                  Clicca su un nodo nella lavagna per leggere la definizione completa, modificarne testo, freccia o colore, oppure aggiungere nuovi rami.
+                </p>
+                <div className="p-3 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-600 dark:text-indigo-300 font-medium">
+                  💡 Suggerimento: usa il pulsante <strong>Ripasso attivo</strong> o clicca sui pallini <strong>− / +</strong> sui nodi per nascondere e rivelare i concetti mentre ripeti!
+                </div>
+              </div>
             )}
           </div>
         </div>
       ) : (
-        <div className="p-10 rounded-2xl border border-dashed border-slate-300 dark:border-[#37393b] text-center space-y-2">
-          <Network size={32} className="mx-auto text-emerald-500 opacity-80" />
-          <p className="font-semibold text-sm">Nessuna mappa concettuale generata per questo progetto</p>
-          <p className="text-xs text-slate-500 dark:text-gray-400">
-            Scrivi un argomento nella barra in alto e clicca su “Genera Mappa AI” per creare la tua prima mappa interattiva.
+        <div className="algor-dot-grid p-12 rounded-3xl border-2 border-dashed border-indigo-300/60 dark:border-indigo-500/30 text-center space-y-3">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-indigo-500 to-teal-400 text-white flex items-center justify-center shadow-lg shadow-indigo-500/25">
+            <Network size={28} />
+          </div>
+          <h3 className="font-extrabold text-base">Trasforma questa lezione in una Mappa Concettuale Interattiva</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+            Con un clic l&apos;AI organizza i concetti chiave in nodi colorati modificabili, perfetti per memorizzare velocemente e ripassare prima dell&apos;esame.
           </p>
+          <button
+            onClick={handleGenerateMap}
+            disabled={isGenerating}
+            className="mt-2 inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-teal-500 hover:from-indigo-500 hover:to-teal-400 text-white font-bold text-xs shadow-lg shadow-indigo-500/25 transition"
+          >
+            {isGenerating ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
+            {isGenerating ? 'Generazione in corso...' : 'Crea la tua prima Mappa AI'}
+          </button>
         </div>
       )}
     </div>
